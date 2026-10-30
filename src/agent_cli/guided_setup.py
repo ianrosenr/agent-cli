@@ -176,7 +176,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "workers.max_concurrency",
         "Parallel workers",
-        "How many workers may run at the same time. Recommended: 2–4. "
+        "How many workers may run at the same time. Recommended: 2-4. "
         f"Maximum: {MAX_WORKER_CONCURRENCY}.",
         f"Type a whole number from 1 to {MAX_WORKER_CONCURRENCY}.",
         "2",
