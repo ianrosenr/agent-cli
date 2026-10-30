@@ -187,6 +187,33 @@ def test_switching_branches_reuses_cached_analysis(
     assert index.find_symbol("SessionCache")
 
 
+def test_analysis_cache_uses_blob_of_exact_bytes_analyzed(
+    project: Path, cache: AnalysisCache, analyzer: CountingAnalyzer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = open_index(project, cache, analyzer)
+    original_read = index.workspace.read
+    changed = b"class SessionCache:\n    def get(self, key):\n        return 'changed'\n"
+    mutated = False
+
+    def read_after_mutation(path: str) -> bytes | None:
+        nonlocal mutated
+        if path == "src/app/cache.py" and not mutated:
+            mutated = True
+            (project / path).write_bytes(changed)
+        return original_read(path)
+
+    monkeypatch.setattr(index.workspace, "read", read_after_mutation)
+    index.refresh()
+
+    record = index.file("src/app/cache.py")
+    assert record is not None
+    actual = blob_id(changed)
+    original = blob_id(CACHE_MODULE.encode())
+    assert record.blob == actual
+    assert cache.get(actual, analyzer.name, analyzer.version) is not None
+    assert cache.get(original, analyzer.name, analyzer.version) is None
+
+
 def test_identical_content_reuses_analysis_across_worktrees(
     project: Path, tmp_path: Path, cache: AnalysisCache, analyzer: CountingAnalyzer
 ) -> None:
@@ -239,6 +266,32 @@ def test_corrupt_index_and_cache_are_rebuilt(
 
     report = open_index(project, cache, analyzer).refresh()
     assert report.rebuilt and report.indexed == 4 and report.analyzed == 3
+
+
+def test_missing_or_malformed_derived_tables_are_rebuilt(
+    project: Path, cache: AnalysisCache, analyzer: CountingAnalyzer
+) -> None:
+    index = open_index(project, cache, analyzer)
+    index.refresh()
+    index.close()
+
+    with sqlite3.connect(index.path) as connection:
+        connection.execute("DROP TABLE facts")
+    report = open_index(project, cache, analyzer).refresh()
+    assert report.rebuilt and report.indexed == 4
+
+    cache.close()
+    with sqlite3.connect(cache.path) as connection:
+        connection.execute("DROP TABLE analyses")
+    repaired = AnalysisCache(cache.path)
+    assert repaired.get(blob_id(CACHE_MODULE.encode()), analyzer.name, analyzer.version) is None
+    repaired.put(
+        blob_id(CACHE_MODULE.encode()),
+        analyzer.name,
+        analyzer.version,
+        analyzer.analyze(CACHE_MODULE.encode()),
+    )
+    assert repaired.get(blob_id(CACHE_MODULE.encode()), analyzer.name, analyzer.version) is not None
 
 
 def test_rebuilding_the_index_never_touches_task_state(
