@@ -347,6 +347,8 @@ Use a context/token budget. Prefer approved decisions, contracts, interfaces, an
 
 Workers may request a missing skill when newly discovered work crosses an uncovered policy domain. Dynamic skill escalation never changes the worker's role authority.
 
+Skill selection itself is deterministic. V1-06 may consume normalized semantic signals through an injected classifier interface, but concrete classifier-model selection belongs to V1-07. Until then, role defaults plus repository-derived signals are a supported routing path.
+
 ---
 
 # 8. Provider and Harness Setup
@@ -537,10 +539,10 @@ At this point, the CLI exists but does not yet orchestrate real work.
 Persistent task state, shared memory, and repository fact index.
 
 ### V1-06
-Role-aware, low-cost skill discovery, routing, and context budgeting.
+Role-aware skill discovery, deterministic routing, context budgeting, and a batch-first optional classifier seam. V1-06 must work with no production classifier wired.
 
 ### V1-07
-Model registry and role thresholds.
+Model registry and role thresholds, including production model selection for the V1-06 classifier seam.
 
 ### V1-08
 Budget guardrails and access preference.
