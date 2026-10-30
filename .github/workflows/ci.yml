@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run all pytest tests
+        shell: bash
+        run: |
+          if [[ ! -f pyproject.toml ]]; then
+            if [[ -d src || -d tests ]]; then
+              echo "::error::Python source/tests exist but pyproject.toml is missing."
+              exit 1
+            fi
+
+            echo "Python project is not bootstrapped yet; pytest gate becomes active in V1-02."
+            exit 0
+          fi
+
+          uv sync --dev
+          uv run pytest

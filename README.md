@@ -22,3 +22,5 @@ Pre-alpha. The repository currently contains design docs and agent contracts onl
 
 - [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md) — product narrative and build order
 - [docs/V1_SPEC.md](docs/V1_SPEC.md) — V1 contract
+- [CONTRIBUTING.md](CONTRIBUTING.md) — branch, PR, and CI policy
+- [docs/VERSIONING.md](docs/VERSIONING.md) — semantic version-impact policy
