@@ -16,7 +16,7 @@ Reference scenario:
 2. **Configuration.** Layered config (global → project → session → task) with usable defaults. See [CONFIGURATION.md](CONFIGURATION.md).
 3. **Guided setup.** `/startup` detects harnesses and configures providers, budgets, and preferences. See [STARTUP_FLOW.md](STARTUP_FLOW.md).
 4. **Adapters.** Separate, stable interfaces for providers and harnesses. See [ARCHITECTURE.md](ARCHITECTURE.md).
-5. **Shared memory.** Persistent orchestration state: requirements, decisions, specs and their versions, tasks, findings, blockers, worker state, reviews, and artifacts. See [MEMORY.md](MEMORY.md).
+5. **Shared memory and repository facts.** Persist orchestration state plus a reusable, incremental repository fact index for cheap task inspection. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
 7. **Model registry and role floors.** Capability-scored models; each role has a minimum reasoning tier. See [ROUTING.md](ROUTING.md).
 8. **Budget guardrails.** Hard limits enforced in code before each paid call. See [ROUTING.md](ROUTING.md#cost-guardrails).

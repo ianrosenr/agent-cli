@@ -13,7 +13,7 @@ The orchestrator does **not** choose skill names and does not need skill bodies 
 Instead:
 
 1. The orchestrator decomposes the request and assigns each subtask a role.
-2. Deterministic repository inspection derives facts available from code and files.
+2. Repository inspection reads cached structural facts from the Repository Fact Index; see [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 3. One cheap System-1-style classifier batches the subtasks and maps their compact context to normalized routing signals.
 4. Deterministic code maps role defaults and signals to skills.
 5. Only selected `SKILL.md` bodies enter worker context.
@@ -108,7 +108,7 @@ Signals are not literal prompt keywords and are not skill names.
 
 The signal vocabulary comes from the effective routing policy. The classifier emits only values from that vocabulary.
 
-Deterministic repository inspection SHOULD derive signals without a model when the evidence is clear. Examples:
+The Repository Fact Index SHOULD derive signals without a model when structural evidence is clear. Examples:
 
 - migration files -> `migration`
 - HTTP route definitions -> `http_api`

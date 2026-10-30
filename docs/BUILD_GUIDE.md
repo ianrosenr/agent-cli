@@ -521,10 +521,10 @@ At this point, the CLI exists but does not yet orchestrate real work.
 ## Phase 2 — Intelligence foundation
 
 ### V1-05
-Persistent task state and shared memory.
+Persistent task state, shared memory, and repository fact index.
 
 ### V1-06
-Role-aware skill discovery, routing, and context budgeting.
+Role-aware, low-cost skill discovery, routing, and context budgeting.
 
 ### V1-07
 Model registry and role thresholds.
