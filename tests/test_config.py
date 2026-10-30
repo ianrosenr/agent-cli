@@ -9,7 +9,7 @@ import yaml
 from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
 from agent_cli.config.model import CostConfig
 from agent_cli.config.schema import ordered, to_raw
-from agent_cli.config.service import FILE_HEADER
+from agent_cli.config.service import FILE_HEADER, CostOrderError
 
 CANONICAL_DEFAULTS = yaml.safe_load(
     """
@@ -249,22 +249,34 @@ def test_credential_references_are_accepted(service: ConfigService, paths: Confi
     assert config.harnesses["pi"].enabled is True
 
 
+GENEROUS_GLOBAL_COST = {
+    "monthly_limit_usd": 100.0,
+    "daily_limit_usd": 50.0,
+    "per_task_limit_usd": 5.0,
+    "per_call_limit_usd": 5.0,
+}
+
+
+def set_layer(service: ConfigService, paths: ConfigPaths, layer: str, data: Any) -> Config:
+    """Apply ``data`` as the given layer and resolve."""
+    if layer == "project":
+        write(paths.project_file, data)
+        return service.resolve()
+    if layer == "session":
+        service.set_session(data)
+        return service.resolve()
+    return service.resolve(task=data)
+
+
 @pytest.mark.parametrize("layer", ["project", "session", "task"])
 @pytest.mark.parametrize("key", list(to_raw(CostConfig())))
 def test_more_specific_layers_cannot_raise_cost_ceilings(
     service: ConfigService, paths: ConfigPaths, layer: str, key: str
 ) -> None:
-    write(paths.global_file, {"cost": {key: 5.0}})
-    override = {"cost": {key: 5.01}}
-    with pytest.raises(ConfigError, match=r"above the global limit of \$5\.00") as caught:
-        if layer == "project":
-            write(paths.project_file, override)
-            service.resolve()
-        elif layer == "session":
-            service.set_session(override)
-            service.resolve()
-        else:
-            service.resolve(task=override)
+    write(paths.global_file, {"cost": GENEROUS_GLOBAL_COST})
+    limit = GENEROUS_GLOBAL_COST[key]
+    with pytest.raises(ConfigError, match=rf"above the global limit of \${limit:.2f}") as caught:
+        set_layer(service, paths, layer, {"cost": {key: limit + 0.01}})
     assert caught.value.key == f"cost.{key}"
     assert caught.value.source.startswith(layer)
 
@@ -282,34 +294,146 @@ def test_more_specific_layers_may_lower_cost_ceilings(
     )
 
 
+def test_session_cannot_raise_a_limit_above_the_project_limit(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.project_file, {"cost": {"monthly_limit_usd": 10}})
+    service.set_session({"cost": {"monthly_limit_usd": 15}})
+    with pytest.raises(ConfigError, match=r"above the project limit of \$10\.00") as caught:
+        service.resolve()
+    assert caught.value.source == "session overrides"
+    assert caught.value.key == "cost.monthly_limit_usd"
+
+
+def test_task_cannot_raise_a_limit_above_the_session_limit(service: ConfigService) -> None:
+    service.set_session({"cost": {"per_task_limit_usd": 0.5}})
+    with pytest.raises(ConfigError, match=r"above the session limit of \$0\.50") as caught:
+        service.resolve(task={"cost": {"per_task_limit_usd": 0.75}})
+    assert caught.value.source == "task overrides"
+
+
+def test_task_cannot_raise_a_limit_above_the_project_limit_through_an_empty_session(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.project_file, {"cost": {"per_call_limit_usd": 0.1}})
+    with pytest.raises(ConfigError, match=r"above the project limit of \$0\.10"):
+        service.resolve(task={"cost": {"per_call_limit_usd": 0.2}})
+
+
 def test_ceiling_is_the_default_when_global_sets_none(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     write(paths.project_file, {"cost": {"monthly_limit_usd": 25}})
-    with pytest.raises(ConfigError, match=r"above the global limit of \$20\.00"):
+    with pytest.raises(ConfigError, match=r"above the default limit of \$20\.00"):
         service.resolve()
 
 
-def test_more_specific_layers_cannot_remove_a_global_limit(
-    service: ConfigService, paths: ConfigPaths
+@pytest.mark.parametrize(
+    ("layers", "message"),
+    [
+        ({"project": {"monthly_limit_usd": None}}, "cannot remove the default limit of $20.00"),
+        (
+            {"global": {"monthly_limit_usd": 30}, "project": {"monthly_limit_usd": None}},
+            "cannot remove the global limit of $30.00",
+        ),
+        (
+            {"project": {"per_task_limit_usd": 0.5}, "session": {"per_task_limit_usd": None}},
+            "cannot remove the project limit of $0.50",
+        ),
+    ],
+)
+def test_more_specific_layers_cannot_remove_a_limit(
+    service: ConfigService, paths: ConfigPaths, layers: dict[str, Any], message: str
 ) -> None:
-    write(paths.project_file, {"cost": {"monthly_limit_usd": None}})
-    with pytest.raises(ConfigError, match="cannot remove the global limit"):
+    if "global" in layers:
+        write(paths.global_file, {"cost": layers["global"]})
+    if "project" in layers:
+        write(paths.project_file, {"cost": layers["project"]})
+    if "session" in layers:
+        service.set_session({"cost": layers["session"]})
+    with pytest.raises(ConfigError) as caught:
         service.resolve()
+    assert message in caught.value.problem
 
 
 def test_unlimited_global_allows_any_specific_limit(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     write(paths.global_file, {"cost": {"daily_limit_usd": None}})
-    write(paths.project_file, {"cost": {"daily_limit_usd": 1000}})
-    assert service.resolve().cost.daily_limit_usd == 1000.0
+    write(paths.project_file, {"cost": {"daily_limit_usd": 15}})
+    assert service.resolve().cost.daily_limit_usd == 15.0
 
 
 def test_global_config_may_raise_limits(service: ConfigService, paths: ConfigPaths) -> None:
     write(paths.global_file, {"cost": {"monthly_limit_usd": 100}})
     write(paths.project_file, {"cost": {"monthly_limit_usd": 50}})
     assert service.resolve().cost.monthly_limit_usd == 50.0
+
+
+@pytest.mark.parametrize(
+    ("cost", "key", "message"),
+    [
+        (
+            {"monthly_limit_usd": 0.5},
+            "cost.monthly_limit_usd",
+            "the per-task limit ($1.00) cannot be above the monthly limit ($0.50)",
+        ),
+        (
+            {"per_task_limit_usd": 25},
+            "cost.per_task_limit_usd",
+            "the per-task limit ($25.00) cannot be above the monthly limit ($20.00)",
+        ),
+        (
+            {"per_call_limit_usd": 2},
+            "cost.per_call_limit_usd",
+            "the per-call limit ($2.00) cannot be above the per-task limit ($1.00)",
+        ),
+        (
+            {"daily_limit_usd": 0.1},
+            "cost.daily_limit_usd",
+            "the per-call limit ($0.30) cannot be above the daily limit ($0.10)",
+        ),
+        (
+            {"daily_limit_usd": 30},
+            "cost.daily_limit_usd",
+            "the daily limit ($30.00) cannot be above the monthly limit ($20.00)",
+        ),
+    ],
+)
+def test_contradictory_cost_limits_are_rejected(
+    service: ConfigService, paths: ConfigPaths, cost: dict[str, Any], key: str, message: str
+) -> None:
+    write(paths.global_file, {"cost": cost})
+    with pytest.raises(CostOrderError) as caught:
+        service.resolve()
+    assert caught.value.source == f"global config ({paths.global_file})"
+    assert caught.value.key == key
+    assert caught.value.problem == message
+
+
+def test_lowering_a_limit_below_an_inherited_narrower_one_is_rejected(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.project_file, {"cost": {"monthly_limit_usd": 0.5}})
+    with pytest.raises(CostOrderError, match="per-task limit") as caught:
+        service.resolve()
+    assert caught.value.source.startswith("project config")
+
+
+@pytest.mark.parametrize(
+    "cost",
+    [
+        {"monthly_limit_usd": None, "per_task_limit_usd": 500, "per_call_limit_usd": 100},
+        {"per_task_limit_usd": None, "per_call_limit_usd": 10},
+        {"daily_limit_usd": 0.5},
+        {"daily_limit_usd": 1.0, "per_task_limit_usd": 2.0},
+    ],
+)
+def test_consistent_or_unlimited_cost_limits_are_accepted(
+    service: ConfigService, paths: ConfigPaths, cost: dict[str, Any]
+) -> None:
+    write(paths.global_file, {"cost": cost})
+    service.resolve()
 
 
 def test_save_persists_and_reloads(service: ConfigService, paths: ConfigPaths) -> None:
@@ -343,7 +467,7 @@ def test_save_merges_into_existing_layer_in_schema_order(
 def test_save_rejects_invalid_changes_without_writing(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    with pytest.raises(ConfigError, match="above the global limit"):
+    with pytest.raises(ConfigError, match="above the default limit"):
         service.save(Layer.PROJECT, {"cost": {"monthly_limit_usd": 999}})
     with pytest.raises(ConfigError, match="unknown key"):
         service.save(Layer.GLOBAL, {"agents": {"max_parallel": 2}})

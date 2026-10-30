@@ -14,6 +14,7 @@ from typing import Any
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
 from agent_cli.config.model import ACCESS_KINDS, IMPLEMENTATION_MODES
 from agent_cli.config.schema import merge, to_raw
+from agent_cli.config.service import CostOrderError
 
 type ReadLine = Callable[[str], str]
 type WriteLine = Callable[[str], None]
@@ -109,6 +110,9 @@ SKILL_LOCATIONS = (
     "Add extra skill directories below, separated by commas."
 )
 
+BUDGET_KEYS = ("cost.monthly_limit_usd", "cost.per_task_limit_usd", "cost.per_call_limit_usd")
+"""Asked consecutively, in this order, and checked against each other as a group."""
+
 SETTINGS: tuple[Setting, ...] = (
     Setting(
         "access.preference",
@@ -174,6 +178,13 @@ def nested(key: str, value: Any) -> RawConfig:
     return {head: nested(rest, value) if rest else value}
 
 
+def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
+    """``layer_data`` with every answer so far applied."""
+    for key, value in answers.items():
+        layer_data = merge(layer_data, nested(key, value))
+    return layer_data
+
+
 def default_status(config: Config) -> list[str]:
     def names(entries: Mapping[str, Any]) -> str:
         return ", ".join(sorted(entries)) or "none"
@@ -214,11 +225,22 @@ class GuidedSetup:
         self.write_line("\n".join(self.harness_provider_status(self.service.resolve())))
 
         answers: RawConfig = {}
-        for setting in SETTINGS:
+        index = 0
+        while index < len(SETTINGS):
+            setting = SETTINGS[index]
             if setting.intro:
                 self.write_line("")
                 self.write_line(setting.intro)
-            answers[setting.key] = self.ask(setting, lookup(base, setting.key), target, layer_data)
+            current = answers.get(setting.key, lookup(base, setting.key))
+            answers[setting.key] = self.ask(setting, current, target, layer_data, answers)
+            index += 1
+            if setting.key == BUDGET_KEYS[-1]:
+                # Budget limits must agree with each other, which can only be judged once all
+                # of them are answered. On a conflict, ask them again with the answers as defaults.
+                problem = self.check(target, propose(layer_data, answers))
+                if problem is not None:
+                    self.write_line(f"  {problem}. Enter the budget limits again.")
+                    index = [s.key for s in SETTINGS].index(BUDGET_KEYS[0])
 
         changes = self.changes(target, base, answers)
         self.write_line("")
@@ -250,7 +272,14 @@ class GuidedSetup:
                 return Layer(answer)
             self.write_line("  Enter global or project.")
 
-    def ask(self, setting: Setting, current: Any, target: Layer, layer_data: RawConfig) -> Any:
+    def ask(
+        self,
+        setting: Setting,
+        current: Any,
+        target: Layer,
+        layer_data: RawConfig,
+        answers: RawConfig,
+    ) -> Any:
         while True:
             answer = self.read_line(f"{setting.label} [{setting.format(current)}]: ").strip()
             try:
@@ -258,15 +287,26 @@ class GuidedSetup:
             except InvalidAnswer as error:
                 self.write_line(f"  {error}")
                 continue
-            problem = self.check(target, merge(layer_data, nested(setting.key, value)))
+            proposed = propose(layer_data, {**answers, setting.key: value})
+            problem = self.check(target, proposed, defer_budget_order=setting.key in BUDGET_KEYS)
             if problem is None:
                 return value
             self.write_line(f"  {problem}")
 
-    def check(self, target: Layer, layer_data: RawConfig) -> str | None:
-        """Validate a proposed layer against every other layer; return the problem, if any."""
+    def check(
+        self, target: Layer, layer_data: RawConfig, *, defer_budget_order: bool = False
+    ) -> str | None:
+        """Validate a proposed layer against every other layer; return the problem, if any.
+
+        With ``defer_budget_order``, budget limits that contradict each other are allowed for
+        now, because the user may not have reached the other limit yet.
+        """
         try:
             self.service.resolve(through=Layer.PROJECT, replace={target: layer_data})
+        except CostOrderError as error:
+            if defer_budget_order:
+                return None
+            return error.problem if error.source == self.service.source(target) else str(error)
         except ConfigError as error:
             return error.problem if error.source == self.service.source(target) else str(error)
         return None

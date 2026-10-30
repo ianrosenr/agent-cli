@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from agent_cli.commands import CommandContext, build_registry
-from agent_cli.config import Config, ConfigPaths, ConfigService, Layer
+from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
 from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup
 
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
@@ -198,7 +198,7 @@ def test_project_cost_cannot_exceed_global_and_is_asked_again(
     answers.insert(index + 1, "10")
     result, conversation = run(service, "project", *answers, "")
     assert result.startswith("Settings saved")
-    assert "$50.00 is above the global limit of $20.00" in conversation.transcript
+    assert "$50.00 is above the default limit of $20.00" in conversation.transcript
     assert load(paths.project_file) == {"cost": {"monthly_limit_usd": 10.0}}
 
 
@@ -213,6 +213,54 @@ def test_lowering_global_below_a_project_limit_is_rejected(
     assert "project config" in conversation.transcript
     assert "above the global limit of $0.50" in conversation.transcript
     assert ConfigService(paths).resolve().cost.per_task_limit_usd == 0.8
+
+
+def budget_answers(*rounds: tuple[str, str, str]) -> list[str]:
+    """Answers with the three budget prompts filled in once per round."""
+    keys = [s.key for s in SETTINGS]
+    start = keys.index("cost.monthly_limit_usd")
+    answers = [""] * len(SETTINGS)
+    answers[start : start + 3] = [answer for round in rounds for answer in round]
+    return answers
+
+
+def test_budget_limits_can_be_lowered_in_any_prompt_order(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    result, conversation = run(service, "global", *budget_answers(("0.5", "0.25", "0.1")), "")
+    assert result.startswith("Settings saved")
+    assert "cannot be above" not in conversation.transcript
+    cost = ConfigService(paths).resolve().cost
+    assert (cost.monthly_limit_usd, cost.per_task_limit_usd, cost.per_call_limit_usd) == (
+        0.5,
+        0.25,
+        0.1,
+    )
+
+
+def test_contradictory_budget_limits_are_asked_again_with_answers_as_defaults(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    answers = budget_answers(("0.5", "", ""), ("", "0.4", ""))
+    result, conversation = run(service, "global", *answers, "")
+    assert result.startswith("Settings saved")
+    assert (
+        "  the per-task limit ($1.00) cannot be above the monthly limit ($0.50). "
+        "Enter the budget limits again." in conversation.output
+    )
+    assert conversation.prompts.count("Monthly paid-API limit [$0.50]: ") == 1
+    assert "Per-task paid-API limit [$1.00]: " in conversation.prompts
+    cost = ConfigService(paths).resolve().cost
+    assert (cost.monthly_limit_usd, cost.per_task_limit_usd) == (0.5, 0.4)
+
+
+def test_project_budget_cannot_exceed_a_lowered_project_limit_in_session(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    run(service, "project", *budget_answers(("10", "", "")), "")
+    service.set_session({"cost": {"monthly_limit_usd": 12}})
+    with pytest.raises(ConfigError, match=r"above the project limit of \$10\.00"):
+        service.resolve()
 
 
 @pytest.mark.parametrize(

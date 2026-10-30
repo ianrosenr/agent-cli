@@ -11,7 +11,14 @@ task     set by the orchestrator or user for one task
 
 The most specific layer wins: global → project → session → task. A key absent from a layer inherits from the layer above. Defaults apply when no layer sets a key.
 
-A project, session, or task layer may **lower** a cost limit but may not raise one above the global limit, or remove a global limit by setting it to `null`. The global limit is the global file's value, or the default when the global file does not set it. Only global config may raise or remove limits. This rule is enforced in code when configuration is resolved.
+Cost limits only tighten. Each layer after global may **lower** a cost limit but may not raise it above, or remove (`null`), the limit in effect from the layers above it: project ≤ global, session ≤ project, task ≤ session. Where a layer does not set a limit, the nearest layer above that does applies, ending at the built-in default. Only global config may raise or remove limits.
+
+Cost limits must also agree with each other, where `null` means no limit:
+
+- per-call ≤ per-task ≤ monthly
+- per-call ≤ daily ≤ monthly
+
+Per-task and daily limits are not compared, because one task can span several days. Both rules are enforced in code when configuration is resolved; errors name the layer that introduced the conflict.
 
 Session and task layers are in-memory override mappings with the same schema as the files.
 

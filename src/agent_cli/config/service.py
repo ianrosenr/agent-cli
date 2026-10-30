@@ -2,6 +2,9 @@
 
 Layers, least to most specific: built-in defaults → global → project → session → task. Global
 and project layers are YAML files; session and task layers are in-memory override mappings.
+
+Cost limits only tighten: each layer after global may lower, but not raise or remove, the limits
+in effect from the layers above it. Limits must also agree with each other (see ``COST_ORDER``).
 """
 
 from __future__ import annotations
@@ -115,13 +118,31 @@ def write_yaml(path: Path, data: Mapping[str, Any], source: str) -> None:
         raise ConfigError(source, None, f"cannot write file: {error.strerror or error}") from error
 
 
-def check_cost_ceilings(ceiling: CostConfig, layer: Mapping[str, Any], source: str) -> None:
-    """More-specific layers may lower cost limits, but never raise them above global limits."""
+type Ceilings = dict[str, tuple[float | None, str]]
+"""Each cost key's limit in effect so far, and the layer it came from."""
+
+COST_ORDER: tuple[tuple[str, str], ...] = (
+    ("per_call_limit_usd", "per_task_limit_usd"),
+    ("per_task_limit_usd", "monthly_limit_usd"),
+    ("per_call_limit_usd", "daily_limit_usd"),
+    ("daily_limit_usd", "monthly_limit_usd"),
+)
+"""Pairs ``(smaller, larger)``: a limit must not exceed the broader limit containing it.
+Per-task and daily limits are not compared, because one task can span several days."""
+
+
+class CostOrderError(ConfigError):
+    """Cost limits that contradict each other, such as a per-task limit above the monthly one."""
+
+
+def check_cost_ceilings(ceilings: Ceilings, layer: Mapping[str, Any], source: str) -> None:
+    """A more-specific layer may lower a cost limit, but never raise or remove the limit in
+    effect from the layers above it."""
     cost = layer.get("cost", {})
     for key in COST_KEYS:
         if key not in cost:
             continue
-        limit = getattr(ceiling, key)
+        limit, origin = ceilings[key]
         value = cost[key]
         if limit is None:
             continue
@@ -129,16 +150,37 @@ def check_cost_ceilings(ceiling: CostConfig, layer: Mapping[str, Any], source: s
             raise ConfigError(
                 source,
                 f"cost.{key}",
-                f"cannot remove the global limit of ${limit:.2f}; "
-                "only global config may raise or remove cost limits",
+                f"cannot remove the {origin} limit of ${limit:.2f}; "
+                "more-specific config may only lower cost limits",
             )
         if value > limit:
             raise ConfigError(
                 source,
                 f"cost.{key}",
-                f"${value:.2f} is above the global limit of ${limit:.2f}; "
-                "only global config may raise cost limits",
+                f"${value:.2f} is above the {origin} limit of ${limit:.2f}; "
+                "more-specific config may only lower cost limits",
             )
+
+
+def check_cost_order(cost: CostConfig, layer: Mapping[str, Any], source: str) -> None:
+    """Reject contradictory limits introduced by ``layer``. ``None`` means no limit."""
+    touched = layer.get("cost", {})
+    for smaller, larger in COST_ORDER:
+        if smaller not in touched and larger not in touched:
+            continue
+        low, high = getattr(cost, smaller), getattr(cost, larger)
+        if low is None or high is None or low <= high:
+            continue
+        key = larger if larger in touched else smaller
+        raise CostOrderError(
+            source,
+            f"cost.{key}",
+            f"{label(smaller)} (${low:.2f}) cannot be above {label(larger)} (${high:.2f})",
+        )
+
+
+def label(key: str) -> str:
+    return "the " + key.removesuffix("_limit_usd").replace("_", "-") + " limit"
 
 
 @dataclass(slots=True)
@@ -182,7 +224,7 @@ class ConfigService:
             Layer.TASK: task or {},
         }
         merged: RawConfig = to_raw(Config())
-        ceiling: CostConfig | None = None
+        ceilings: Ceilings = {key: (value, "default") for key, value in merged["cost"].items()}
         for layer in order[1 : order.index(through) + 1]:
             data = replace.get(layer)
             if data is None:
@@ -191,11 +233,12 @@ class ConfigService:
                     data = self.read(layer)
             source = self.source(layer)
             validate_layer(Config, data, source)
-            if ceiling is not None:
-                check_cost_ceilings(ceiling, data, source)
+            if layer is not Layer.GLOBAL:
+                check_cost_ceilings(ceilings, data, source)
             merged = merge(merged, data)
-            if layer is Layer.GLOBAL:
-                ceiling = build(Config, merged).cost
+            check_cost_order(build(CostConfig, merged["cost"]), data, source)
+            for key, value in data.get("cost", {}).items():
+                ceilings[key] = (value, layer.value)
         return build(Config, merged)
 
     def save(self, layer: Layer, changes: Mapping[str, Any]) -> Path:
