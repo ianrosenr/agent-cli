@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from agent_cli import __version__
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
+from agent_cli.config import ConfigError, ConfigPaths, ConfigService
 from agent_cli.startup import render_startup, supports_color
 
 PROMPT = "> "
@@ -34,10 +35,16 @@ def handle_input(line: str, context: CommandContext) -> str | None:
 
 
 def run_shell(
-    registry: CommandRegistry, read_line: ReadLine, write_line: WriteLine, startup: str
+    registry: CommandRegistry,
+    read_line: ReadLine,
+    write_line: WriteLine,
+    startup: str,
+    config: ConfigService | None = None,
 ) -> int:
     """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
-    context = CommandContext(registry=registry)
+    context = CommandContext(
+        registry=registry, config=config, read_line=read_line, write_line=write_line
+    )
     write_line(startup)
     while True:
         try:
@@ -66,11 +73,24 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     """Console entry point for ``agent-cli`` and ``python -m agent_cli``."""
     parse_args(argv)
+    config = ConfigService(ConfigPaths.discover())
     try:
         startup = render_startup(color=supports_color(sys.stdout))
-        return run_shell(build_registry(), terminal_reader(), print, startup)
+        problem = config_problem(config)
+        if problem:
+            startup += f"\n{problem}\n"
+        return run_shell(build_registry(), terminal_reader(), print, startup, config)
     except KeyboardInterrupt:
         return 130
+
+
+def config_problem(config: ConfigService) -> str | None:
+    """Report invalid configuration up front instead of silently ignoring it."""
+    try:
+        config.resolve()
+    except ConfigError as error:
+        return f"Configuration error: {error}"
+    return None
 
 
 def terminal_reader() -> ReadLine:

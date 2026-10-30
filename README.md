@@ -8,7 +8,7 @@ Describe a goal in natural language. Agent CLI inspects the repo, plans and revi
 
 ## Status
 
-Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell whose slash commands are placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
+Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell with layered configuration and a guided `/startup` setup; most other slash commands are still placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
 
 ## Development
 

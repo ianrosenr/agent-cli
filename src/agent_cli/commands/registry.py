@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent_cli.config import ConfigService
 
 SLASH = "/"
 
@@ -35,6 +39,12 @@ class CommandContext:
     """What a handler may use. Later issues add application services here."""
 
     registry: CommandRegistry
+    config: ConfigService | None = None
+    """Configuration service; ``None`` when the shell runs without configuration."""
+    read_line: Callable[[str], str] = input
+    """Prompts for a line of input, for commands that ask follow-up questions."""
+    write_line: Callable[[str], None] = print
+    """Shows a line of output before the command returns its final response."""
 
 
 class ExitShell(Exception):

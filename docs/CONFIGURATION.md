@@ -11,7 +11,16 @@ task     set by the orchestrator or user for one task
 
 The most specific layer wins: global → project → session → task. A key absent from a layer inherits from the layer above. Defaults apply when no layer sets a key.
 
-A project or task layer may **lower** a cost limit but may not raise one above the global limit.
+Cost limits only tighten. Each layer after global may **lower** a cost limit but may not raise it above, or remove (`null`), the limit in effect from the layers above it: project ≤ global, session ≤ project, task ≤ session. Where a layer does not set a limit, the nearest layer above that does applies, ending at the built-in default. Only global config may raise or remove limits.
+
+Cost limits must also agree with each other, where `null` means no limit:
+
+- per-call ≤ per-task ≤ monthly
+- per-call ≤ daily ≤ monthly
+
+Per-task and daily limits are not compared, because one task can span several days. Both rules are enforced in code when configuration is resolved; errors name the layer that introduced the conflict.
+
+Session and task layers are in-memory override mappings with the same schema as the files.
 
 ## Defaults
 
@@ -76,6 +85,21 @@ providers:
 
 Values come from environment variables or the OS credential store.
 
+Like other sections, provider and harness entries merge by key across layers, so a project can change one field of a provider defined globally (for example `enabled: false`). Required fields such as a provider's `type` must be present once all layers are merged.
+
 ## Validation
 
-Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them.
+Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them. Keys that look like secret values (`api_key`, `token`, `password`, …) are rejected with a pointer to `api_key_env` / `api_key_keyring`.
+
+## Writing
+
+`/startup` writes to the layer the user chooses:
+
+- **global** records every setting the flow asks about, so the file describes the user's full baseline.
+- **project** records only settings that differ from what the project would inherit from global config. Setting a project value back to the inherited value removes the project override, so the project keeps following global changes.
+
+Keys `/startup` does not manage (providers, harnesses, routing, …) are preserved, but the file is rewritten from its values: comments other than the generated header are not kept.
+
+Writes are atomic (temporary file + rename), create parent directories, and are validated against every other layer first. A symlinked config file is written through to its target, and an existing file keeps its permissions.
+
+Saving the **project** layer also git-ignores that project's runtime directories (`.agent-cli/state/` and the worktree directory). Saving global config never modifies the repository you happen to be in.
