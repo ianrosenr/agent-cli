@@ -524,7 +524,7 @@ At this point, the CLI exists but does not yet orchestrate real work.
 Persistent task state and shared memory.
 
 ### V1-06
-Skills, buckets, and context budgeting.
+Role-aware skill discovery, routing, and context budgeting.
 
 ### V1-07
 Model registry and role thresholds.
@@ -601,7 +601,6 @@ These belong in enhancement issues.
 ---
 
 # 17. Definition of V1 Success
- Definition of V1 Success
 
 V1 is successful when a developer can enter a repository, start Agent CLI, and say something like:
 
