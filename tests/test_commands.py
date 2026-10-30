@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 
 from agent_cli.commands import (
@@ -11,6 +14,7 @@ from agent_cli.commands import (
 )
 from agent_cli.commands.builtin import help_command
 from agent_cli.commands.registry import parse_command
+from agent_cli.state import TaskStatus, TaskStore
 
 REQUIRED_COMMANDS = {
     "help",
@@ -91,7 +95,7 @@ def test_dispatch_calls_handler_with_args() -> None:
     assert calls == ["hello world"]
 
 
-IMPLEMENTED_COMMANDS = {"help", "exit", "startup", "providers"}
+IMPLEMENTED_COMMANDS = {"help", "exit", "startup", "providers", "status"}
 
 
 @pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - IMPLEMENTED_COMMANDS))
@@ -121,10 +125,49 @@ def test_startup_is_listed_as_available_in_help(context: CommandContext) -> None
     assert "/startup" in available
 
 
-def test_status_remains_owned_by_v1_05(context: CommandContext) -> None:
-    command = context.registry.get("status")
-    assert command is not None and command.planned_in == "V1-05"
-    assert context.registry.dispatch("/status", context).endswith("arrives in V1-05.")
+def test_status_without_task_state_reports_no_active_task(
+    context: CommandContext, tmp_path: Path
+) -> None:
+    assert context.registry.dispatch("/status", context) == "No active task."
+    store = TaskStore(tmp_path / "tasks.sqlite")
+    with_store = replace(context, tasks=store)
+    assert with_store.registry.dispatch("/status", with_store) == "No active task."
+    assert not store.exists()
+
+
+def test_status_shows_the_persisted_task_tree_pins_and_blockers(
+    context: CommandContext, tmp_path: Path
+) -> None:
+    store = TaskStore(tmp_path / "tasks.sqlite")
+    session = store.start_session("cache expiration")
+    parent = store.create_task(session.id, "Add expiration support", role="orchestrator")
+    store.set_status(parent.id, TaskStatus.IN_PROGRESS)
+    child = store.create_task(session.id, "Implement TTL", parent_id=parent.id, role="implementer")
+    store.pin(child.id, "model", "claude-opus-5-5")
+    store.pin(child.id, "harness", "pi")
+    store.add_spec_version(child.id, "spec")
+    store.add_blocker(child.id, "Choose the default TTL")
+    store.close()
+
+    restarted = replace(context, tasks=TaskStore(tmp_path / "tasks.sqlite"))
+    lines = restarted.registry.dispatch("/status", restarted).splitlines()
+    assert lines[0].startswith(f"Session {session.id}: cache expiration (open")
+    assert f"  [in_progress] Add expiration support ({parent.id}) · role: orchestrator" in lines
+    assert (
+        f"    [pending] Implement TTL ({child.id}) · role: implementer"
+        " · pinned: model=claude-opus-5-5, harness=pi · spec v1 pending"
+    ) in lines
+    assert lines[-2:] == ["Blockers:", f"  {child.id}: Choose the default TTL (waiting on user)"]
+    assert not any("session_started" in line for line in lines)
+
+
+def test_status_reports_unreadable_task_state(context: CommandContext, tmp_path: Path) -> None:
+    path = tmp_path / "tasks.sqlite"
+    path.write_bytes(b"garbage" * 100)
+    broken = replace(context, tasks=TaskStore(path))
+    output = broken.registry.dispatch("/status", broken)
+    assert output.startswith("Cannot read task state:")
+    assert path.read_bytes() == b"garbage" * 100
 
 
 def test_exit_command_signals_shell_exit(context: CommandContext) -> None:

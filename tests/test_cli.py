@@ -82,7 +82,7 @@ def test_first_input_is_a_task_with_no_mode_selection() -> None:
 def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
     output: list[str] = []
     code = cli.run_shell(
-        build_registry(), scripted("", "/status", "/bogus", "hi"), output.append, STARTUP
+        build_registry(), scripted("", "/budget", "/bogus", "hi"), output.append, STARTUP
     )
 
     assert code == 0
@@ -202,5 +202,11 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.config.service",
         "agent_cli.guided_setup",
         "agent_cli.startup",
+        "agent_cli.state",
+        "agent_cli.state.migrations",
+        "agent_cli.state.models",
+        "agent_cli.state.paths",
+        "agent_cli.state.status",
+        "agent_cli.state.task_store",
         "agent_cli.terms",
     }

@@ -491,3 +491,27 @@ V1 does not require:
 - an agent that explores the repository just to choose skills
 
 Those can be added when evaluation shows they pay for their complexity.
+
+## V1 implementation
+
+`agent_cli.repository` implements V1-05's part of this design:
+
+| Responsibility | Module |
+| --- | --- |
+| Working-tree files and current-content blob IDs | `git.py` (`GitWorkspace`) |
+| Path, manifest, and import-signal classification | `classify.py` |
+| Pluggable analyzer interface | `analyzers.py` (`Analyzer`, `AnalyzerSet`) |
+| Python structure via the standard-library `ast` | `python_analyzer.py` |
+| Global `blob + analyzer + version` cache | `analysis_cache.py` |
+| Project index, incremental refresh, relationships | `index.py` (`RepositoryIndex`) |
+| Lexical search: FTS5, with a deterministic substring fallback | `search.py` |
+| Anchor-based task inspection for V1-06 | `inspection.py` (`TaskInspector`, `RepositoryFacts`) |
+
+Notes:
+
+- Clean tracked files use Git's blob ID. Dirty tracked files and non-ignored untracked files are hashed the way `git hash-object` hashes them. Ignored files, `.git/`, `.agent-cli/`, symlinks, and submodules are never indexed.
+- Generated/vendored, binary, and files larger than 1 MiB keep path facts but are neither analyzed nor searched.
+- Changing an analyzer's `version` re-analyzes only that analyzer's files. Changing `INDEX_SCHEMA` or `CLASSIFIER_VERSION` rebuilds the project index, and the global cache still serves unchanged content. Neither change ever touches `tasks.sqlite`.
+- `TaskInspector.inspect(Anchors(...))` refreshes the index incrementally, ranks files by their strongest evidence (explicit file → explicit symbol → module → exact identifier → changed file → direct neighbor → related test → lexical → weak neighbor). Extra reasons only break ties and never lift a file past a stronger kind of evidence. Expansion is one hop. Anchor files (explicit, module, changed) expand up to 8 neighbors of each kind (tests first, then dependencies, then dependents), so a widely imported module keeps its tests. Files found only by mention or lexical match expand one neighbor of each kind. Unmatched anchors are returned in `unresolved`; anchors that matched more than was kept (large directories, common symbol names) are listed in `capped`; every result carries analyzer and index versions, so inspection misses can be diagnosed.
+- SQLite failures surface as `RepositoryError`. A lock held by another process is never treated as corruption, so neither database is discarded because of it. If the global cache is unavailable, lookups miss and writes are skipped.
+- Indexing runs only when something asks for inspection; starting the CLI never builds or refreshes the index.
