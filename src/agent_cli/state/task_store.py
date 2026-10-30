@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from agent_cli.adapters import WorkerStatus
 from agent_cli.state.migrations import MIGRATIONS, Migration, MigrationError, migrate
 from agent_cli.state.models import (
     PIN_KINDS,
@@ -538,13 +539,14 @@ class TaskStore:
         self,
         task_id: str,
         role: str,
-        status: str,
+        status: WorkerStatus,
         model: str | None = None,
         provider: str | None = None,
         harness: str | None = None,
         worktree: str | None = None,
     ) -> Worker:
         """Reference a worker. Its conversation is never stored, only its normalized state."""
+        status = normalize_worker_status(status)
         now = self._clock()
         worker = Worker(
             new_id("worker"), task_id, role, model, provider, harness, worktree, status, now, now
@@ -559,8 +561,10 @@ class TaskStore:
             self._event(db, session_id, task_id, "worker_recorded", worker.id, status=status)
         return worker
 
-    def update_worker(self, worker_id: str, status: str | None = None) -> None:
+    def update_worker(self, worker_id: str, status: WorkerStatus | None = None) -> None:
         """Record a heartbeat and, optionally, a new status."""
+        if status is not None:
+            status = normalize_worker_status(status)
         with self._write() as db:
             row = db.execute(
                 "SELECT task_id, status FROM workers WHERE id = ?", (worker_id,)
@@ -767,6 +771,13 @@ def rollback(db: sqlite3.Connection) -> None:
         db.execute("ROLLBACK")
 
 
+def normalize_worker_status(status: WorkerStatus) -> WorkerStatus:
+    try:
+        return WorkerStatus(status)
+    except ValueError as error:
+        raise TaskStateError(f"unknown worker status: {status}") from error
+
+
 def changed(db: sqlite3.Connection, sql: str, *params: Any) -> bool:
     return db.execute(sql, params).rowcount > 0
 
@@ -834,7 +845,7 @@ def to_pin(row: sqlite3.Row) -> Pin:
 
 
 def to_worker(row: sqlite3.Row) -> Worker:
-    return record(Worker, row)
+    return record(Worker, row, status=WorkerStatus(row["status"]))
 
 
 def to_finding(row: sqlite3.Row) -> Finding:
