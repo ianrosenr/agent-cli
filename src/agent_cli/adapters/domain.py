@@ -92,12 +92,15 @@ READINESS_LABELS: dict[ReadinessState, str] = {
 
 BLOCKING_ERRORS: dict[ReadinessState, ErrorKind] = {
     ReadinessState.NOT_DETECTED: ErrorKind.NOT_FOUND,
+    ReadinessState.DETECTED: ErrorKind.UNAVAILABLE,
     ReadinessState.AUTH_REQUIRED: ErrorKind.AUTH_REQUIRED,
     ReadinessState.MISCONFIGURED: ErrorKind.INVALID_REQUEST,
     ReadinessState.UNAVAILABLE: ErrorKind.UNAVAILABLE,
 }
-"""How each not-ready state is reported when work is requested anyway. ``DETECTED`` may run:
-readiness is unconfirmed, and the harness or provider reports its own failure if it cannot."""
+"""How each non-ready state is reported when work is requested anyway.
+
+Only ``READY`` may execute. ``DETECTED`` means the adapter was found, but readiness has not
+been confirmed yet, so execution remains blocked until the adapter reports a definitive state."""
 
 
 @dataclass(frozen=True, slots=True)
