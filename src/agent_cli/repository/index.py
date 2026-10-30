@@ -33,7 +33,7 @@ from agent_cli.repository.classify import (
     import_signals,
     language_of,
 )
-from agent_cli.repository.git import FileEntry, GitWorkspace, RepositoryError
+from agent_cli.repository.git import FileEntry, GitWorkspace, RepositoryError, blob_id
 from agent_cli.repository.python_analyzer import PythonAnalyzer
 from agent_cli.repository.search import FTS5, FTS5_TABLE, PLAIN, PLAIN_TABLE, fts5_available
 from agent_cli.repository.search import search as search_text
@@ -347,6 +347,7 @@ class RepositoryIndex:
         if content is None:
             return
         path = entry.path
+        actual_blob = blob_id(content, self.workspace.object_format)
         classifications = classify_path(path)
         analyzer = self.analyzers.for_path(path)
         state, detail = AnalysisState.UNSUPPORTED, ""
@@ -361,10 +362,10 @@ class RepositoryIndex:
         else:
             searchable = True
             if analyzer is not None:
-                analysis = self.cache.get(entry.blob, analyzer.name, analyzer.version)
+                analysis = self.cache.get(actual_blob, analyzer.name, analyzer.version)
                 if analysis is None:
                     analysis = analyzer.analyze(content)
-                    self.cache.put(entry.blob, analyzer.name, analyzer.version, analysis)
+                    self.cache.put(actual_blob, analyzer.name, analyzer.version, analysis)
                     counts.analyzed += 1
                 else:
                     counts.reused += 1
@@ -376,7 +377,7 @@ class RepositoryIndex:
             "detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 path,
-                entry.blob,
+                actual_blob,
                 analysis.language if analysis else language_of(path),
                 analyzer.name if analyzer else None,
                 analyzer.version if analyzer else None,
@@ -563,6 +564,15 @@ def connect(path: Path) -> sqlite3.Connection:
 
 def compatible(connection: sqlite3.Connection) -> bool:
     if connection.execute("PRAGMA user_version").fetchone()[0] != INDEX_SCHEMA:
+        return False
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        )
+    }
+    required = {"meta", "files", "facts", "symbols", "imports", "relations", "search"}
+    if not required.issubset(tables):
         return False
     row = connection.execute("SELECT value FROM meta WHERE key = 'classifier'").fetchone()
     return row is not None and row[0] == CLASSIFIER_VERSION
