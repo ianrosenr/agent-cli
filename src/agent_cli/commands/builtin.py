@@ -14,6 +14,7 @@ from agent_cli.commands.registry import (
     CommandRegistry,
     ExitShell,
 )
+from agent_cli.guided_setup import GuidedSetup
 
 HELP_INTRO = """\
 Agent CLI help
@@ -56,8 +57,6 @@ def exit_command(context: CommandContext, args: str) -> str:
 def startup_command(context: CommandContext, args: str) -> str:
     if context.config is None:
         return "Configuration is unavailable in this session."
-    from agent_cli.guided_setup import GuidedSetup
-
     return GuidedSetup(context.config, context.read_line, context.write_line).run()
 
 

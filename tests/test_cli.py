@@ -194,5 +194,6 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.config.model",
         "agent_cli.config.schema",
         "agent_cli.config.service",
+        "agent_cli.guided_setup",
         "agent_cli.startup",
     }

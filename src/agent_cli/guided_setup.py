@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import PurePosixPath
+from dataclasses import dataclass, field
 from typing import Any
 
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
 from agent_cli.config.model import ACCESS_KINDS, IMPLEMENTATION_MODES
-from agent_cli.config.schema import BRANCH_PREFIX, merge, to_raw
-from agent_cli.config.service import CostOrderError
+from agent_cli.config.schema import merge, to_raw
+from agent_cli.config.service import CostLimitError, CostOrderError
 
 type ReadLine = Callable[[str], str]
 type WriteLine = Callable[[str], None]
@@ -57,7 +56,7 @@ def format_money(value: Any) -> str:
 
 
 def parse_workers(text: str) -> int:
-    if not WHOLE_NUMBER.match(text) or int(text) < 1:
+    if not WHOLE_NUMBER.match(text):
         raise InvalidAnswer
     return int(text)
 
@@ -76,7 +75,7 @@ def format_bool(value: Any) -> str:
 
 def parse_access(text: str) -> list[str]:
     kinds = [item.strip() for item in text.lower().split(",")]
-    if any(kind not in ACCESS_KINDS for kind in kinds) or len(set(kinds)) != len(kinds):
+    if not all(kinds):
         raise InvalidAnswer
     return kinds
 
@@ -95,21 +94,10 @@ def format_list(value: Any) -> str:
 
 
 def parse_mode(text: str) -> str:
-    if text.lower() not in IMPLEMENTATION_MODES:
-        raise InvalidAnswer
     return text.lower()
 
 
-def parse_worktree_dir(text: str) -> str:
-    path = PurePosixPath(text)
-    if path.is_absolute() or ".." in path.parts or "\x00" in text:
-        raise InvalidAnswer
-    return text
-
-
-def parse_branch_prefix(text: str) -> str:
-    if not BRANCH_PREFIX.match(text):
-        raise InvalidAnswer
+def parse_text(text: str) -> str:
     return text
 
 
@@ -149,7 +137,7 @@ SETTINGS: tuple[Setting, ...] = (
         "Which kinds of model access Agent CLI may use, in the order to try them.\n"
         "  subscription = your existing plans, local = models on your machine, api = paid APIs.\n"
         "  You do not need all three: any kind you leave out is never used.",
-        "Type one, two, or all three of subscription, local, api, separated by commas, "
+        f"Type one, two, or all three of {', '.join(ACCESS_KINDS)}, separated by commas, "
         "most preferred first.",
         "subscription, local",
         parse_access,
@@ -208,7 +196,7 @@ SETTINGS: tuple[Setting, ...] = (
         "  autopilot  = make every approved change without asking each time\n"
         "  checkpoint = ask before each batch of changes\n"
         "  plan-only  = change no files; explain the plan instead",
-        "Type autopilot, checkpoint, or plan-only.",
+        f"Type {', '.join(IMPLEMENTATION_MODES[:-1])}, or {IMPLEMENTATION_MODES[-1]}.",
         "checkpoint",
         parse_mode,
     ),
@@ -239,7 +227,7 @@ SETTINGS: tuple[Setting, ...] = (
         "Where worker worktrees are created, relative to the repository root.",
         "Type a folder path inside the repository. Do not start it with / or use ..",
         ".agent-cli/worktrees",
-        parse_worktree_dir,
+        parse_text,
     ),
     Setting(
         "git.branch_prefix",
@@ -247,7 +235,7 @@ SETTINGS: tuple[Setting, ...] = (
         "Text added to the start of every branch name workers create.",
         "Type a prefix with no spaces.",
         "bot/",
-        parse_branch_prefix,
+        parse_text,
     ),
 )
 
@@ -290,12 +278,21 @@ def default_status(config: Config) -> list[str]:
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class Problem:
+    message: str
+    format: bool
+    """The answer is malformed, as opposed to well-formed but against a rule."""
+
+
 @dataclass(slots=True)
 class GuidedSetup:
     service: ConfigService
     read_line: ReadLine
     write_line: WriteLine
     harness_provider_status: HarnessProviderStatus = default_status
+    files: dict[Layer, RawConfig] = field(default_factory=dict)
+    """Global and project config as read once at the start, so every step checks the same data."""
 
     def run(self) -> str:
         """Run the whole flow and return the closing message. Never writes unless confirmed."""
@@ -306,17 +303,21 @@ class GuidedSetup:
 
     def converse(self) -> str:
         try:
-            self.service.resolve(through=Layer.PROJECT)
+            self.files = {
+                layer: self.service.read(layer) for layer in (Layer.GLOBAL, Layer.PROJECT)
+            }
+            self.resolve(Layer.PROJECT)
         except ConfigError as error:
             return f"Cannot run setup: {error}\nFix or remove that file, then run /startup again."
 
         self.write_line(INTRO)
         target = self.ask_target()
-        base = to_raw(self.service.resolve(through=target))
-        layer_data = self.service.read(target)
+        current = to_raw(self.resolve(target))
+        inherited = to_raw(self.resolve(Layer.GLOBAL)) if target is Layer.PROJECT else current
+        layer_data = self.files[target]
 
         self.write_line("")
-        self.write_line("\n".join(self.harness_provider_status(self.service.resolve())))
+        self.write_line("\n".join(self.harness_provider_status(self.resolve(Layer.PROJECT))))
 
         answers: RawConfig = {}
         index = 0
@@ -327,31 +328,38 @@ class GuidedSetup:
             self.write_line(f"  {setting.what}")
             self.write_line(f"  How to answer: {setting.how}")
             self.write_line(f"  {setting.example_line}")
-            current = answers.get(setting.key, lookup(base, setting.key))
-            answers[setting.key] = self.ask(setting, current, target, layer_data, answers)
+            default = answers.get(setting.key, lookup(current, setting.key))
+            answers[setting.key] = self.ask(setting, default, target, layer_data, answers)
             index += 1
             if setting.key == BUDGET_KEYS[-1]:
                 # Budget limits must agree with each other, which can only be judged once all
                 # of them are answered. On a conflict, ask them again with the answers as defaults.
-                problem = self.check(target, propose(layer_data, answers))
+                problem = self.check(target, propose(layer_data, answers), key=None)
                 if problem is not None:
                     self.write_line(
-                        f"  Not allowed: {problem}. Please enter the spending limits again."
+                        f"  Not allowed: {problem.message}. Please enter the spending limits again."
                     )
                     index = [s.key for s in SETTINGS].index(BUDGET_KEYS[0])
 
-        changes = self.changes(target, base, answers)
+        changes, removals = self.plan(target, inherited, layer_data, answers)
         self.write_line("")
-        self.write_line(self.summary(target, base, answers, changes))
+        self.write_line(self.summary(target, current, inherited, answers, changes, removals))
         self.write_line("How to answer: type y to save these settings or n to cancel.")
         self.write_line("Example: y")
         if not self.confirm("Save these settings?"):
             return CANCELED
         try:
-            path = self.service.save(target, changes)
+            path = self.service.save(target, changes, removals)
         except ConfigError as error:
             return f"Could not save settings: {error}"
         return f"Settings saved to {path}."
+
+    def resolve(self, through: Layer, proposal: tuple[Layer, RawConfig] | None = None) -> Config:
+        """Resolve from the files read at the start, optionally with one layer replaced."""
+        replace = dict(self.files)
+        if proposal is not None:
+            replace[proposal[0]] = proposal[1]
+        return self.service.resolve(through=through, replace=replace)
 
     def ask_target(self) -> Layer:
         project = self.service.paths.project_file
@@ -377,25 +385,30 @@ class GuidedSetup:
     def ask(
         self,
         setting: Setting,
-        current: Any,
+        default: Any,
         target: Layer,
         layer_data: RawConfig,
         answers: RawConfig,
     ) -> Any:
         choices = " (y/n)" if setting.yes_no else ""
         while True:
-            prompt = f"{setting.label} [{setting.format(current)}]{choices}: "
+            prompt = f"{setting.label} [{setting.format(default)}]{choices}: "
             answer = self.read_line(prompt).strip()
             try:
-                value = setting.parse(answer) if answer else current
+                value = setting.parse(answer) if answer else default
             except InvalidAnswer:
                 self.format_not_followed(setting.how, setting.example_line)
                 continue
             proposed = propose(layer_data, {**answers, setting.key: value})
-            problem = self.check(target, proposed, defer_budget_order=setting.key in BUDGET_KEYS)
+            problem = self.check(
+                target, proposed, key=setting.key, defer_budget_order=setting.key in BUDGET_KEYS
+            )
             if problem is None:
                 return value
-            self.write_line(f"  Not allowed: {problem}. Please try again.")
+            if problem.format:
+                self.format_not_followed(setting.how, setting.example_line)
+            else:
+                self.write_line(f"  Not allowed: {problem.message}. Please try again.")
 
     def format_not_followed(self, how: str, example_line: str) -> None:
         self.write_line(f"  {FORMAT_NOT_FOLLOWED}")
@@ -403,43 +416,76 @@ class GuidedSetup:
         self.write_line(f"  {example_line}")
 
     def check(
-        self, target: Layer, layer_data: RawConfig, *, defer_budget_order: bool = False
-    ) -> str | None:
+        self,
+        target: Layer,
+        layer_data: RawConfig,
+        *,
+        key: str | None,
+        defer_budget_order: bool = False,
+    ) -> Problem | None:
         """Validate a proposed layer against every other layer; return the problem, if any.
 
-        With ``defer_budget_order``, budget limits that contradict each other are allowed for
-        now, because the user may not have reached the other limit yet.
+        A schema error on ``key`` itself means the answer is malformed. Spending-rule errors, and
+        errors in other layers, are reported as rules. With ``defer_budget_order``, contradictory
+        budget limits are allowed for now, because the user may not have reached the other one.
         """
         try:
-            self.service.resolve(through=Layer.PROJECT, replace={target: layer_data})
-        except CostOrderError as error:
-            if defer_budget_order:
-                return None
-            return error.problem if error.source == self.service.source(target) else str(error)
+            self.resolve(Layer.PROJECT, (target, layer_data))
         except ConfigError as error:
-            return error.problem if error.source == self.service.source(target) else str(error)
+            if isinstance(error, CostOrderError) and defer_budget_order:
+                return None
+            own = error.source == self.service.source(target)
+            message = error.problem if own else str(error)
+            malformed = (
+                own
+                and not isinstance(error, CostLimitError)
+                and key is not None
+                and error.key is not None
+                and (error.key == key or error.key.startswith((f"{key}[", f"{key}.")))
+            )
+            return Problem(message, format=malformed)
         return None
 
-    def changes(self, target: Layer, base: RawConfig, answers: RawConfig) -> RawConfig:
-        """Global setup records every setting; project setup records only what differs, so the
-        project keeps inheriting everything else from global config."""
+    def plan(
+        self, target: Layer, inherited: RawConfig, layer_data: RawConfig, answers: RawConfig
+    ) -> tuple[RawConfig, tuple[str, ...]]:
+        """What to write and what to remove.
+
+        Global setup records every setting. Project setup records only values that differ from
+        what the project would inherit from global config, and removes project overrides that
+        were set back to the inherited value, so the project keeps following global changes.
+        """
         changes: RawConfig = {}
+        removals: list[str] = []
         for key, value in answers.items():
-            if target is Layer.GLOBAL or value != lookup(base, key):
+            if target is Layer.GLOBAL or value != lookup(inherited, key):
                 changes = merge(changes, nested(key, value))
-        return changes
+            elif contains(layer_data, key):
+                removals.append(key)
+        return changes, tuple(removals)
 
     def summary(
-        self, target: Layer, base: RawConfig, answers: RawConfig, changes: RawConfig
+        self,
+        target: Layer,
+        current: RawConfig,
+        inherited: RawConfig,
+        answers: RawConfig,
+        changes: RawConfig,
+        removals: tuple[str, ...],
     ) -> str:
-        project_data = self.service.read(Layer.PROJECT) if target is Layer.GLOBAL else {}
+        overridden = self.files[Layer.PROJECT] if target is Layer.GLOBAL else {}
         rows = []
         for setting in SETTINGS:
             value = answers[setting.key]
-            note = f"→ {target.value}" if contains(changes, setting.key) else "inherited"
-            if value != lookup(base, setting.key):
-                note += f" (was {setting.format(lookup(base, setting.key))})"
-            if contains(project_data, setting.key):
+            if contains(changes, setting.key):
+                note = f"→ {target.value}"
+            elif setting.key in removals:
+                note = "inherited from global (project override removed)"
+            else:
+                note = "inherited from global"
+            if value != lookup(current, setting.key):
+                note += f" (was {setting.format(lookup(current, setting.key))})"
+            if contains(overridden, setting.key):
                 note += " (overridden by project config)"
             rows.append((setting.label, setting.format(value), note))
 
@@ -450,7 +496,7 @@ class GuidedSetup:
             f"  {label:<{label_width}}  {value:<{value_width}}  {note}"
             for label, value, note in rows
         ]
-        if self.service.paths.project_root is not None:
+        if target is Layer.PROJECT:
             lines += ["", "Project runtime directories (state, worktrees) will be git-ignored."]
         return "\n".join(lines)
 

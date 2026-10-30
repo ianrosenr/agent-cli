@@ -85,6 +85,8 @@ providers:
 
 Values come from environment variables or the OS credential store.
 
+Like other sections, provider and harness entries merge by key across layers, so a project can change one field of a provider defined globally (for example `enabled: false`). Required fields such as a provider's `type` must be present once all layers are merged.
+
 ## Validation
 
 Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them. Keys that look like secret values (`api_key`, `token`, `password`, …) are rejected with a pointer to `api_key_env` / `api_key_keyring`.
@@ -94,6 +96,10 @@ Config is validated on load. Unknown keys and invalid values are errors that nam
 `/startup` writes to the layer the user chooses:
 
 - **global** records every setting the flow asks about, so the file describes the user's full baseline.
-- **project** records only settings that differ from what the project would otherwise inherit, so it keeps following global changes.
+- **project** records only settings that differ from what the project would inherit from global config. Setting a project value back to the inherited value removes the project override, so the project keeps following global changes.
 
-Keys `/startup` does not manage (providers, harnesses, routing, …) are preserved. Writes are atomic (temporary file + rename), create parent directories, and are validated against every other layer first. Saving also git-ignores project runtime directories (`.agent-cli/state/` and the worktree directory).
+Keys `/startup` does not manage (providers, harnesses, routing, …) are preserved, but the file is rewritten from its values: comments other than the generated header are not kept.
+
+Writes are atomic (temporary file + rename), create parent directories, and are validated against every other layer first. A symlinked config file is written through to its target, and an existing file keeps its permissions.
+
+Saving the **project** layer also git-ignores that project's runtime directories (`.agent-cli/state/` and the worktree directory). Saving global config never modifies the repository you happen to be in.

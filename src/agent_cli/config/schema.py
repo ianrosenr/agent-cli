@@ -20,7 +20,38 @@ type RawConfig = dict[str, Any]
 SECRET_KEY = re.compile(r"(^|_)(api_key|key|token|secret|password|passwd|credential)s?$")
 """Key names that look like they hold a secret value rather than a reference to one."""
 
-BRANCH_PREFIX = re.compile(r"^(?!/)(?!.*(\.\.|//|@\{))[^\s~^:?*\[\\\x00-\x1f\x7f]+$")
+BRANCH_FORBIDDEN = re.compile(r"[\s~^:?*\[\\\x00-\x1f\x7f]|\.\.|//|@\{")
+
+RESERVED_WORKTREE_DIRS = (PurePosixPath(".git"), PurePosixPath(".agent-cli"))
+"""Worktrees must not be these directories; ``.git`` and ``.agent-cli/state`` must not contain
+them either."""
+
+
+def is_branch_prefix(value: str) -> bool:
+    """Whether every branch named ``<value><name>`` can be a valid Git branch name.
+
+    Follows ``git check-ref-format``: no spaces, control characters, ``~^:?*[\\``, ``..``,
+    ``//`` or ``@{``; no leading ``/`` or ``-``; no path part starting with ``.``; and no
+    complete path part ending in ``.lock``.
+    """
+    if not value or value.startswith(("/", "-")) or BRANCH_FORBIDDEN.search(value):
+        return False
+    *complete, last = value.split("/")
+    return all(
+        part and not part.startswith(".") and not part.endswith(".lock") for part in complete
+    ) and not last.startswith(".")
+
+
+def worktree_dir_problem(value: str) -> str | None:
+    pure = PurePosixPath(value)
+    if pure.is_absolute() or ".." in pure.parts or not pure.parts:
+        return "must be a folder inside the repository"
+    if pure in RESERVED_WORKTREE_DIRS:
+        return f"must not be {value!r} itself"
+    for container in (".git", ".agent-cli/state"):
+        if pure.is_relative_to(container):
+            return f"must not be inside {container}"
+    return None
 
 
 class ConfigError(Exception):
@@ -91,12 +122,34 @@ def validate_layer(cls: type, data: object, source: str, prefix: str = "") -> No
         check_value(hints(cls)[key], value, source, path, fields[key].metadata)
 
 
-def validate_complete(cls: type, data: Mapping[str, Any], source: str, prefix: str) -> None:
-    """Like ``validate_layer``, but required fields must also be present."""
-    validate_layer(cls, data, source, prefix)
+def check_required(
+    cls: type, merged: Mapping[str, Any], touched: Mapping[str, Any], source: str, prefix: str = ""
+) -> None:
+    """Check that named entries (such as providers) touched by a layer are complete once merged.
+
+    Layers may partially override an entry defined by a more general layer, so required fields
+    can only be judged after merging. ``source`` is the layer that ``touched`` came from.
+    """
     for f in dataclasses.fields(cls):
-        if f.metadata.get("kind") == "required" and f.name not in data:
-            raise ConfigError(source, f"{prefix}.{f.name}", "is required")
+        if f.name not in touched or not isinstance(touched[f.name], Mapping):
+            continue
+        path = f"{prefix}.{f.name}" if prefix else f.name
+        _, base = is_optional(hints(cls)[f.name])
+        base = unalias(base)
+        if dataclasses.is_dataclass(base):
+            check_required(base, merged[f.name], touched[f.name], source, path)  # type: ignore[arg-type]
+        elif get_origin(base) is dict:
+            item_hint = unalias(get_args(base)[1])
+            if not dataclasses.is_dataclass(item_hint):
+                continue
+            for name in touched[f.name]:
+                entry = merged[f.name][name]
+                for item_field in dataclasses.fields(item_hint):
+                    if (
+                        item_field.metadata.get("kind") == "required"
+                        and item_field.name not in entry
+                    ):
+                        raise ConfigError(source, f"{path}.{name}.{item_field.name}", "is required")
 
 
 def check_value(hint: Any, value: object, source: str, path: str, meta: Mapping[str, Any]) -> None:
@@ -131,7 +184,7 @@ def check_value(hint: Any, value: object, source: str, path: str, meta: Mapping[
                     raise ConfigError(
                         source, f"{path}.{name}", f"expected a mapping, got {type_name(item)}"
                     )
-                validate_complete(item_hint, item, source, f"{path}.{name}")  # type: ignore[arg-type]
+                validate_layer(item_hint, item, source, f"{path}.{name}")  # type: ignore[arg-type]
             else:
                 check_value(item_hint, item, source, f"{path}.{name}", {})
     elif base is bool:
@@ -167,12 +220,12 @@ def check_constraints(value: Any, source: str, path: str, meta: Mapping[str, Any
     elif kind == "paths":
         for index, item in enumerate(value):
             check_path(item, source, f"{path}[{index}]")
-    elif kind == "relative-path":
+    elif kind == "worktree-dir":
         check_path(value, source, path)
-        pure = PurePosixPath(value)
-        if pure.is_absolute() or ".." in pure.parts:
-            raise ConfigError(source, path, f"must be a path inside the repository, got {value!r}")
-    elif kind == "branch-prefix" and not BRANCH_PREFIX.match(value):
+        problem = worktree_dir_problem(value)
+        if problem:
+            raise ConfigError(source, path, f"{problem}, got {value!r}")
+    elif kind == "branch-prefix" and not is_branch_prefix(value):
         raise ConfigError(source, path, f"is not a valid Git branch prefix: {value!r}")
 
 

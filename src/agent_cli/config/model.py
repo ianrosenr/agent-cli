@@ -8,15 +8,15 @@ Per-field constraints live in field metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 type ImplementationMode = Literal["autopilot", "checkpoint", "plan-only"]
 type AccessKind = Literal["subscription", "local", "api"]
 type SkillActivation = Literal["always", "auto", "explicit", "disabled"]
 type Tier = Literal["low", "mid", "high"]
 
-IMPLEMENTATION_MODES: tuple[str, ...] = ("autopilot", "checkpoint", "plan-only")
-ACCESS_KINDS: tuple[str, ...] = ("subscription", "local", "api")
+IMPLEMENTATION_MODES: tuple[str, ...] = get_args(ImplementationMode.__value__)
+ACCESS_KINDS: tuple[str, ...] = get_args(AccessKind.__value__)
 
 
 def constrained(default: Any, **constraints: Any) -> Any:
@@ -60,7 +60,7 @@ class WorkersConfig:
 @dataclass(frozen=True, slots=True)
 class GitConfig:
     use_worktrees: bool = True
-    worktree_dir: str = constrained(".agent-cli/worktrees", kind="relative-path")
+    worktree_dir: str = constrained(".agent-cli/worktrees", kind="worktree-dir")
     branch_prefix: str = constrained("agent-cli/", kind="branch-prefix")
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -517,12 +519,133 @@ def test_save_git_ignores_project_runtime_directories(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     assert paths.project_root is not None
-    service.save(Layer.GLOBAL, {"workers": {"max_concurrency": 2}})
+    service.save(Layer.PROJECT, {"workers": {"max_concurrency": 2}})
     ignore = paths.project_root / ".agent-cli" / ".gitignore"
     assert ignore.read_text().splitlines() == ["state/", "worktrees/"]
-    service.save(Layer.GLOBAL, {"workers": {"max_concurrency": 3}})
+    service.save(Layer.PROJECT, {"workers": {"max_concurrency": 3}})
     assert ignore.read_text().splitlines() == ["state/", "worktrees/"]
     assert not (paths.project_root / ".gitignore").exists()
+
+
+def test_saving_global_config_does_not_touch_the_current_repository(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    assert paths.project_root is not None
+    service.save(Layer.GLOBAL, {"workers": {"max_concurrency": 2}})
+    assert not (paths.project_root / ".agent-cli").exists()
+    assert not (paths.project_root / ".gitignore").exists()
+
+
+def test_project_may_partially_override_a_global_provider(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(
+        paths.global_file,
+        {"providers": {"foo": {"type": "openai-compatible", "base_url": "http://x/v1"}}},
+    )
+    write(paths.project_file, {"providers": {"foo": {"enabled": False}}})
+    service.set_session({"providers": {"foo": {"api_key_env": "FOO_KEY"}}})
+    provider = service.resolve().providers["foo"]
+    assert (provider.type, provider.base_url, provider.enabled, provider.api_key_env) == (
+        "openai-compatible",
+        "http://x/v1",
+        False,
+        "FOO_KEY",
+    )
+
+
+def test_a_provider_must_be_complete_once_layers_are_merged(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.global_file, {"providers": {"foo": {"type": "openai-compatible"}}})
+    write(paths.project_file, {"providers": {"bar": {"enabled": False}}})
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+    assert caught.value.source == f"project config ({paths.project_file})"
+    assert caught.value.key == "providers.bar.type"
+    assert caught.value.problem == "is required"
+
+
+@pytest.mark.parametrize(
+    "prefix", ["bot/\n", "-bot/", ".x/", "a/.b/", "a.lock/", "team/x.lock/y", "a//b", "a b/"]
+)
+def test_branch_prefixes_git_would_reject_are_invalid(
+    service: ConfigService, paths: ConfigPaths, prefix: str
+) -> None:
+    write(paths.global_file, {"git": {"branch_prefix": prefix}})
+    with pytest.raises(ConfigError, match="not a valid Git branch prefix"):
+        service.resolve()
+
+
+@pytest.mark.parametrize("prefix", ["agent-cli/", "bot-", "team/bot/", "a.lock", "v1.2/"])
+def test_valid_branch_prefixes_are_accepted(
+    service: ConfigService, paths: ConfigPaths, prefix: str
+) -> None:
+    write(paths.global_file, {"git": {"branch_prefix": prefix}})
+    assert service.resolve().git.branch_prefix == prefix
+
+
+@pytest.mark.parametrize(
+    ("folder", "problem"),
+    [
+        (".", "must be a folder inside the repository"),
+        ("./", "must be a folder inside the repository"),
+        (".git", "must not be '.git' itself"),
+        (".git/trees", "must not be inside .git"),
+        (".agent-cli", "must not be '.agent-cli' itself"),
+        (".agent-cli/state/trees", "must not be inside .agent-cli/state"),
+        ("/tmp/trees", "must be a folder inside the repository"),
+        ("../trees", "must be a folder inside the repository"),
+    ],
+)
+def test_unsafe_worktree_folders_are_rejected(
+    service: ConfigService, paths: ConfigPaths, folder: str, problem: str
+) -> None:
+    write(paths.project_file, {"git": {"worktree_dir": folder}})
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+    assert caught.value.key == "git.worktree_dir"
+    assert caught.value.problem.startswith(problem)
+
+
+def test_save_can_remove_keys_so_they_inherit_again(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.project_file, {"workers": {"max_concurrency": 5}, "git": {"use_worktrees": False}})
+    service.save(Layer.PROJECT, {}, remove=["workers.max_concurrency", "cost.not_set_anyway"])
+    assert yaml.safe_load(paths.project_file.read_text()) == {  # type: ignore[union-attr]
+        "git": {"use_worktrees": False}
+    }
+
+
+def test_save_writes_through_a_symlink_and_keeps_permissions(tmp_path: Path) -> None:
+    real = tmp_path / "dotfiles" / "agent-cli.yaml"
+    real.parent.mkdir()
+    real.write_text("workers:\n  max_concurrency: 2\n")
+    real.chmod(0o640)
+    link = tmp_path / "home" / ".agent-cli" / "config.yaml"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(real)
+
+    ConfigService(ConfigPaths(link, None)).save(Layer.GLOBAL, {"workers": {"max_concurrency": 4}})
+
+    assert link.is_symlink()
+    assert yaml.safe_load(real.read_text()) == {"workers": {"max_concurrency": 4}}
+    assert stat.S_IMODE(real.stat().st_mode) == 0o640
+    assert sorted(p.name for p in real.parent.iterdir()) == ["agent-cli.yaml"]
+
+
+def test_new_config_files_follow_the_umask(tmp_path: Path) -> None:
+    old = os.umask(0o022)
+    try:
+        path = ConfigService(ConfigPaths(tmp_path / "config.yaml", None)).save(Layer.GLOBAL, {})
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+
+
+def test_file_header_says_comments_are_not_kept() -> None:
+    assert "other comments are not" in FILE_HEADER
 
 
 def test_worktrees_outside_agent_cli_are_ignored_at_the_repo_root(

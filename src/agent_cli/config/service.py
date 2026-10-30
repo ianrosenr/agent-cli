@@ -10,8 +10,9 @@ in effect from the layers above it. Limits must also agree with each other (see 
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,7 @@ from agent_cli.config.schema import (
     ConfigError,
     RawConfig,
     build,
+    check_required,
     merge,
     ordered,
     to_raw,
@@ -36,6 +38,7 @@ STATE_DIR = "state"
 FILE_HEADER = (
     "# Agent CLI configuration. See docs/CONFIGURATION.md.\n"
     "# Never put secret values here: reference them with api_key_env or api_key_keyring.\n"
+    "# Saving from /startup rewrites this file: values are kept, other comments are not.\n"
 )
 COST_KEYS = tuple(f.name for f in fields(CostConfig))
 
@@ -98,24 +101,40 @@ def read_layer(path: Path, source: str) -> RawConfig:
 
 
 def write_yaml(path: Path, data: Mapping[str, Any], source: str) -> None:
-    """Atomically write a complete YAML document, creating parent directories."""
+    """Atomically write a complete YAML document, creating parent directories.
+
+    A symlinked config is written through to its target, and an existing file keeps its
+    permissions; a new file gets the usual permissions for the user's umask.
+    """
     document = FILE_HEADER + yaml.safe_dump(
         dict(data), sort_keys=False, default_flow_style=False, allow_unicode=True
     )
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        target = Path(os.path.realpath(path))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            mode = stat.S_IMODE(target.stat().st_mode)
+        except FileNotFoundError:
+            mode = 0o666 & ~current_umask()
         descriptor, temporary = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+            dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
         )
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(document)
-            os.replace(temporary, path)
+            os.chmod(temporary, mode)
+            os.replace(temporary, target)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
             raise
     except OSError as error:
         raise ConfigError(source, None, f"cannot write file: {error.strerror or error}") from error
+
+
+def current_umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
 
 
 type Ceilings = dict[str, tuple[float | None, str]]
@@ -131,7 +150,11 @@ COST_ORDER: tuple[tuple[str, str], ...] = (
 Per-task and daily limits are not compared, because one task can span several days."""
 
 
-class CostOrderError(ConfigError):
+class CostLimitError(ConfigError):
+    """Well-formed cost limits that break a spending rule (as opposed to malformed config)."""
+
+
+class CostOrderError(CostLimitError):
     """Cost limits that contradict each other, such as a per-task limit above the monthly one."""
 
 
@@ -147,14 +170,14 @@ def check_cost_ceilings(ceilings: Ceilings, layer: Mapping[str, Any], source: st
         if limit is None:
             continue
         if value is None:
-            raise ConfigError(
+            raise CostLimitError(
                 source,
                 f"cost.{key}",
                 f"cannot remove the {origin} limit of ${limit:.2f}; "
                 "more-specific config may only lower cost limits",
             )
         if value > limit:
-            raise ConfigError(
+            raise CostLimitError(
                 source,
                 f"cost.{key}",
                 f"${value:.2f} is above the {origin} limit of ${limit:.2f}; "
@@ -236,23 +259,46 @@ class ConfigService:
             if layer is not Layer.GLOBAL:
                 check_cost_ceilings(ceilings, data, source)
             merged = merge(merged, data)
+            check_required(Config, merged, data, source)
             check_cost_order(build(CostConfig, merged["cost"]), data, source)
             for key, value in data.get("cost", {}).items():
                 ceilings[key] = (value, layer.value)
         return build(Config, merged)
 
-    def save(self, layer: Layer, changes: Mapping[str, Any]) -> Path:
-        """Merge ``changes`` into a file-backed layer and write it, after validating everything."""
+    def save(self, layer: Layer, changes: Mapping[str, Any], remove: Iterable[str] = ()) -> Path:
+        """Merge ``changes`` into a file-backed layer, drop the dotted keys in ``remove`` so they
+        inherit again, and write it after validating it against every other layer.
+
+        Saving the project layer also git-ignores that project's runtime directories.
+        """
         path = self.paths.file_for(layer)
         if path is None:
             raise ConfigError(self.source(layer), None, "this layer is not stored in a file")
         document = merge(self.read(layer), changes)
+        for key in remove:
+            document = without(document, key)
         self.resolve(replace={layer: document})
-        document = ordered(Config, document)
-        write_yaml(path, document, self.source(layer))
-        if self.paths.project_root is not None:
+        write_yaml(path, ordered(Config, document), self.source(layer))
+        if layer is Layer.PROJECT and self.paths.project_root is not None:
             ensure_runtime_ignored(self.paths.project_root, self.resolve(through=Layer.PROJECT))
         return path
+
+
+def without(data: Mapping[str, Any], key: str) -> RawConfig:
+    """``data`` minus the dotted ``key``, dropping sections the removal leaves empty."""
+    head, _, rest = key.partition(".")
+    result = dict(data)
+    if head not in result:
+        return result
+    if not rest:
+        del result[head]
+    elif isinstance(result[head], Mapping):
+        inner = without(result[head], rest)
+        if inner:
+            result[head] = inner
+        else:
+            del result[head]
+    return result
 
 
 def ensure_runtime_ignored(root: Path, config: Config) -> list[Path]:

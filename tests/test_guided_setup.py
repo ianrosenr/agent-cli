@@ -366,6 +366,55 @@ def test_access_preference_accepts_one_two_or_three_kinds(
     assert ConfigService(paths).resolve().access.preference == tuple(answer.split(", "))
 
 
+def test_setting_a_project_value_back_to_global_removes_the_override(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    run(service, "n", *answers_for(workers__max_concurrency="5", git__branch_prefix="x/"), "")
+    _, conversation = run(service, "n", *answers_for(workers__max_concurrency="3"), "")
+    assert load(paths.project_file) == {"git": {"branch_prefix": "x/"}}
+    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    workers = next(line for line in summary.splitlines() if "Parallel workers" in line)
+    assert "inherited from global (project override removed) (was 5)" in workers
+    prefix = next(line for line in summary.splitlines() if "Branch prefix" in line)
+    assert "→ project" in prefix
+
+
+def test_unchanged_project_values_are_labeled_as_project_values(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    run(service, "n", *answers_for(implementation__mode="plan-only"), "")
+    _, conversation = run(service, "n", *ENTER_THROUGH[1:])
+    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    mode = next(line for line in summary.splitlines() if "Implementation mode" in line)
+    assert mode.rstrip().endswith("→ project")
+    workers = next(line for line in summary.splitlines() if "Parallel workers" in line)
+    assert workers.rstrip().endswith("inherited from global")
+    assert load(paths.project_file) == {"implementation": {"mode": "plan-only"}}
+
+
+def test_setup_reads_config_files_once_however_many_retries(
+    service: ConfigService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agent_cli.config.service as service_module
+
+    real = service_module.read_layer
+    calls: list[Path] = []
+
+    def counting(path: Path, source: str) -> object:
+        calls.append(path)
+        return real(path, source)
+
+    monkeypatch.setattr(service_module, "read_layer", counting)
+    run(service, *ENTER_THROUGH)
+    quiet = len(calls)
+    calls.clear()
+    index = [s.key for s in SETTINGS].index("workers.max_concurrency")
+    answers = [""] * len(SETTINGS)
+    answers[index:index] = ["0", "-1", "x", "0"]
+    run(service, "y", *answers, "")
+    assert len(calls) == quiet
+
+
 def test_rule_violations_explain_the_rule_instead_of_the_format(
     service: ConfigService,
 ) -> None:
@@ -423,7 +472,7 @@ def test_summary_lists_every_setting_and_target_before_confirming(
     for setting in SETTINGS:
         assert f"  {setting.label} " in summary
     assert summary.count("→ global") == len(SETTINGS)
-    assert "git-ignored" in summary
+    assert "git-ignored" not in summary
     assert conversation.prompts[-1] == "Save these settings? [yes] (y/n): "
 
 
