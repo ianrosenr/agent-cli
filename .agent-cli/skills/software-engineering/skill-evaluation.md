@@ -1,5 +1,6 @@
 ---
 name: skill-evaluation
+description: Rules for versioning and evaluating skill routing and worker behavior.
 version: 1.0.0
 policy_domain: skill-evaluation
 ---

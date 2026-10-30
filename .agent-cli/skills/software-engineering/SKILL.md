@@ -1,5 +1,6 @@
 ---
 name: software-engineering
+description: Universal engineering invariants for every code change.
 version: 1.0.0
 always_load: true
 ---

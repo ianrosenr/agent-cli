@@ -1,5 +1,6 @@
 ---
 name: architecture
+description: Rules for durable system design and architecture decisions.
 version: 1.0.0
 policy_domain: architecture
 ---

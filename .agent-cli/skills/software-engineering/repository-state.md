@@ -1,5 +1,6 @@
 ---
 name: repository-state
+description: Rules for tracking current capabilities, future work, and documentation state.
 version: 1.0.0
 policy_domain: repository-state
 ---

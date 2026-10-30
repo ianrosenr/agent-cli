@@ -1,5 +1,6 @@
 ---
 name: repository-context
+description: Rules for token-efficient repository context and concise agent navigation summaries.
 version: 1.0.0
 policy_domain: repository-context
 ---

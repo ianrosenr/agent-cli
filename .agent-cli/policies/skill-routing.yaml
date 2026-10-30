@@ -46,5 +46,7 @@ skills:
     signals: [new_service, new_package, new_subsystem, directory_reorganization, context_policy]
   repository-state:
     signals: [capability_added, capability_removed, capability_changed, future_work, documentation_change]
+  creating-a-new-skill:
+    signals: [new_skill, skill_metadata, skill_structure]
   skill-evaluation:
     signals: [skill_change, system_prompt_change, agent_instruction_change, routing_policy_change, model_selection_policy_change, tool_contract_change, evaluation_change, golden_dataset_change]

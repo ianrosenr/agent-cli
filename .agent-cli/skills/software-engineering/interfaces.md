@@ -1,5 +1,6 @@
 ---
 name: interfaces
+description: Rules for public interfaces, compatibility, schemas, APIs, and MCP adapters.
 version: 1.0.0
 policy_domain: interfaces
 ---

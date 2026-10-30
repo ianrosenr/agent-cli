@@ -1,5 +1,6 @@
 ---
 name: specification
+description: Rules for writing and changing approved implementation specifications.
 version: 1.0.0
 policy_domain: specification
 ---
