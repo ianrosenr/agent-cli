@@ -128,6 +128,13 @@ class Setting:
     """Turns an answer into a value; raises ``InvalidAnswer`` if it does not match ``how``."""
     format: Callable[[Any], str] = str
     yes_no: bool = False
+    example_note: str = ""
+    """What the example answer means, when that is not obvious."""
+
+    @property
+    def example_line(self) -> str:
+        note = f"  ({self.example_note})" if self.example_note else ""
+        return f"Example: {self.example}{note}"
 
 
 BUDGET_KEYS = ("cost.monthly_limit_usd", "cost.per_task_limit_usd", "cost.per_call_limit_usd")
@@ -139,12 +146,15 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "access.preference",
         "Access preference",
-        "Which kinds of model access to use, in the order to try them.\n"
-        "  subscription = your existing plans, local = models on your machine, api = paid APIs.",
-        "Type one or more of subscription, local, api, separated by commas, most preferred first.",
-        "local, subscription",
+        "Which kinds of model access Agent CLI may use, in the order to try them.\n"
+        "  subscription = your existing plans, local = models on your machine, api = paid APIs.\n"
+        "  You do not need all three: any kind you leave out is never used.",
+        "Type one, two, or all three of subscription, local, api, separated by commas, "
+        "most preferred first.",
+        "subscription, local",
         parse_access,
         format_list,
+        example_note="uses your plans first, then local models, and never paid APIs",
     ),
     Setting(
         "cost.monthly_limit_usd",
@@ -316,7 +326,7 @@ class GuidedSetup:
             self.write_line(f"Step {index + 1} of {len(SETTINGS)}: {setting.label}")
             self.write_line(f"  {setting.what}")
             self.write_line(f"  How to answer: {setting.how}")
-            self.write_line(f"  Example: {setting.example}")
+            self.write_line(f"  {setting.example_line}")
             current = answers.get(setting.key, lookup(base, setting.key))
             answers[setting.key] = self.ask(setting, current, target, layer_data, answers)
             index += 1
@@ -362,7 +372,7 @@ class GuidedSetup:
             try:
                 return Layer.GLOBAL if not answer or parse_bool(answer) else Layer.PROJECT
             except InvalidAnswer:
-                self.format_not_followed("Type y for global or n for this project.", "y")
+                self.format_not_followed("Type y for global or n for this project.", "Example: y")
 
     def ask(
         self,
@@ -379,7 +389,7 @@ class GuidedSetup:
             try:
                 value = setting.parse(answer) if answer else current
             except InvalidAnswer:
-                self.format_not_followed(setting.how, setting.example)
+                self.format_not_followed(setting.how, setting.example_line)
                 continue
             proposed = propose(layer_data, {**answers, setting.key: value})
             problem = self.check(target, proposed, defer_budget_order=setting.key in BUDGET_KEYS)
@@ -387,10 +397,10 @@ class GuidedSetup:
                 return value
             self.write_line(f"  Not allowed: {problem}. Please try again.")
 
-    def format_not_followed(self, how: str, example: str) -> None:
+    def format_not_followed(self, how: str, example_line: str) -> None:
         self.write_line(f"  {FORMAT_NOT_FOLLOWED}")
         self.write_line(f"  How to answer: {how}")
-        self.write_line(f"  Example: {example}")
+        self.write_line(f"  {example_line}")
 
     def check(
         self, target: Layer, layer_data: RawConfig, *, defer_budget_order: bool = False
@@ -452,4 +462,4 @@ class GuidedSetup:
             try:
                 return parse_bool(answer)
             except InvalidAnswer:
-                self.format_not_followed(YES_NO + " Press Enter for yes.", "y")
+                self.format_not_followed(YES_NO + " Press Enter for yes.", "Example: y")

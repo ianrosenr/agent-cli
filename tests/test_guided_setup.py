@@ -307,7 +307,7 @@ def test_answers_not_in_the_stated_format_are_asked_again(
     setting = SETTINGS[index]
     failure = conversation.output.index("  Format not followed, please try again.")
     assert conversation.output[failure + 1] == f"  How to answer: {setting.how}"
-    assert conversation.output[failure + 2] == f"  Example: {setting.example}"
+    assert conversation.output[failure + 2] == f"  {setting.example_line}"
     assert conversation.prompts.count(conversation.prompts[index + 1]) == 2
     assert ConfigService(paths).resolve() == Config()
 
@@ -334,8 +334,36 @@ def test_every_step_shows_what_it_does_how_to_answer_and_an_example(
         assert conversation.output[header + 1 : header + 4] == [
             f"  {setting.what}",
             f"  How to answer: {setting.how}",
-            f"  Example: {setting.example}",
+            f"  {setting.example_line}",
         ]
+
+
+def test_access_preference_explains_that_kinds_can_be_left_out(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    index = [s.key for s in SETTINGS].index("access.preference")
+    answers = [""] * len(SETTINGS)
+    answers[index] = "subscription, local"
+    _, conversation = run(service, "y", *answers, "")
+    assert "  You do not need all three: any kind you leave out is never used." in (
+        conversation.transcript
+    )
+    assert (
+        "  Example: subscription, local  "
+        "(uses your plans first, then local models, and never paid APIs)" in conversation.output
+    )
+    assert ConfigService(paths).resolve().access.preference == ("subscription", "local")
+
+
+@pytest.mark.parametrize("answer", ["local", "api", "subscription, local, api"])
+def test_access_preference_accepts_one_two_or_three_kinds(
+    service: ConfigService, paths: ConfigPaths, answer: str
+) -> None:
+    answers = [""] * len(SETTINGS)
+    answers[[s.key for s in SETTINGS].index("access.preference")] = answer
+    result, _ = run(service, "y", *answers, "")
+    assert result.startswith("Settings saved")
+    assert ConfigService(paths).resolve().access.preference == tuple(answer.split(", "))
 
 
 def test_rule_violations_explain_the_rule_instead_of_the_format(
