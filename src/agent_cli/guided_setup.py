@@ -261,12 +261,16 @@ class GuidedSetup:
             )
             return Layer.GLOBAL
         self.write_line(
-            "\nSettings can apply to all projects or only to this repository:\n"
-            f"  all projects  {self.service.paths.global_file}\n"
-            f"  this project  {project}  (cost limits may only be lower)"
+            "\nWhere should these settings be saved?\n"
+            f"  y  global   {self.service.paths.global_file}  (all projects)\n"
+            f"  n  project  {project}  (this repository; cost limits may only be lower)"
         )
-        only_project = self.confirm("Save only for this project?", default=project.exists())
-        return Layer.PROJECT if only_project else Layer.GLOBAL
+        while True:
+            answer = self.read_line("Save to [global] (y/n): ").strip()
+            try:
+                return Layer.GLOBAL if not answer or parse_bool(answer) else Layer.PROJECT
+            except InvalidAnswer as error:
+                self.write_line(f"  {error}")
 
     def ask(
         self,
@@ -341,12 +345,11 @@ class GuidedSetup:
             lines += ["", "Project runtime directories (state, worktrees) will be git-ignored."]
         return "\n".join(lines)
 
-    def confirm(self, question: str, default: bool = True) -> bool:
-        choices = "Y/n" if default else "y/N"
+    def confirm(self, question: str) -> bool:
         while True:
-            answer = self.read_line(f"{question} [{choices}]: ").strip()
+            answer = self.read_line(f"{question} [Y/n]: ").strip()
             if not answer:
-                return default
+                return True
             try:
                 return parse_bool(answer)
             except InvalidAnswer as error:

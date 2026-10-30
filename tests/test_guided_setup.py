@@ -99,7 +99,7 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
         git__worktree_dir=".agent-cli/trees",
         git__branch_prefix="bot/",
     )
-    result, _ = run(service, "n", *answers, "y")
+    result, _ = run(service, "y", *answers, "y")
     assert result.startswith("Settings saved")
     config = ConfigService(paths).resolve()
     assert config.access.preference == ("local", "subscription")
@@ -118,7 +118,7 @@ def test_rerun_shows_current_values_as_defaults_and_keeps_them(
 ) -> None:
     run(
         service,
-        "n",
+        "y",
         *answers_for(workers__max_concurrency="5", implementation__mode="plan-only"),
         "",
     )
@@ -155,7 +155,7 @@ def test_project_target_writes_only_changed_values(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     result, conversation = run(
-        service, "y", *answers_for(cost__monthly_limit_usd="5", git__branch_prefix="x/"), ""
+        service, "n", *answers_for(cost__monthly_limit_usd="5", git__branch_prefix="x/"), ""
     )
     assert result == f"Settings saved to {paths.project_file}."
     assert load(paths.project_file) == {
@@ -169,20 +169,29 @@ def test_project_target_writes_only_changed_values(
     assert "inherited" in summary
 
 
-def test_project_is_the_default_target_once_it_has_config(
+def test_target_prompt_is_yes_for_global_and_no_for_project(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    run(service, "y", *answers_for(workers__max_concurrency="2"), "")
-    _, conversation = run(service, *ENTER_THROUGH)
-    assert conversation.prompts[0] == "Save only for this project? [Y/n]: "
+    run(service, "n", *answers_for(workers__max_concurrency="2"), "")
+    _, conversation = run(service, "n", *ENTER_THROUGH[1:])
+    assert conversation.prompts[0] == "Save to [global] (y/n): "
     assert "Maximum parallel workers [2]: " in conversation.prompts
+    assert not paths.global_file.exists()
+
+
+def test_enter_at_the_target_prompt_saves_globally(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    run(service, *ENTER_THROUGH)
+    assert paths.global_file.exists()
+    assert paths.project_file is not None and not paths.project_file.exists()
 
 
 def test_global_target_shows_global_values_and_flags_project_overrides(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    run(service, "y", *answers_for(workers__max_concurrency="2"), "")
-    result, conversation = run(service, "n", *ENTER_THROUGH[1:])
+    run(service, "n", *answers_for(workers__max_concurrency="2"), "")
+    result, conversation = run(service, "y", *ENTER_THROUGH[1:])
     assert result.startswith("Settings saved")
     assert "Maximum parallel workers [3]: " in conversation.prompts
     assert "(overridden by project config)" in conversation.transcript
@@ -196,7 +205,7 @@ def test_project_cost_cannot_exceed_global_and_is_asked_again(
     answers = answers_for(cost__monthly_limit_usd="50")
     index = [s.key for s in SETTINGS].index("cost.monthly_limit_usd")
     answers.insert(index + 1, "10")
-    result, conversation = run(service, "y", *answers, "")
+    result, conversation = run(service, "n", *answers, "")
     assert result.startswith("Settings saved")
     assert "$50.00 is above the default limit of $20.00" in conversation.transcript
     assert load(paths.project_file) == {"cost": {"monthly_limit_usd": 10.0}}
@@ -205,11 +214,11 @@ def test_project_cost_cannot_exceed_global_and_is_asked_again(
 def test_lowering_global_below_a_project_limit_is_rejected(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    run(service, "y", *answers_for(cost__per_task_limit_usd="0.8"), "")
+    run(service, "n", *answers_for(cost__per_task_limit_usd="0.8"), "")
     answers = answers_for(cost__per_task_limit_usd="0.5")
     index = [s.key for s in SETTINGS].index("cost.per_task_limit_usd")
     answers.insert(index + 1, "0.9")
-    _, conversation = run(service, "n", *answers, "")
+    _, conversation = run(service, "y", *answers, "")
     assert "project config" in conversation.transcript
     assert "above the global limit of $0.50" in conversation.transcript
     assert ConfigService(paths).resolve().cost.per_task_limit_usd == 0.8
@@ -227,7 +236,7 @@ def budget_answers(*rounds: tuple[str, str, str]) -> list[str]:
 def test_budget_limits_can_be_lowered_in_any_prompt_order(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    result, conversation = run(service, "n", *budget_answers(("0.5", "0.25", "0.1")), "")
+    result, conversation = run(service, "y", *budget_answers(("0.5", "0.25", "0.1")), "")
     assert result.startswith("Settings saved")
     assert "cannot be above" not in conversation.transcript
     cost = ConfigService(paths).resolve().cost
@@ -242,7 +251,7 @@ def test_contradictory_budget_limits_are_asked_again_with_answers_as_defaults(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     answers = budget_answers(("0.5", "", ""), ("", "0.4", ""))
-    result, conversation = run(service, "n", *answers, "")
+    result, conversation = run(service, "y", *answers, "")
     assert result.startswith("Settings saved")
     assert (
         "  the per-task limit ($1.00) cannot be above the monthly limit ($0.50). "
@@ -257,7 +266,7 @@ def test_contradictory_budget_limits_are_asked_again_with_answers_as_defaults(
 def test_project_budget_cannot_exceed_a_lowered_project_limit_in_session(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
-    run(service, "y", *budget_answers(("10", "", "")), "")
+    run(service, "n", *budget_answers(("10", "", "")), "")
     service.set_session({"cost": {"monthly_limit_usd": 12}})
     with pytest.raises(ConfigError, match=r"above the project limit of \$10\.00"):
         service.resolve()
@@ -283,7 +292,7 @@ def test_invalid_answers_are_explained_and_asked_again(
 ) -> None:
     answers = [""] * len(SETTINGS)
     answers.insert([s.key for s in SETTINGS].index(key), bad)
-    result, conversation = run(service, "n", *answers, "")
+    result, conversation = run(service, "y", *answers, "")
     assert result.startswith("Settings saved")
     assert any(message in line for line in conversation.output)
     assert ConfigService(paths).resolve() == Config()
@@ -292,7 +301,7 @@ def test_invalid_answers_are_explained_and_asked_again(
 def test_invalid_target_is_asked_again(service: ConfigService, paths: ConfigPaths) -> None:
     result, conversation = run(service, "galaxy", *ENTER_THROUGH)
     assert result.startswith("Settings saved")
-    assert conversation.prompts[0] == "Save only for this project? [y/N]: "
+    assert conversation.prompts[0] == "Save to [global] (y/n): "
     assert "  Enter yes or no." in conversation.output
 
 
