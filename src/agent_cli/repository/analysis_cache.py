@@ -90,7 +90,13 @@ def open_cache(path: Path) -> sqlite3.Connection:
         table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analyses'"
         ).fetchone()
-        if version != CACHE_SCHEMA or table is None:
+        columns = (
+            {row[1] for row in connection.execute("PRAGMA table_info(analyses)")}
+            if table is not None
+            else set()
+        )
+        required = {"blob", "analyzer", "analyzer_version", "result"}
+        if version != CACHE_SCHEMA or table is None or not required <= columns:
             connection.execute("DROP TABLE IF EXISTS analyses")
             connection.execute(SCHEMA)
             connection.execute(f"PRAGMA user_version = {CACHE_SCHEMA}")
