@@ -571,9 +571,21 @@ def compatible(connection: sqlite3.Connection) -> bool:
             "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
         )
     }
-    required = {"meta", "files", "facts", "symbols", "imports", "relations", "search"}
-    if not required.issubset(tables):
+    required = {
+        "meta": {"key", "value"},
+        "files": {"path", "blob", "analyzer", "analyzer_version", "analysis"},
+        "facts": {"path", "fact", "source", "evidence"},
+        "symbols": {"path", "name", "qualname", "kind", "line", "end_line", "exported"},
+        "imports": {"path", "module", "names", "level", "line"},
+        "relations": {"src", "kind", "dst", "evidence"},
+        "search": {"path", "symbols", "body"},
+    }
+    if not required.keys() <= tables:
         return False
+    for table, columns in required.items():
+        actual = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if not columns <= actual:
+            return False
     row = connection.execute("SELECT value FROM meta WHERE key = 'classifier'").fetchone()
     return row is not None and row[0] == CLASSIFIER_VERSION
 
