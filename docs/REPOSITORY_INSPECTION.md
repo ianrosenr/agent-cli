@@ -8,7 +8,7 @@ It exists so the CLI does not repeatedly spend model tokens rereading the same r
 
 Think of the repository index as a **map and table of contents for the codebase**.
 
-The first time Agent CLI opens a repository, it records useful facts such as:
+The first time Agent CLI sees a repository **without an existing valid index**, it builds and persists one. Future CLI sessions reuse that index and update only repository content that changed.
 
 - what files exist
 - which files look like tests, migrations, CI, deployment, config, or dependency files
@@ -17,7 +17,7 @@ The first time Agent CLI opens a repository, it records useful facts such as:
 - imports and obvious relationships between files
 - where exact names and strings occur
 
-After that, it should update only what changed.
+Opening a new CLI session does not trigger a rebuild. The index is refreshed incrementally from Git state; unchanged file contents reuse cached analysis.
 
 When a new task arrives, Agent CLI starts from small clues such as a filename, symbol, package, or task phrase. It uses the cached repository map to find the small part of the codebase that matters.
 
