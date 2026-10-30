@@ -1,71 +1,97 @@
 # Skills
 
-Users can install many skills. Each worker receives only a curated working set that fits a context budget.
+Agent CLI separates **roles** from **skills**.
 
-## Layers
+- A role defines a worker's responsibility and authority.
+- A skill provides policy, knowledge, or methods relevant to the assigned work.
+- Adding a skill never expands role authority.
 
-| Layer | Purpose | Example (backend worker) |
-| --- | --- | --- |
-| 1. Core | baseline for the worker's task kind | software-engineering, implementation, testing |
-| 2. Role/domain | rules for the area being touched | interfaces, data |
-| 3. Task-specific | tools and frameworks named by the task | FastAPI, OAuth, PostgreSQL |
+## Built-ins and overrides
 
-Core skills come from `task_defaults` in the routing policy. No skill is automatically global to every worker.
+Built-in product skills ship under:
 
-## Locations
+`builtins/skills/<skill-name>/SKILL.md`
 
-Searched in this order; a later location overrides a same-named skill from an earlier one:
+Runtime override locations are searched in this precedence order:
 
-1. `~/.agent-cli/skills/`
-2. `<repo>/.agent-cli/skills/`
-3. additional paths from `skills.paths` in config
+1. built-in skills
+2. `~/.agent-cli/skills/`
+3. `<repo>/.agent-cli/skills/`
+4. additional configured paths
 
-## Skill format
+Later locations may replace a same-named skill. Built-in files are never modified by overrides.
 
-A skill bundle is a directory containing a root `SKILL.md` and optional specialist files, e.g. [.agent-cli/skills/software-engineering/](../.agent-cli/skills/software-engineering/). Every file starts with YAML front matter:
+## Skill package
+
+One skill is one top-level package:
+
+```text
+builtins/skills/security/
+└── SKILL.md
+```
+
+A skill is not nested under a taxonomy such as `software-engineering/`. Taxonomy belongs to routing metadata, not the filesystem.
+
+Every `SKILL.md` begins with exactly:
 
 ```yaml
 ---
-name: architecture          # kebab-case; matches <name>.md (root SKILL.md exempt)
-description: Rules for durable system design and architecture decisions.  # ≤120 chars
-version: 1.0.0              # semver
+name: security
+description: Rules for trust boundaries, input validation, authorization, secrets, and secure execution.
+version: 1.0.0
 ---
 ```
 
-Authoring rules are in [creating-a-new-skill.md](../.agent-cli/skills/software-engineering/creating-a-new-skill.md). Skill bodies contain policy only; routing lives in the policy file.
-
-## Activation modes
-
-Set per skill in config (`skills.activation`):
-
-| Mode | Behavior |
-| --- | --- |
-| `always` | included for every worker |
-| `auto` (default) | included when the routing policy selects it |
-| `explicit` | included only when the user or orchestrator names it |
-| `disabled` | never included |
+Metadata rules are defined by the `creating-a-new-skill` skill.
 
 ## Selection
 
-[.agent-cli/policies/skill-routing.yaml](../.agent-cli/policies/skill-routing.yaml) drives selection:
+`builtins/policies/skill-routing.yaml` is the default routing contract.
 
-1. Start with `task_defaults[task_kind]`.
-2. Add skills whose `signals` match the task, the approved spec, or the affected repository surfaces.
-3. Add `always` skills; remove `disabled` skills.
-4. Fit the set to the context budget (below).
-5. Record the selected skills and the reason for each beyond the default (`audit`).
+Selection uses:
 
-With `dynamic_escalation: true`, a worker that finds work crossing an uncovered policy domain asks the orchestrator for the missing skill. The request and its reason are recorded.
+- assigned role
+- task
+- approved specification
+- affected repository surfaces
 
-V1 matches on metadata and signals. Semantic ranking is a later enhancement.
+The flow is:
+
+1. Start with `role_defaults[role]`.
+2. Add skills whose signals match the work.
+3. Apply configured activation/override policy.
+4. Fit the selected skills to the context budget.
+5. Record selected skills and selection reasons.
+
+No skill is global to every worker.
+
+With dynamic escalation enabled, a worker may request missing policy when newly discovered work crosses an uncovered skill domain. The orchestrator may add that skill without changing the worker's role authority.
 
 ## Context budget
 
-Each worker has a token budget for skills (`skills.context_budget_tokens`). When the selected set exceeds it:
+Every token supplied to a worker must define the task, describe relevant system state, constrain an authorized decision, or provide information needed for that decision.
 
-1. Keep core skills.
-2. Keep skills matched by the approved spec over skills matched only by repository surfaces.
-3. Drop task-specific skills with the weakest signal match first.
-4. If core skills alone exceed the budget, fail loudly. Do not truncate skill text.
+Prefer approved decisions, contracts, interfaces, and targeted source over broad repository or conversation history.
 
-Dropped skills are recorded so the selection can be audited.
+If selected optional skills exceed the configured budget, drop the weakest optional matches first. Never truncate skill text.
+
+## Activation
+
+Configuration may set a skill to:
+
+- `auto` — selected by routing
+- `explicit` — selected only when named
+- `disabled` — unavailable
+- `always` — included regardless of signals
+
+`always` is a user-configurable override, not a built-in assumption.
+
+## Audit
+
+Routing records:
+
+- the final selected skill set
+- why non-default skills were selected
+- dynamic skill escalations and their reasons
+
+Routing evaluation and worker-behavior evaluation are separate concerns.

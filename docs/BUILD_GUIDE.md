@@ -304,49 +304,36 @@ Workers should normally communicate through the orchestrator.
 
 ---
 
-# 7. Skills and Context Management
+# 7. Roles, Skills, and Context Management
 
-Users may install many skills, but agents should receive only a curated working set.
+Roles and skills are separate.
 
-Skill layers:
+- A role defines a worker's responsibility and authority.
+- A skill provides policy, knowledge, or methods.
+- Adding a skill never expands role authority.
 
-1. core SWE skills
-2. role/domain skills
-3. task-specific skills
+Built-in product skills ship as independent packages under `builtins/skills/<skill-name>/SKILL.md`. Do not encode taxonomy in the filesystem.
 
-Example backend worker:
+Skill selection starts from the assigned role, then adds only skills justified by the task, approved spec, or affected repository surfaces.
 
-Core:
-- SWE basics
-- testing
-- Git safety
-- debugging
+Example implementer:
 
-Role/domain:
-- backend patterns
-- API design
+- role: implementer
+- baseline skills: software-engineering, testing
+- additional skills when relevant: interfaces, security, data, observability
+- task-specific skills: framework or technology skills installed by the user/project
 
-Task-specific:
-- FastAPI
-- OAuth
-- PostgreSQL
+No skill is global to every worker.
 
-Support skill activation modes:
-
-- always
-- auto
-- explicit
-- disabled
-
-Default paths:
+Runtime overrides may come from:
 
 - ~/.agent-cli/skills
-- ./.agent-cli/skills
+- <repo>/.agent-cli/skills
 - additional configured paths
 
-Use a context/token budget so unlimited installed skills do not become unlimited prompt size.
+Use a context/token budget. Prefer approved decisions, contracts, interfaces, and targeted source over broad repository or conversation history.
 
-V1 can use metadata and tags for selection before adding semantic ranking.
+Workers may request a missing skill when newly discovered work crosses an uncovered policy domain. Dynamic skill escalation never changes the worker's role authority.
 
 ---
 
@@ -613,26 +600,8 @@ These belong in enhancement issues.
 
 ---
 
-# 17. How to Work Through the Repo
-
-For each issue:
-
-1. Read `AGENTS.md`.
-2. Read this build guide.
-3. Read the issue.
-4. Read only the specialist docs relevant to that issue.
-5. Produce a bounded implementation plan.
-6. Implement only that issue.
-7. Add tests.
-8. Show the diff.
-9. Do not opportunistically implement later roadmap items.
-10. Record good out-of-scope ideas as enhancement issues.
-
-This same workflow intentionally mirrors the future Agent CLI product.
-
----
-
-# 18. Definition of V1 Success
+# 17. Definition of V1 Success
+ Definition of V1 Success
 
 V1 is successful when a developer can enter a repository, start Agent CLI, and say something like:
 

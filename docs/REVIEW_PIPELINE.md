@@ -16,7 +16,7 @@ A spec must contain: objective, affected areas/files, required behavior, behavio
 
 ## Code review
 
-The code reviewer compares the diff to the **approved spec**, not to the implementer's stated intent. It looks for unsatisfied requirements, unauthorized scope, regressions, missing failure handling, missing verification, and incompatible interface changes. The full rule set is the product's [review skill](../.agent-cli/skills/software-engineering/review.md).
+The code reviewer compares the diff to the **approved spec**, not to the implementer's stated intent. It looks for unsatisfied requirements, unauthorized scope, regressions, missing failure handling, missing verification, and incompatible interface changes. The full rule set is the product's [review skill](../builtins/skills/review/SKILL.md).
 
 ## Challenge questions
 

@@ -12,7 +12,7 @@ user goal
  → orchestrator: final diff to user → MR gate
 ```
 
-The orchestrator may skip the spec stage only for tasks that need no code change (e.g. answering a question). Research investigators can be dispatched at any point before a design is committed.
+The orchestrator assigns each subtask one role. Role defines authority; selected skills provide policy and knowledge without expanding that authority. The orchestrator may skip the spec stage for tasks that need no code change. Research investigators can be dispatched before a design is committed.
 
 ## Roles and authority
 

@@ -22,4 +22,3 @@ Pre-alpha. The repository currently contains design docs and agent contracts onl
 
 - [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md) — product narrative and build order
 - [docs/V1_SPEC.md](docs/V1_SPEC.md) — V1 contract
-- [AGENTS.md](AGENTS.md) — start here if you are a coding agent

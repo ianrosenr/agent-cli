@@ -9,7 +9,7 @@
                                │
                 ┌──────────────▼───────────────┐
                 │ Orchestrator                 │──► Memory store
-                │  planner · coordinator       │──► Skill selector
+                │  planner · coordinator       │──► Role + skill selector
                 └──────────────┬───────────────┘
                                │ task + spec + skills
                 ┌──────────────▼───────────────┐
@@ -31,7 +31,7 @@
 | CLI shell | input, slash commands, status and diff display | decisions about work |
 | Orchestrator | decomposition, coordination, escalation, user questions | model choice, spend enforcement |
 | Memory store | canonical task state ([MEMORY.md](MEMORY.md)) | worker scratch reasoning |
-| Skill selector | per-worker skill set within budget ([SKILLS.md](SKILLS.md)) | skill content |
+| Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md)) | skill content or model choice |
 | Router | choosing model + provider + harness ([ROUTING.md](ROUTING.md)) | task content |
 | Model registry | capability scores, tiers, candidate status | live provider health |
 | Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
@@ -58,15 +58,17 @@ Keeping them separate allows the same model to be reached through another provid
 - **Spend.** The budget ledger is consulted in code before every paid call. An LLM cannot override it.
 - **Failure.** A worker or provider failure is contained to that task and surfaces to the orchestrator. It does not crash the session.
 
-## Local layout
+## Product and runtime layout
 
 ```
-~/.agent-cli/            global config, skills, model registry, budget ledger
-<repo>/.agent-cli/       project config, skills, policies, task state
-<repo>/.agent-cli/worktrees/   worker worktrees (git-ignored)
+builtins/skills/                     shipped default skill packages
+builtins/policies/                   shipped default routing policy
+~/.agent-cli/                        user config, skill overrides, model registry, budget ledger
+<repo>/.agent-cli/                   project config, skill overrides, policies, task state
+<repo>/.agent-cli/worktrees/         worker worktrees (git-ignored)
 ```
 
-Exact file names are fixed by the issue that implements each component.
+Built-ins are product assets. User and project paths override them at runtime without modifying shipped files.
 
 ## Prior art: Firstmate
 

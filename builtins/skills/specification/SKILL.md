@@ -1,7 +1,7 @@
 ---
 name: specification
 description: Rules for writing and changing approved implementation specifications.
-version: 1.0.0
+version: 2.0.0
 ---
 
 # Specification
@@ -20,5 +20,3 @@ Repository facts MUST be distinguished from assumptions. Consequential unresolve
 A material requirement change invalidates affected approval until the contract is updated and re-reviewed.
 
 Specifications MUST describe outcomes and constraints, not prescribe unnecessary implementation detail.
-
-Out-of-scope discoveries MUST become separate tracked work.

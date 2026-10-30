@@ -1,7 +1,7 @@
 ---
 name: dependencies
-description: Rules for reproducible environments, dependency choices, and type safety.
-version: 1.0.0
+description: Rules for reproducible environments and dependency selection.
+version: 2.0.0
 ---
 
 # Dependencies
@@ -15,9 +15,3 @@ Use isolated development environments. Generated environment directories MUST NO
 Before adding a dependency, verify that existing project or standard-library capability is insufficient and that the dependency's maintenance, security, license, size, and operational cost are acceptable.
 
 Dependencies MUST be pinned or constrained according to ecosystem best practice.
-
-New code MUST use the strongest practical static typing available in the project.
-
-Untyped external data MUST be validated into typed internal representations at boundaries.
-
-Type-system escape hatches MUST be minimal and justified.

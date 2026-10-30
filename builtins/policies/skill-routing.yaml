@@ -1,31 +1,36 @@
-version: 1
+version: 2
 
 selection_inputs:
-  - task_kind
+  - role
   - task
   - approved_spec
   - affected_repository_surfaces
 
-# Baseline skills depend on the subtask's responsibility. No skill is global to every worker.
-task_defaults:
-  specification: [specification]
-  architecture: [architecture]
-  research: [research]
-  implementation: [software-engineering, implementation]
-  review: [review]
-  skill_authoring: [creating-a-new-skill]
-  skill_evaluation: [skill-evaluation]
+# Roles define authority. These are only the baseline skills needed for each role.
+# No skill is global to every worker.
+role_defaults:
+  orchestrator: []
+  spec_author: [specification]
+  spec_reviewer: [review, specification]
+  architect: [architecture]
+  implementer: [software-engineering, testing]
+  code_reviewer: [review, software-engineering]
+  research_investigator: [research]
+  security_investigator: [security]
+  skill_author: [creating-a-new-skill]
+  skill_evaluator: [skill-evaluation]
 
 # Persist routing decisions so skill selection can be inspected, debugged, and evaluated.
 audit:
   # Record the final set of skills supplied to each worker.
   record_selected_skills: true
-  # Record why each skill beyond the task default was selected.
+  # Record why each skill beyond the role default was selected.
   record_selection_reasons: true
   # Record skills requested after work begins and why they were added.
   record_escalations: true
 
-# Allow workers to request a missing skill when newly discovered work crosses a policy domain.
+# Allow workers to request missing policy when newly discovered work crosses a skill domain.
+# Adding a skill never expands the worker's role authority.
 dynamic_escalation: true
 
 skills:
@@ -35,8 +40,6 @@ skills:
     signals: [component_boundary, data_architecture, trust_boundary, concurrency_architecture, deployment_topology, public_protocol, external_event, irreversible_decision, multi_subsystem_feature]
   research:
     signals: [technical_research, external_research, benchmark_research, technology_evaluation]
-  implementation:
-    signals: [production_code, refactor, implementation_review]
   interfaces:
     signals: [http_api, cli_interface, sdk, mcp, event_schema, public_config, serialization, public_interface]
   data:
@@ -48,15 +51,15 @@ skills:
   observability:
     signals: [request_path, background_job, dependency, state_transition, failure_path, retry, queue, latency, throughput, critical_outcome]
   testing:
-    signals: [behavior_change, bugfix, interface_change, persistence_change, auth_change, concurrency_change, error_handling, dependency_change, completion_review]
+    signals: [behavior_change, bugfix, interface_change, persistence_change, auth_change, concurrency_change, error_handling, dependency_change, code_review]
   dependencies:
-    signals: [dependency_change, environment_setup, package_management, lockfile, runtime_version, untyped_external_data, type_configuration]
+    signals: [dependency_change, environment_setup, package_management, lockfile, runtime_version]
   performance:
     signals: [performance_requirement, latency_budget, throughput_target, resource_optimization, benchmark]
   delivery:
     signals: [deployment, ci_cd, rollout, feature_flag, health_check, release, environment_config]
   review:
-    signals: [code_review, implementation_review]
+    signals: [artifact_review, spec_review, code_review]
   repository-context:
     signals: [new_service, new_package, new_subsystem, directory_reorganization, context_policy]
   repository-state:

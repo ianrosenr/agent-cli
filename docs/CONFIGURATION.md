@@ -41,7 +41,7 @@ git:
   branch_prefix: agent-cli/
 
 skills:
-  paths: []                      # added after the default locations
+  paths: []                      # added after built-in, user, and project locations
   activation: {}                 # skill name → always | auto | explicit | disabled
   context_budget_tokens: 8000
 
@@ -60,7 +60,7 @@ routing:
     implementer: low
 ```
 
-`review.max_rounds`, `workers.max_concurrency`, and `skills.context_budget_tokens` are initial values. They may be tuned by the issue that implements each feature.
+`review.max_rounds`, `workers.max_concurrency`, and `skills.context_budget_tokens` are initial values. Built-in skills and routing ship with the CLI; user/project config overrides them without modifying built-in files.
 
 ## Credentials
 
