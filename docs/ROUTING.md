@@ -4,14 +4,33 @@ This document covers model/provider/harness routing. Skill routing is a separate
 
 The router turns `(role, task, risk)` into `(model, provider, harness)`.
 
+## Explicit user pins
+
+Before automatic model classification, check for explicit user execution constraints attached to the task/subtask.
+
+A specific model pin:
+
+- selects that model directly instead of running normal capability-based model selection
+- may intentionally select a model below the normal role floor
+- is logged as a user override
+- must never silently fall back to a different model
+
+Hard runtime constraints still apply: budget ceilings, provider readiness, context limits, and harness compatibility.
+
+If the requested model cannot be executed, ask the user rather than substituting another model.
+
+When only the model is pinned, provider and harness selection may still optimize among compatible paths for that same model.
+
 ## Selection order
 
-1. **Eligible models.** Active registry models whose tier meets the role floor and whose capabilities fit the task (e.g. context size).
-2. **Healthy access paths.** For each model, providers not in cooldown.
-3. **Budget check.** Drop paid paths that would exceed any hard limit.
-4. **Preference.** Prefer subscription → local → paid API. Within a class, prefer the cheapest path that meets the floor.
-5. **Harness.** Pick a configured external harness whose reported capabilities support the chosen task/model/provider combination.
-6. **No path.** If nothing remains, ask the user. Never silently drop below a role floor.
+
+1. **User pin.** If a specific model is pinned for this scope, select it and skip normal capability classification/role-floor filtering for model choice.
+2. **Eligible models.** Otherwise, use active registry models whose tier meets the role floor and whose capabilities fit the task (e.g. context size).
+3. **Healthy access paths.** For the selected/eligible model, providers not in cooldown.
+4. **Budget check.** Drop paid paths that would exceed any hard limit.
+5. **Preference.** Prefer subscription → local → paid API. Within a class, prefer the cheapest compatible path.
+6. **Harness.** Pick a configured external harness whose reported capabilities support the chosen task/model/provider combination.
+7. **No path.** If nothing remains, ask the user. Never silently substitute a different pinned model.
 
 Every decision is logged with the reasons that ruled out other candidates.
 
