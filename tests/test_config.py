@@ -70,6 +70,11 @@ def test_global_config_is_loaded(service: ConfigService, paths: ConfigPaths) -> 
     assert config.review.max_rounds == 3
 
 
+def test_worker_concurrency_accepts_hard_max(service: ConfigService, paths: ConfigPaths) -> None:
+    write(paths.global_file, {"workers": {"max_concurrency": 16}})
+    assert service.resolve().workers.max_concurrency == 16
+
+
 def test_project_overrides_global(service: ConfigService, paths: ConfigPaths) -> None:
     write(paths.global_file, {"implementation": {"mode": "checkpoint"}})
     write(paths.project_file, {"implementation": {"mode": "plan-only"}})
@@ -149,6 +154,7 @@ def test_discover_finds_the_repository_root(tmp_path: Path) -> None:
         ({"workers": {"max_parallel": 4}}, "workers.max_parallel", "unknown key"),
         ({"workers": {"max_concurrency": "3"}}, "workers.max_concurrency", "an integer"),
         ({"workers": {"max_concurrency": 0}}, "workers.max_concurrency", "at least 1"),
+        ({"workers": {"max_concurrency": 17}}, "workers.max_concurrency", "at most 16"),
         ({"workers": {"max_concurrency": True}}, "workers.max_concurrency", "an integer"),
         ({"workers": 3}, "workers", "expected a mapping"),
         ({"cost": {"per_call_limit_usd": -0.1}}, "cost.per_call_limit_usd", "at least 0"),

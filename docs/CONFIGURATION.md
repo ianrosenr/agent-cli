@@ -42,7 +42,7 @@ review:
   max_rounds: 3                  # then escalate to the orchestrator
 
 workers:
-  max_concurrency: 3
+  max_concurrency: 3                # valid range: 1-16; 2-4 recommended for normal local use
 
 git:
   use_worktrees: true
@@ -68,6 +68,8 @@ routing:
     code_reviewer: mid
     implementer: low
 ```
+
+`workers.max_concurrency` is a ceiling, not a target: the orchestrator should launch only as many independent workers as useful, up to the configured limit. V1 accepts 1–16 workers, defaults to 3, and recommends 2–4 for normal local use.
 
 `review.max_rounds`, `workers.max_concurrency`, and `skills.context_budget_tokens` are initial values. Built-in skills and routing ship with the CLI; user/project config overrides them without modifying built-in files.
 

@@ -14,6 +14,7 @@ from typing import Any
 
 from agent_cli.adapters import AdapterRegistry, adapter_status
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
+from agent_cli.config.model import MAX_WORKER_CONCURRENCY
 from agent_cli.config.schema import merge, to_raw
 from agent_cli.config.service import CostLimitError, CostOrderError
 from agent_cli.terms import ACCESS_KINDS, IMPLEMENTATION_MODES
@@ -175,8 +176,9 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "workers.max_concurrency",
         "Parallel workers",
-        "How many workers may run at the same time.",
-        "Type a whole number, 1 or more.",
+        "How many workers may run at the same time. Recommended: 2-4. "
+        f"Maximum: {MAX_WORKER_CONCURRENCY}.",
+        f"Type a whole number from 1 to {MAX_WORKER_CONCURRENCY}.",
         "2",
         parse_workers,
     ),

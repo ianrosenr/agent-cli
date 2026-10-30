@@ -209,6 +209,9 @@ def check_constraints(value: Any, source: str, path: str, meta: Mapping[str, Any
     minimum = meta.get("minimum")
     if minimum is not None and value < minimum:
         raise ConfigError(source, path, f"must be at least {minimum}, got {value}")
+    maximum = meta.get("maximum")
+    if maximum is not None and value > maximum:
+        raise ConfigError(source, path, f"must be at most {maximum}, got {value}")
     kind = meta.get("kind")
     if kind == "required" and not value:
         raise ConfigError(source, path, "must not be empty")

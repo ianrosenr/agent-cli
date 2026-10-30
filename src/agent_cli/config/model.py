@@ -15,9 +15,11 @@ from agent_cli.terms import AccessKind, ImplementationMode
 type SkillActivation = Literal["always", "auto", "explicit", "disabled"]
 type Tier = Literal["low", "mid", "high"]
 
+MAX_WORKER_CONCURRENCY = 16
+
 
 def constrained(default: Any, **constraints: Any) -> Any:
-    """A field with an immutable default and validation constraints (``minimum``, ``kind``)."""
+    """A field with an immutable default and validation constraints."""
     return field(default=default, metadata=constraints)
 
 
@@ -51,7 +53,7 @@ class ReviewConfig:
 
 @dataclass(frozen=True, slots=True)
 class WorkersConfig:
-    max_concurrency: int = constrained(3, minimum=1)
+    max_concurrency: int = constrained(3, minimum=1, maximum=MAX_WORKER_CONCURRENCY)
 
 
 @dataclass(frozen=True, slots=True)
