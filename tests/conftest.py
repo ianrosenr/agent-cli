@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agent_cli.config import ConfigPaths, ConfigService
+from gitrepo import init_repo
 
 
 @pytest.fixture(autouse=True)
@@ -28,3 +29,9 @@ def paths(tmp_path: Path) -> ConfigPaths:
 @pytest.fixture
 def service(paths: ConfigPaths) -> ConfigService:
     return ConfigService(paths)
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """An empty, real Git repository."""
+    return init_repo(tmp_path / "project")

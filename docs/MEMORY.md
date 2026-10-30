@@ -43,3 +43,13 @@ This SQLite database is durable source-of-truth state and is git-ignored. It car
 Repository-derived indexes are separate rebuildable state. See [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 
 V1 uses local stores only; no vector database.
+
+## Implementation
+
+`agent_cli.state` implements this contract (V1-05):
+
+- `TaskStore` is the only way to read or write `tasks.sqlite`. Every change appends an `events` row; superseded requirements, decisions, pins, and spec versions are kept and linked to their replacements.
+- Schema migrations live in `state/migrations.py`, tracked by SQLite's `user_version`. All pending migrations run in one transaction. A corrupt, foreign, or newer database, or a failed migration, raises `TaskStateError` and leaves the file untouched.
+- Execution pins are stored per task as normalized IDs and convert to the adapter `Selection` type. They are not inherited by subtasks; whether a parent's pin applies to its children is orchestration policy (V1-09).
+- `/status` renders the latest session's task tree, roles, pins, latest spec approval, and open blockers through `status_lines`. With no persisted state it prints `No active task.` and creates nothing.
+- The state directory contains a `.gitignore` of `*`, so it stays ignored even in repositories whose own ignore rules do not mention it.

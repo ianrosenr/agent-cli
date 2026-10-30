@@ -16,6 +16,7 @@ from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build
 from agent_cli.commands.registry import is_command
 from agent_cli.config import ConfigError, ConfigPaths, ConfigService
 from agent_cli.startup import render_startup, supports_color
+from agent_cli.state import TaskStore
 
 PROMPT = "> "
 NATURAL_LANGUAGE_PLACEHOLDER = "Orchestration is not implemented yet."
@@ -42,6 +43,7 @@ def run_shell(
     startup: str,
     config: ConfigService | None = None,
     adapters: AdapterRegistry | None = None,
+    tasks: TaskStore | None = None,
 ) -> int:
     """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
     context = CommandContext(
@@ -50,6 +52,7 @@ def run_shell(
         read_line=read_line,
         write_line=write_line,
         adapters=adapters,
+        tasks=tasks,
     )
     write_line(startup)
     while True:
@@ -85,8 +88,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         problem = config_problem(config)
         if problem:
             startup += f"\n{problem}\n"
+        root = config.paths.project_root
+        tasks = None if root is None else TaskStore.for_repository(root)
         return run_shell(
-            build_registry(), terminal_reader(), print, startup, config, default_adapters()
+            build_registry(), terminal_reader(), print, startup, config, default_adapters(), tasks
         )
     except KeyboardInterrupt:
         return 130

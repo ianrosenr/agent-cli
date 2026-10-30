@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from agent_cli.adapters import AdapterRegistry
     from agent_cli.config import ConfigService
+    from agent_cli.state import TaskStore
 
 SLASH = "/"
 
@@ -48,6 +49,8 @@ class CommandContext:
     """Shows a line of output before the command returns its final response."""
     adapters: AdapterRegistry | None = None
     """Harness and provider adapters; ``None`` when none are available in this session."""
+    tasks: TaskStore | None = None
+    """Canonical task state; ``None`` outside a repository, where no task state exists."""
 
 
 class ExitShell(Exception):
