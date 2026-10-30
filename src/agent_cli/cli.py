@@ -1,4 +1,8 @@
-"""Process startup and the interactive shell loop."""
+"""Process startup and the interactive shell loop.
+
+Ordinary text is the primary input and goes to orchestration; slash commands are secondary
+controls, recognized only when input begins with ``/``.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +13,9 @@ from collections.abc import Callable, Sequence
 from agent_cli import __version__
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
+from agent_cli.startup import render_startup, supports_color
 
-PROMPT = "agent-cli> "
-BANNER = "Agent CLI. Type /help for commands, /exit or Ctrl-D to quit."
+PROMPT = "> "
 NATURAL_LANGUAGE_PLACEHOLDER = "Orchestration is not implemented yet."
 
 type ReadLine = Callable[[str], str]
@@ -25,13 +29,16 @@ def handle_input(line: str, context: CommandContext) -> str | None:
         return None
     if is_command(text):
         return context.registry.dispatch(text, context)
+    # V1-09 replaces this with the orchestration entry point.
     return NATURAL_LANGUAGE_PLACEHOLDER
 
 
-def run_shell(registry: CommandRegistry, read_line: ReadLine, write_line: WriteLine) -> int:
-    """Read and answer input until EOF. Ctrl-C discards the current line."""
+def run_shell(
+    registry: CommandRegistry, read_line: ReadLine, write_line: WriteLine, startup: str
+) -> int:
+    """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
     context = CommandContext(registry=registry)
-    write_line(BANNER)
+    write_line(startup)
     while True:
         try:
             line = read_line(PROMPT)
@@ -60,7 +67,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Console entry point for ``agent-cli`` and ``python -m agent_cli``."""
     parse_args(argv)
     try:
-        return run_shell(build_registry(), terminal_reader(), print)
+        startup = render_startup(color=supports_color(sys.stdout))
+        return run_shell(build_registry(), terminal_reader(), print, startup)
     except KeyboardInterrupt:
         return 130
 
