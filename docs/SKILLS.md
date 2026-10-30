@@ -46,7 +46,9 @@ Metadata rules are defined by the `creating-a-new-skill` skill.
 
 ## Selection
 
-`builtins/policies/skill-routing.yaml` is the default routing contract.
+`builtins/policies/skill-routing.yaml` is the default routing contract. The end-to-end classifier and selection flow is documented in [SKILL_ROUTING.md](SKILL_ROUTING.md).
+
+The orchestrator assigns role and subtask scope. A cheap semantic classifier plus deterministic repository inspection derives normalized signals; deterministic code maps those signals to skills.
 
 Selection uses:
 

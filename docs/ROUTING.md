@@ -1,5 +1,7 @@
 # Routing
 
+This document covers model/provider/harness routing. Skill routing is a separate low-cost stage documented in [SKILL_ROUTING.md](SKILL_ROUTING.md).
+
 The router turns `(role, task, risk)` into `(model, provider, harness)`.
 
 ## Selection order

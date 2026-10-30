@@ -12,7 +12,7 @@ user goal
  → orchestrator: final diff to user → MR gate
 ```
 
-The orchestrator assigns each subtask one role. Role defines authority; selected skills provide policy and knowledge without expanding that authority. The orchestrator may skip the spec stage for tasks that need no code change. Research investigators can be dispatched before a design is committed.
+The orchestrator assigns each subtask one role and a concise task/scope description. It does not choose skill names. A separate low-cost skill-routing stage derives normalized signals and selects policy context without expanding role authority. See [SKILL_ROUTING.md](SKILL_ROUTING.md). The orchestrator may skip the spec stage for tasks that need no code change. Research investigators can be dispatched before a design is committed.
 
 ## Roles and authority
 

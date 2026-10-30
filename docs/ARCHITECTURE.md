@@ -31,7 +31,7 @@
 | CLI shell | input, slash commands, status and diff display | decisions about work |
 | Orchestrator | decomposition, coordination, escalation, user questions | model choice, spend enforcement |
 | Memory store | canonical task state ([MEMORY.md](MEMORY.md)) | worker scratch reasoning |
-| Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md)) | skill content or model choice |
+| Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md), [SKILL_ROUTING.md](SKILL_ROUTING.md)) | skill content or model choice |
 | Router | choosing model + provider + harness ([ROUTING.md](ROUTING.md)) | task content |
 | Model registry | capability scores, tiers, candidate status | live provider health |
 | Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
