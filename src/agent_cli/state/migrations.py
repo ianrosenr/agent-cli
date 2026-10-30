@@ -114,7 +114,9 @@ V1 = (
         provider TEXT,
         harness TEXT,
         worktree TEXT,
-        status TEXT NOT NULL CHECK (status IN ('starting', 'running', 'waiting', 'completed', 'failed', 'canceled')),
+        status TEXT NOT NULL CHECK (
+            status IN ('starting', 'running', 'waiting', 'completed', 'failed', 'canceled')
+        ),
         created_at TEXT NOT NULL,
         heartbeat_at TEXT NOT NULL
     )
