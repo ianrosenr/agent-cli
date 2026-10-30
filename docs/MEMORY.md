@@ -32,4 +32,14 @@ Input classes from [ORCHESTRATION.md](ORCHESTRATION.md#orchestrator-rules) (requ
 
 ## Storage
 
-Project task state lives under `<repo>/.agent-cli/state/` and is git-ignored. V1 uses a local store only; no vector database. The format is decided in V1-05.
+Canonical task state lives in:
+
+```text
+<repo>/.agent-cli/state/tasks.sqlite
+```
+
+This SQLite database is durable source-of-truth state and is git-ignored. It carries an explicit schema version and uses deterministic migrations. A migration failure must preserve the existing database; canonical task state is never silently deleted or rebuilt because analyzer/repository-cache versions changed.
+
+Repository-derived indexes are separate rebuildable state. See [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
+
+V1 uses local stores only; no vector database.
