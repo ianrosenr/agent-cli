@@ -1,0 +1,50 @@
+version: 1
+
+selection_inputs:
+  - task
+  - approved_spec
+  - affected_repository_surfaces
+
+always:
+  - software-engineering
+
+audit:
+  record_selected_skills: true
+  record_selection_reasons: true
+  record_escalations: true
+
+dynamic_escalation: true
+
+skills:
+  specification:
+    signals: [specification, requirement_change, acceptance_criteria, ambiguity]
+  architecture:
+    signals: [component_boundary, data_architecture, trust_boundary, concurrency_architecture, deployment_topology, public_protocol, external_event, irreversible_decision, multi_subsystem_feature]
+  implementation:
+    signals: [production_code, refactor, implementation_review]
+  interfaces:
+    signals: [http_api, cli_interface, sdk, mcp, event_schema, public_config, serialization, public_interface]
+  data:
+    signals: [database, persistence, schema, migration, transaction, backfill, index]
+  security:
+    signals: [external_input, authentication, authorization, secret, credential, database_query, filesystem, network, deserialization, shell_execution, privilege, cryptography, trust_boundary]
+  resilience:
+    signals: [network_call, external_service, background_job, queue, retry, timeout, concurrency, async_work, distributed_operation, transaction, resource_pool, long_running_operation]
+  observability:
+    signals: [request_path, background_job, dependency, state_transition, failure_path, retry, queue, latency, throughput, critical_outcome]
+  testing:
+    signals: [behavior_change, bugfix, interface_change, persistence_change, auth_change, concurrency_change, error_handling, dependency_change, completion_review]
+  dependencies:
+    signals: [dependency_change, environment_setup, package_management, lockfile, runtime_version, untyped_external_data, type_configuration]
+  performance:
+    signals: [performance_requirement, latency_budget, throughput_target, resource_optimization, benchmark]
+  delivery:
+    signals: [deployment, ci_cd, rollout, feature_flag, health_check, release, environment_config]
+  review:
+    signals: [code_review, implementation_review]
+  repository-context:
+    signals: [new_service, new_package, new_subsystem, directory_reorganization, context_policy]
+  repository-state:
+    signals: [capability_added, capability_removed, capability_changed, future_work, documentation_change]
+  skill-evaluation:
+    signals: [skill_change, system_prompt_change, agent_instruction_change, routing_policy_change, model_selection_policy_change, tool_contract_change, evaluation_change, golden_dataset_change]
