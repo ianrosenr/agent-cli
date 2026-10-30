@@ -42,13 +42,36 @@ version: 1.0.0
 ---
 ```
 
+The only V1 metadata keys are `name`, `description`, and `version`. Names are lowercase kebab-case and match the containing directory; descriptions are one plain-text line of at most 120 characters; versions are semantic versions.
+
 Metadata rules are defined by the `creating-a-new-skill` skill.
+
+## Initial built-ins
+
+V1-06 introduces the initial independent built-in packages:
+
+- `software-engineering`
+- `testing`
+- `specification`
+- `review`
+- `architecture`
+- `research`
+- `security`
+- `interfaces`
+- `data`
+- `observability`
+- `creating-a-new-skill`
+- `skill-evaluation`
+
+Type-safety rules belong to `software-engineering`; there is no separate type-safety skill. OpenTelemetry-specific production policy belongs to `observability`. Each normative rule has one owner.
 
 ## Selection
 
 `builtins/policies/skill-routing.yaml` is the default routing contract. The end-to-end classifier and selection flow is documented in [SKILL_ROUTING.md](SKILL_ROUTING.md).
 
-The orchestrator assigns role and subtask scope. A cheap semantic classifier plus deterministic repository inspection derives normalized signals; deterministic code maps those signals to skills.
+The orchestrator assigns role and subtask scope. Deterministic repository inspection always participates; an injected cheap semantic classifier may add normalized signals when available. Deterministic code maps the resulting signals to skills.
+
+V1-06 works without a production classifier. V1-07 later chooses the concrete classifier model/provider.
 
 Selection uses:
 
@@ -76,6 +99,8 @@ Every token supplied to a worker must define the task, describe relevant system 
 Prefer approved decisions, contracts, interfaces, and targeted source over broad repository or conversation history.
 
 If selected optional skills exceed the configured budget, drop the weakest optional matches first. Never truncate skill text.
+
+Before a concrete worker tokenizer is known, V1-06 uses one deterministic, versioned conservative token estimator consistently for discovery, budgeting, telemetry, and `/skills` display.
 
 ## Activation
 
