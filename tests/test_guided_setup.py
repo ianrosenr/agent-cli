@@ -101,11 +101,13 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
     assert config.git == type(config.git)(False, ".agent-cli/trees", "bot/")
 
 
-def test_worker_concurrency_guidance_allows_eight(service: ConfigService, paths: ConfigPaths) -> None:
+def test_worker_concurrency_guidance_allows_eight(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
     result, conversation = run(service, "y", *answers_for(workers__max_concurrency="8"), "")
     assert result.startswith("Settings saved")
     assert ConfigService(paths).resolve().workers.max_concurrency == 8
-    assert "Recommended: 2–4. Maximum: 16." in conversation.transcript
+    assert "Recommended: 2-4. Maximum: 16." in conversation.transcript
     assert "Type a whole number from 1 to 16." in conversation.transcript
 
 
