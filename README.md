@@ -8,7 +8,19 @@ Describe a goal in natural language. Agent CLI inspects the repo, plans and revi
 
 ## Status
 
-Pre-alpha. The repository currently contains design docs and agent contracts only. No runtime code exists yet. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
+Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell whose slash commands are placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
+
+## Development
+
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+uv run agent-cli            # or: uv run python -m agent_cli
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+uv run pytest
+```
 
 ## What V1 targets
 
