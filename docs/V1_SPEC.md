@@ -67,7 +67,6 @@ These are deferred to the issue named. Docs that mention them describe intent, n
 
 | Decision | Owner issue |
 | --- | --- |
-| CLI framework and packaging | V1-02 |
 | State store format (e.g. SQLite vs. files) | V1-05 |
 | Capability score scale and initial registry seed | V1-07 |
 | Spend accounting source (provider usage vs. local estimate) | V1-08 |
