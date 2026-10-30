@@ -260,17 +260,13 @@ class GuidedSetup:
                 f"\nNot inside a Git repository; settings go to {self.service.paths.global_file}."
             )
             return Layer.GLOBAL
-        default = "project" if project.exists() else "global"
         self.write_line(
-            "\nWhere should these settings be saved?\n"
-            f"  global   {self.service.paths.global_file}  (all projects)\n"
-            f"  project  {project}  (this repository; cost limits may only be lower)"
+            "\nSettings can apply to all projects or only to this repository:\n"
+            f"  all projects  {self.service.paths.global_file}\n"
+            f"  this project  {project}  (cost limits may only be lower)"
         )
-        while True:
-            answer = self.read_line(f"Save to [{default}]: ").strip().lower() or default
-            if answer in ("global", "project"):
-                return Layer(answer)
-            self.write_line("  Enter global or project.")
+        only_project = self.confirm("Save only for this project?", default=project.exists())
+        return Layer.PROJECT if only_project else Layer.GLOBAL
 
     def ask(
         self,
@@ -345,11 +341,12 @@ class GuidedSetup:
             lines += ["", "Project runtime directories (state, worktrees) will be git-ignored."]
         return "\n".join(lines)
 
-    def confirm(self, question: str) -> bool:
+    def confirm(self, question: str, default: bool = True) -> bool:
+        choices = "Y/n" if default else "y/N"
         while True:
-            answer = self.read_line(f"{question} [Y/n]: ").strip()
+            answer = self.read_line(f"{question} [{choices}]: ").strip()
             if not answer:
-                return True
+                return default
             try:
                 return parse_bool(answer)
             except InvalidAnswer as error:
