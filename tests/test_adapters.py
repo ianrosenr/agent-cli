@@ -132,8 +132,8 @@ def test_failure_is_plain_comparable_data() -> None:
         (ReadinessState.AUTH_REQUIRED, ErrorKind.AUTH_REQUIRED),
         (ReadinessState.MISCONFIGURED, ErrorKind.INVALID_REQUEST),
         (ReadinessState.UNAVAILABLE, ErrorKind.UNAVAILABLE),
+        (ReadinessState.DETECTED, ErrorKind.UNAVAILABLE),
         (ReadinessState.READY, None),
-        (ReadinessState.DETECTED, None),
     ],
 )
 def test_readiness_maps_to_a_matching_error_kind(
@@ -276,6 +276,7 @@ def test_start_failure_is_a_normalized_error() -> None:
     [
         (ReadinessState.AUTH_REQUIRED, ErrorKind.AUTH_REQUIRED),
         (ReadinessState.NOT_DETECTED, ErrorKind.NOT_FOUND),
+        (ReadinessState.DETECTED, ErrorKind.UNAVAILABLE),
         (ReadinessState.UNAVAILABLE, ErrorKind.UNAVAILABLE),
     ],
 )
