@@ -36,7 +36,38 @@ Floors are defaults, configurable but not shown in `/startup`. See [ROUTING.md](
 - Ask the user only about consequential unresolved decisions.
 - Workers send questions to the orchestrator, not to the user or each other. The orchestrator answers from memory, delegates research, or asks the user.
 
+## Explicit user execution pins
+
+An explicit user choice of model, provider, or harness is a task constraint, not a routing hint.
+
+Examples:
+
+```text
+Use Claude Sonnet for the implementer.
+Have the reviewer use GPT-5.6.
+Use model X for all subagents on this task.
+```
+
+The orchestrator must:
+
+1. record the request as an explicit user requirement
+2. attach the constraint to the affected role/task/subtask
+3. preserve it in canonical memory
+4. pass it to routing and worker launch
+5. show the pin in routing/status explanations
+
+A specific model pin overrides automatic capability classification and normal role-floor model selection for that scope.
+
+The pin does not override hard runtime constraints such as paid-budget ceilings, provider authentication/availability, context-window requirements, or harness incompatibility.
+
+If the pinned model cannot run, Agent CLI asks the user instead of silently selecting a different model.
+
+If only a model is pinned, Agent CLI may still choose a compatible provider and harness for that same model. Explicit provider or harness pins are preserved the same way.
+
+Vague preferences such as "use something cheap" are routing preferences, not hard pins.
+
 ## Implementation modes
+
 
 | Mode | Behavior |
 | --- | --- |
