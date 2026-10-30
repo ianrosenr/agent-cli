@@ -16,7 +16,7 @@ Reference scenario:
 2. **Configuration.** Layered config (global → project → session → task) with usable defaults. See [CONFIGURATION.md](CONFIGURATION.md).
 3. **Guided setup.** `/startup` detects harnesses and configures providers, budgets, and preferences. See [STARTUP_FLOW.md](STARTUP_FLOW.md).
 4. **Adapters.** Separate, stable interfaces for providers and existing coding-agent harnesses. Agent CLI is the control plane, not a coding-agent runtime. See [ARCHITECTURE.md](ARCHITECTURE.md).
-5. **Shared memory and repository facts.** Persist orchestration state plus a reusable, incremental repository fact index for cheap task inspection. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
+5. **Shared memory and repository facts.** Persist canonical task state in project-local SQLite plus a reusable, incremental repository fact index for cheap task inspection. Canonical task state is durable; repository indexes/caches are rebuildable. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
 7. **Model registry and role floors.** Capability-scored models; each role has a minimum reasoning tier. See [ROUTING.md](ROUTING.md).
 8. **Budget guardrails.** Hard limits enforced in code before each paid call. See [ROUTING.md](ROUTING.md#cost-guardrails).
@@ -68,6 +68,5 @@ These are deferred to the issue named. Docs that mention them describe intent, n
 
 | Decision | Owner issue |
 | --- | --- |
-| State store format (e.g. SQLite vs. files) | V1-05 |
 | Capability score scale and initial registry seed | V1-07 |
 | Spend accounting source (provider usage vs. local estimate) | V1-08 |

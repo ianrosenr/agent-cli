@@ -212,7 +212,8 @@ V1 should favor simple local tools:
 - **Git** for tracked files, content hashes, and changed blobs
 - **SQLite** for persistent facts and relationships
 - **SQLite FTS5** or equivalent for full-text search
-- **Tree-sitter** or equivalent for multi-language structural parsing
+- Python's standard-library **ast** as the first required structural analyzer
+- a replaceable analyzer interface so Tree-sitter or equivalent can be added later
 - **ripgrep** as a fast exact-search fallback
 - optional language-server or SCIP-style adapters for more precise references
 
@@ -357,6 +358,17 @@ Structural evidence should generally outrank semantic inference when they confli
 
 ## Cold start vs warm update
 
+### Working-tree content
+
+The repository index describes the content the developer is actually working on, not only the last commit.
+
+- clean tracked files may reuse their Git blob SHA directly
+- dirty tracked files should compute the equivalent Git blob object ID from current content without requiring a commit
+- supported non-ignored untracked files may be indexed the same way
+- `.git/`, `.agent-cli/`, and Git-ignored content are excluded
+
+This keeps cache identity content-addressed while allowing local edits to participate in inspection.
+
 ### Cold start
 
 The first repository index may do more work:
@@ -461,9 +473,9 @@ Do not optimize for the smallest individual response if doing so causes more sea
 V1 should include:
 
 - persistent local fact index
-- Git-based incremental updates
+- Git/current-working-tree incremental updates
 - path/manifests classification
-- structural parsing for supported languages
+- Python structural parsing through a replaceable analyzer interface
 - lexical search
 - basic relationships
 - provenance
