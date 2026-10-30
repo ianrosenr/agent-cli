@@ -2,6 +2,17 @@
 
 `/startup` makes Agent CLI usable for a new user in a few minutes. Every step has a default, so pressing Enter through the whole flow gives a working setup.
 
+## Implementation ownership
+
+The list below describes the final V1 startup experience.
+
+Implementation is staged:
+
+- **V1-03** owns configuration loading, validation, persistence, and the guided setup UI. It exposes harness/provider configuration hooks but does not implement their adapters.
+- **V1-04** supplies real harness/provider detection, readiness, authentication status, and adapter-backed provider information to that existing setup UI.
+
+Do not duplicate V1-04 detection logic inside V1-03 just to make the startup screen look complete.
+
 ## Steps
 
 1. **Detect harnesses.** Look for supported external harnesses such as Pi, Codex CLI, Claude Code, and OpenCode. Show what was found and its version/capabilities. Offer install hints for missing ones; do not install anything.
