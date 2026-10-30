@@ -1,19 +1,26 @@
 version: 1
 
 selection_inputs:
+  - task_kind
   - task
   - approved_spec
   - affected_repository_surfaces
 
-# Inject these skills into every delegated worker, regardless of routing signals.
-always:
-  - software-engineering
+# Baseline skills depend on the subtask's responsibility. No skill is global to every worker.
+task_defaults:
+  specification: [specification]
+  architecture: [architecture]
+  research: [research]
+  implementation: [software-engineering, implementation]
+  review: [review]
+  skill_authoring: [creating-a-new-skill]
+  skill_evaluation: [skill-evaluation]
 
 # Persist routing decisions so skill selection can be inspected, debugged, and evaluated.
 audit:
   # Record the final set of skills supplied to each worker.
   record_selected_skills: true
-  # Record why each non-always skill was selected.
+  # Record why each skill beyond the task default was selected.
   record_selection_reasons: true
   # Record skills requested after work begins and why they were added.
   record_escalations: true
@@ -26,6 +33,8 @@ skills:
     signals: [specification, requirement_change, acceptance_criteria, ambiguity]
   architecture:
     signals: [component_boundary, data_architecture, trust_boundary, concurrency_architecture, deployment_topology, public_protocol, external_event, irreversible_decision, multi_subsystem_feature]
+  research:
+    signals: [technical_research, external_research, benchmark_research, technology_evaluation]
   implementation:
     signals: [production_code, refactor, implementation_review]
   interfaces:
