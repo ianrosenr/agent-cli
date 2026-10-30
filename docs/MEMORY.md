@@ -10,7 +10,7 @@ Shared memory belongs to the orchestration layer, not to individual worker chats
 | Fact | repository fact with its evidence (file, command output) |
 | Assumption | stated assumption, who made it, whether it was confirmed |
 | Decision | resolved question, who decided, rationale, superseded-by |
-| Task | goal, parent/child and dependency links, status, assigned role |
+| Task | goal, parent/child and dependency links, status, assigned role, explicit model/provider/harness pins |
 | Spec | versioned contract per task; each version keeps its diff from the previous one and its approval state |
 | Worker | role, model/provider/harness, worktree, status, last heartbeat |
 | Finding | reviewer or investigator finding, severity, linked requirement, resolution |
@@ -26,6 +26,7 @@ Input classes from [ORCHESTRATION.md](ORCHESTRATION.md#orchestrator-rules) (requ
 - Worker scratch reasoning does not become shared truth automatically.
 - Records are append-friendly: superseding a decision or spec version keeps the old one, linked to its replacement.
 - Workers receive the approved records relevant to their task, not the conversations that produced them.
+- Explicit user execution pins are canonical task constraints and survive process restarts until superseded by the user.
 - A material requirement change voids approval of affected specs until they are re-reviewed.
 - After a restart, the orchestrator rebuilds worker state from memory and the worktrees on disk, then resumes or reports each worker.
 
