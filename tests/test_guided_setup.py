@@ -8,7 +8,7 @@ import yaml
 
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
-from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup
+from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup, Setting
 
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
 ADVANCED = ("role_floors", "orchestrator", "routing", "capability", "fallback", "classifier")
@@ -126,7 +126,7 @@ def test_rerun_shows_current_values_as_defaults_and_keeps_them(
 
     result, conversation = run(service, *ENTER_THROUGH)
     assert result.startswith("Settings saved")
-    assert "Maximum parallel workers [5]: " in conversation.prompts
+    assert "Parallel workers [5]: " in conversation.prompts
     assert "Implementation mode [plan-only]: " in conversation.prompts
     assert paths.global_file.read_text() == before
 
@@ -175,7 +175,7 @@ def test_target_prompt_is_yes_for_global_and_no_for_project(
     run(service, "n", *answers_for(workers__max_concurrency="2"), "")
     _, conversation = run(service, "n", *ENTER_THROUGH[1:])
     assert conversation.prompts[0] == "Save to [global] (y/n): "
-    assert "Maximum parallel workers [2]: " in conversation.prompts
+    assert "Parallel workers [2]: " in conversation.prompts
     assert not paths.global_file.exists()
 
 
@@ -193,7 +193,7 @@ def test_global_target_shows_global_values_and_flags_project_overrides(
     run(service, "n", *answers_for(workers__max_concurrency="2"), "")
     result, conversation = run(service, "y", *ENTER_THROUGH[1:])
     assert result.startswith("Settings saved")
-    assert "Maximum parallel workers [3]: " in conversation.prompts
+    assert "Parallel workers [3]: " in conversation.prompts
     assert "(overridden by project config)" in conversation.transcript
     assert ConfigService(paths).resolve(through=Layer.GLOBAL).workers.max_concurrency == 3
     assert ConfigService(paths).resolve().workers.max_concurrency == 2
@@ -254,11 +254,11 @@ def test_contradictory_budget_limits_are_asked_again_with_answers_as_defaults(
     result, conversation = run(service, "y", *answers, "")
     assert result.startswith("Settings saved")
     assert (
-        "  the per-task limit ($1.00) cannot be above the monthly limit ($0.50). "
-        "Enter the budget limits again." in conversation.output
+        "  Not allowed: the per-task limit ($1.00) cannot be above the monthly limit ($0.50). "
+        "Please enter the spending limits again." in conversation.output
     )
-    assert conversation.prompts.count("Monthly paid-API limit [$0.50]: ") == 1
-    assert "Per-task paid-API limit [$1.00]: " in conversation.prompts
+    assert conversation.prompts.count("Monthly spending limit [$0.50]: ") == 1
+    assert "Per-task spending limit [$1.00]: " in conversation.prompts
     cost = ConfigService(paths).resolve().cost
     assert (cost.monthly_limit_usd, cost.per_task_limit_usd) == (0.5, 0.4)
 
@@ -273,36 +273,90 @@ def test_project_budget_cannot_exceed_a_lowered_project_limit_in_session(
 
 
 @pytest.mark.parametrize(
-    ("key", "bad", "message"),
+    ("key", "bad"),
     [
-        ("workers.max_concurrency", "many", "Enter a whole number."),
-        ("workers.max_concurrency", "0", "must be at least 1"),
-        ("cost.monthly_limit_usd", "-5", "must be at least 0"),
-        ("cost.per_call_limit_usd", "cheap", "Enter an amount in USD"),
-        ("implementation.mode", "yolo", "Choose one of: autopilot, checkpoint, plan-only."),
-        ("review.before_merge_request", "maybe", "Enter yes or no."),
-        ("access.preference", "cloud", "List one or more of: subscription, local, api."),
-        ("access.preference", "api api", "must not repeat entries"),
-        ("git.worktree_dir", "../elsewhere", "must be a path inside the repository"),
-        ("git.branch_prefix", "bad prefix", "is not a valid Git branch prefix"),
+        ("access.preference", "cloud"),
+        ("access.preference", "api api"),
+        ("access.preference", "api, api"),
+        ("access.preference", "local,"),
+        ("cost.monthly_limit_usd", "-5"),
+        ("cost.monthly_limit_usd", "twenty"),
+        ("cost.per_task_limit_usd", "1.234"),
+        ("cost.per_call_limit_usd", "1,000"),
+        ("workers.max_concurrency", "many"),
+        ("workers.max_concurrency", "0"),
+        ("workers.max_concurrency", "2.5"),
+        ("skills.paths", "/a,,/b"),
+        ("implementation.mode", "yolo"),
+        ("review.before_merge_request", "maybe"),
+        ("review.before_merge_request", "true"),
+        ("git.use_worktrees", "1"),
+        ("git.worktree_dir", "../elsewhere"),
+        ("git.worktree_dir", "/abs/path"),
+        ("git.branch_prefix", "bad prefix"),
     ],
 )
-def test_invalid_answers_are_explained_and_asked_again(
-    service: ConfigService, paths: ConfigPaths, key: str, bad: str, message: str
+def test_answers_not_in_the_stated_format_are_asked_again(
+    service: ConfigService, paths: ConfigPaths, key: str, bad: str
 ) -> None:
+    index = [s.key for s in SETTINGS].index(key)
     answers = [""] * len(SETTINGS)
-    answers.insert([s.key for s in SETTINGS].index(key), bad)
+    answers.insert(index, bad)
     result, conversation = run(service, "y", *answers, "")
     assert result.startswith("Settings saved")
-    assert any(message in line for line in conversation.output)
+    setting = SETTINGS[index]
+    failure = conversation.output.index("  Format not followed, please try again.")
+    assert conversation.output[failure + 1] == f"  How to answer: {setting.how}"
+    assert conversation.output[failure + 2] == f"  Example: {setting.example}"
+    assert conversation.prompts.count(conversation.prompts[index + 1]) == 2
     assert ConfigService(paths).resolve() == Config()
+
+
+@pytest.mark.parametrize("setting", SETTINGS, ids=[s.key for s in SETTINGS])
+def test_every_example_is_a_working_answer(
+    service: ConfigService, paths: ConfigPaths, setting: Setting
+) -> None:
+    for layer in ("y", "n"):
+        answers = [""] * len(SETTINGS)
+        answers[SETTINGS.index(setting)] = setting.example
+        result, conversation = run(ConfigService(paths), layer, *answers, "")
+        assert result.startswith("Settings saved"), conversation.transcript
+        assert "Format not followed" not in conversation.transcript
+        assert "Not allowed" not in conversation.transcript
+
+
+def test_every_step_shows_what_it_does_how_to_answer_and_an_example(
+    service: ConfigService,
+) -> None:
+    _, conversation = run(service, *ENTER_THROUGH)
+    for number, setting in enumerate(SETTINGS, start=1):
+        header = conversation.output.index(f"Step {number} of {len(SETTINGS)}: {setting.label}")
+        assert conversation.output[header + 1 : header + 4] == [
+            f"  {setting.what}",
+            f"  How to answer: {setting.how}",
+            f"  Example: {setting.example}",
+        ]
+
+
+def test_rule_violations_explain_the_rule_instead_of_the_format(
+    service: ConfigService,
+) -> None:
+    answers = budget_answers(("50", "", ""))
+    index = [s.key for s in SETTINGS].index("cost.monthly_limit_usd")
+    answers.insert(index + 1, "")
+    _, conversation = run(service, "n", *answers, "")
+    assert (
+        "  Not allowed: $50.00 is above the default limit of $20.00; more-specific config may "
+        "only lower cost limits. Please try again." in conversation.output
+    )
+    assert "  Format not followed, please try again." not in conversation.output
 
 
 def test_invalid_target_is_asked_again(service: ConfigService, paths: ConfigPaths) -> None:
     result, conversation = run(service, "galaxy", *ENTER_THROUGH)
     assert result.startswith("Settings saved")
     assert conversation.prompts[0] == "Save to [global] (y/n): "
-    assert "  Enter yes or no." in conversation.output
+    assert "  Format not followed, please try again." in conversation.output
 
 
 @pytest.mark.parametrize("decline", ["n", "no"])
@@ -330,7 +384,11 @@ def test_summary_lists_every_setting_and_target_before_confirming(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     _, conversation = run(service, *ENTER_THROUGH[:-1], "n")
-    summary = conversation.output[-1]
+    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    assert conversation.output[-2:] == [
+        "How to answer: type y to save these settings or n to cancel.",
+        "Example: y",
+    ]
     assert summary.startswith(
         f"Summary: changes are written to global config ({paths.global_file})"
     )
@@ -338,7 +396,7 @@ def test_summary_lists_every_setting_and_target_before_confirming(
         assert f"  {setting.label} " in summary
     assert summary.count("→ global") == len(SETTINGS)
     assert "git-ignored" in summary
-    assert conversation.prompts[-1] == "Write these settings? [Y/n]: "
+    assert conversation.prompts[-1] == "Save these settings? [yes] (y/n): "
 
 
 def test_advanced_settings_are_not_shown(service: ConfigService) -> None:

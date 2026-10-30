@@ -7,13 +7,15 @@ nothing until the user confirms the summary.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
 from agent_cli.config.model import ACCESS_KINDS, IMPLEMENTATION_MODES
-from agent_cli.config.schema import merge, to_raw
+from agent_cli.config.schema import BRANCH_PREFIX, merge, to_raw
 from agent_cli.config.service import CostOrderError
 
 type ReadLine = Callable[[str], str]
@@ -21,38 +23,43 @@ type WriteLine = Callable[[str], None]
 type HarnessProviderStatus = Callable[[Config], Sequence[str]]
 """Hook for V1-04: lines describing detected harnesses and providers for the setup screen."""
 
-INTRO = (
-    "Agent CLI setup\n\nPress Enter to keep the value in [brackets]. Ctrl-C cancels without saving."
-)
+INTRO = """\
+Agent CLI setup
+
+How this works:
+  - Each step explains one setting and shows exactly what to type.
+  - The current value is shown in [brackets]. Press Enter to keep it.
+  - Press Ctrl-C at any time to cancel. Nothing is saved until you confirm at the end."""
 CANCELED = "Setup canceled. Nothing was written."
-YES = ("y", "yes", "true", "on")
-NO = ("n", "no", "false", "off")
-NONE = ("none", "no limit", "null", "-")
+FORMAT_NOT_FOLLOWED = "Format not followed, please try again."
+YES = ("y", "yes")
+NO = ("n", "no")
+NONE = "none"
+MONEY = re.compile(r"^\$?(\d+(\.\d{1,2})?|\.\d{1,2})$")
+WHOLE_NUMBER = re.compile(r"^\d+$")
+YES_NO = "Type y for yes or n for no."
 
 
 class InvalidAnswer(ValueError):
-    pass
+    """The answer does not follow the format the step asked for."""
 
 
 def parse_money(text: str) -> float | None:
-    if text.lower() in NONE:
+    if text.lower() == NONE:
         return None
-    try:
-        value = float(text.removeprefix("$").replace(",", ""))
-    except ValueError:
-        raise InvalidAnswer("Enter an amount in USD, e.g. 20 or 0.30, or 'none'.") from None
-    return round(value, 2)
+    if not MONEY.match(text):
+        raise InvalidAnswer
+    return round(float(text.removeprefix("$")), 2)
 
 
 def format_money(value: Any) -> str:
-    return "no limit" if value is None else f"${value:.2f}"
+    return "none" if value is None else f"${value:.2f}"
 
 
-def parse_int(text: str) -> int:
-    try:
-        return int(text)
-    except ValueError:
-        raise InvalidAnswer("Enter a whole number.") from None
+def parse_workers(text: str) -> int:
+    if not WHOLE_NUMBER.match(text) or int(text) < 1:
+        raise InvalidAnswer
+    return int(text)
 
 
 def parse_bool(text: str) -> bool:
@@ -60,29 +67,27 @@ def parse_bool(text: str) -> bool:
         return True
     if text.lower() in NO:
         return False
-    raise InvalidAnswer("Enter yes or no.")
+    raise InvalidAnswer
 
 
 def format_bool(value: Any) -> str:
     return "yes" if value else "no"
 
 
-def split_list(text: str) -> list[str]:
-    return [item.strip() for item in text.replace(",", " ").split() if item.strip()]
-
-
 def parse_access(text: str) -> list[str]:
-    kinds = split_list(text.lower())
-    unknown = [kind for kind in kinds if kind not in ACCESS_KINDS]
-    if unknown or not kinds:
-        raise InvalidAnswer(f"List one or more of: {', '.join(ACCESS_KINDS)}.")
+    kinds = [item.strip() for item in text.lower().split(",")]
+    if any(kind not in ACCESS_KINDS for kind in kinds) or len(set(kinds)) != len(kinds):
+        raise InvalidAnswer
     return kinds
 
 
 def parse_paths(text: str) -> list[str]:
-    if text.lower() in NONE:
+    if text.lower() == NONE:
         return []
-    return [item.strip() for item in text.split(",") if item.strip()]
+    paths = [item.strip() for item in text.split(",")]
+    if not all(paths):
+        raise InvalidAnswer
+    return paths
 
 
 def format_list(value: Any) -> str:
@@ -91,8 +96,21 @@ def format_list(value: Any) -> str:
 
 def parse_mode(text: str) -> str:
     if text.lower() not in IMPLEMENTATION_MODES:
-        raise InvalidAnswer(f"Choose one of: {', '.join(IMPLEMENTATION_MODES)}.")
+        raise InvalidAnswer
     return text.lower()
+
+
+def parse_worktree_dir(text: str) -> str:
+    path = PurePosixPath(text)
+    if path.is_absolute() or ".." in path.parts or "\x00" in text:
+        raise InvalidAnswer
+    return text
+
+
+def parse_branch_prefix(text: str) -> str:
+    if not BRANCH_PREFIX.match(text):
+        raise InvalidAnswer
+    return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,61 +118,127 @@ class Setting:
     key: str
     """Dotted config key, e.g. ``cost.monthly_limit_usd``."""
     label: str
+    what: str
+    """One or two lines saying what the setting does."""
+    how: str
+    """Exactly what to type. Shown with the step, and again when the format is not followed."""
+    example: str
+    """An answer that works, shown with ``how``."""
     parse: Callable[[str], Any]
+    """Turns an answer into a value; raises ``InvalidAnswer`` if it does not match ``how``."""
     format: Callable[[Any], str] = str
-    intro: str | None = None
+    yes_no: bool = False
 
-
-SKILL_LOCATIONS = (
-    "Skills load from the built-in skills, ~/.agent-cli/skills, and <repo>/.agent-cli/skills.\n"
-    "Add extra skill directories below, separated by commas."
-)
 
 BUDGET_KEYS = ("cost.monthly_limit_usd", "cost.per_task_limit_usd", "cost.per_call_limit_usd")
 """Asked consecutively, in this order, and checked against each other as a group."""
+
+MONEY_HOW = 'Type a dollar amount, or type "none" for no limit.'
 
 SETTINGS: tuple[Setting, ...] = (
     Setting(
         "access.preference",
         "Access preference",
+        "Which kinds of model access to use, in the order to try them.\n"
+        "  subscription = your existing plans, local = models on your machine, api = paid APIs.",
+        "Type one or more of subscription, local, api, separated by commas, most preferred first.",
+        "local, subscription",
         parse_access,
         format_list,
-        intro="Access: kinds of model access to use, most preferred first.",
     ),
     Setting(
         "cost.monthly_limit_usd",
-        "Monthly paid-API limit",
+        "Monthly spending limit",
+        "The most to spend on paid APIs in a month. Subscription and local use are free.",
+        MONEY_HOW,
+        "15",
         parse_money,
         format_money,
-        intro="Budgets: hard limits on paid API spend. Subscription and local use are not counted.",
     ),
-    Setting("cost.per_task_limit_usd", "Per-task paid-API limit", parse_money, format_money),
-    Setting("cost.per_call_limit_usd", "Per-call paid-API limit", parse_money, format_money),
-    Setting("workers.max_concurrency", "Maximum parallel workers", parse_int),
     Setting(
-        "skills.paths", "Extra skill directories", parse_paths, format_list, intro=SKILL_LOCATIONS
+        "cost.per_task_limit_usd",
+        "Per-task spending limit",
+        "The most one task may spend on paid APIs. Must not be above the monthly limit.",
+        MONEY_HOW,
+        "0.75",
+        parse_money,
+        format_money,
+    ),
+    Setting(
+        "cost.per_call_limit_usd",
+        "Per-call spending limit",
+        "The most a single paid API call may cost. Must not be above the per-task limit.",
+        MONEY_HOW,
+        "0.10",
+        parse_money,
+        format_money,
+    ),
+    Setting(
+        "workers.max_concurrency",
+        "Parallel workers",
+        "How many workers may run at the same time.",
+        "Type a whole number, 1 or more.",
+        "2",
+        parse_workers,
+    ),
+    Setting(
+        "skills.paths",
+        "Extra skill folders",
+        "Skills always load from the built-in skills, ~/.agent-cli/skills, and\n"
+        "  <repo>/.agent-cli/skills. Add more folders here if you keep skills elsewhere.",
+        'Type folder paths separated by commas, or type "none" for no extra folders.',
+        "~/my-skills, /opt/team-skills",
+        parse_paths,
+        format_list,
     ),
     Setting(
         "implementation.mode",
         "Implementation mode",
+        "How workers apply changes once a plan is approved.\n"
+        "  autopilot  = make every approved change without asking each time\n"
+        "  checkpoint = ask before each batch of changes\n"
+        "  plan-only  = change no files; explain the plan instead",
+        "Type autopilot, checkpoint, or plan-only.",
+        "checkpoint",
         parse_mode,
-        intro=f"Implementation: how workers apply changes ({', '.join(IMPLEMENTATION_MODES)}).",
     ),
     Setting(
         "review.before_merge_request",
-        "Require review before merge requests",
+        "Review before merge requests",
+        "Require a code review before any merge request is opened.",
+        YES_NO,
+        "y",
         parse_bool,
         format_bool,
+        yes_no=True,
     ),
     Setting(
         "git.use_worktrees",
-        "Use Git worktrees for workers",
+        "Use Git worktrees",
+        "Give each worker its own copy of the repository (a Git worktree) so workers\n"
+        "  never overwrite each other's changes.",
+        YES_NO,
+        "y",
         parse_bool,
         format_bool,
-        intro="Git: workers edit isolated worktrees on their own branches.",
+        yes_no=True,
     ),
-    Setting("git.worktree_dir", "Worktree directory", str.strip),
-    Setting("git.branch_prefix", "Branch prefix", str.strip),
+    Setting(
+        "git.worktree_dir",
+        "Worktree folder",
+        "Where worker worktrees are created, relative to the repository root.",
+        "Type a folder path inside the repository. Do not start it with / or use ..",
+        ".agent-cli/worktrees",
+        parse_worktree_dir,
+    ),
+    Setting(
+        "git.branch_prefix",
+        "Branch prefix",
+        "Text added to the start of every branch name workers create.",
+        "Type a prefix with no spaces.",
+        "bot/",
+        parse_branch_prefix,
+    ),
 )
 
 
@@ -228,9 +312,11 @@ class GuidedSetup:
         index = 0
         while index < len(SETTINGS):
             setting = SETTINGS[index]
-            if setting.intro:
-                self.write_line("")
-                self.write_line(setting.intro)
+            self.write_line("")
+            self.write_line(f"Step {index + 1} of {len(SETTINGS)}: {setting.label}")
+            self.write_line(f"  {setting.what}")
+            self.write_line(f"  How to answer: {setting.how}")
+            self.write_line(f"  Example: {setting.example}")
             current = answers.get(setting.key, lookup(base, setting.key))
             answers[setting.key] = self.ask(setting, current, target, layer_data, answers)
             index += 1
@@ -239,13 +325,17 @@ class GuidedSetup:
                 # of them are answered. On a conflict, ask them again with the answers as defaults.
                 problem = self.check(target, propose(layer_data, answers))
                 if problem is not None:
-                    self.write_line(f"  {problem}. Enter the budget limits again.")
+                    self.write_line(
+                        f"  Not allowed: {problem}. Please enter the spending limits again."
+                    )
                     index = [s.key for s in SETTINGS].index(BUDGET_KEYS[0])
 
         changes = self.changes(target, base, answers)
         self.write_line("")
         self.write_line(self.summary(target, base, answers, changes))
-        if not self.confirm("Write these settings?"):
+        self.write_line("How to answer: type y to save these settings or n to cancel.")
+        self.write_line("Example: y")
+        if not self.confirm("Save these settings?"):
             return CANCELED
         try:
             path = self.service.save(target, changes)
@@ -261,16 +351,18 @@ class GuidedSetup:
             )
             return Layer.GLOBAL
         self.write_line(
-            "\nWhere should these settings be saved?\n"
-            f"  y  global   {self.service.paths.global_file}  (all projects)\n"
-            f"  n  project  {project}  (this repository; cost limits may only be lower)"
+            "\nWhere to save\n"
+            f"  global   {self.service.paths.global_file}  (all projects)\n"
+            f"  project  {project}  (this repository only; spending limits may only be lower)\n"
+            "  How to answer: type y for global or n for this project. Press Enter for global.\n"
+            "  Example: y"
         )
         while True:
             answer = self.read_line("Save to [global] (y/n): ").strip()
             try:
                 return Layer.GLOBAL if not answer or parse_bool(answer) else Layer.PROJECT
-            except InvalidAnswer as error:
-                self.write_line(f"  {error}")
+            except InvalidAnswer:
+                self.format_not_followed("Type y for global or n for this project.", "y")
 
     def ask(
         self,
@@ -280,18 +372,25 @@ class GuidedSetup:
         layer_data: RawConfig,
         answers: RawConfig,
     ) -> Any:
+        choices = " (y/n)" if setting.yes_no else ""
         while True:
-            answer = self.read_line(f"{setting.label} [{setting.format(current)}]: ").strip()
+            prompt = f"{setting.label} [{setting.format(current)}]{choices}: "
+            answer = self.read_line(prompt).strip()
             try:
                 value = setting.parse(answer) if answer else current
-            except InvalidAnswer as error:
-                self.write_line(f"  {error}")
+            except InvalidAnswer:
+                self.format_not_followed(setting.how, setting.example)
                 continue
             proposed = propose(layer_data, {**answers, setting.key: value})
             problem = self.check(target, proposed, defer_budget_order=setting.key in BUDGET_KEYS)
             if problem is None:
                 return value
-            self.write_line(f"  {problem}")
+            self.write_line(f"  Not allowed: {problem}. Please try again.")
+
+    def format_not_followed(self, how: str, example: str) -> None:
+        self.write_line(f"  {FORMAT_NOT_FOLLOWED}")
+        self.write_line(f"  How to answer: {how}")
+        self.write_line(f"  Example: {example}")
 
     def check(
         self, target: Layer, layer_data: RawConfig, *, defer_budget_order: bool = False
@@ -347,10 +446,10 @@ class GuidedSetup:
 
     def confirm(self, question: str) -> bool:
         while True:
-            answer = self.read_line(f"{question} [Y/n]: ").strip()
+            answer = self.read_line(f"{question} [yes] (y/n): ").strip()
             if not answer:
                 return True
             try:
                 return parse_bool(answer)
-            except InvalidAnswer as error:
-                self.write_line(f"  {error}")
+            except InvalidAnswer:
+                self.format_not_followed(YES_NO + " Press Enter for yes.", "y")
