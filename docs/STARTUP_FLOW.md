@@ -13,7 +13,7 @@ Implementation is staged:
 
 Do not duplicate V1-04 detection logic inside V1-03 just to make the startup screen look complete.
 
-V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`) and the typed `harnesses` / `providers` entries in `src/agent_cli/config/model.py`. Until then, setup shows that detection arrives in V1-04 and lists only entries already present in config.
+V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`): `/startup` passes `adapter_status` over the session's `AdapterRegistry`, which shows each configured or registered harness and provider with its live readiness. Readiness is runtime state and is never written to config. No real adapters are registered yet, so setup lists configured entries as having no adapter available. See [ADAPTERS.md](ADAPTERS.md).
 
 ## Steps
 

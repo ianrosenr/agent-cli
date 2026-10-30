@@ -54,8 +54,8 @@ skills:
   activation: {}                 # skill name → always | auto | explicit | disabled
   context_budget_tokens: 8000
 
-harnesses: {}                    # detected/configured by /startup
-providers: {}                    # configured by /startup
+harnesses: {}                    # edit by hand; detection is runtime-only, never saved
+providers: {}                    # edit by hand; /startup preserves but does not edit these
 
 # Advanced. Not shown in /startup.
 routing:

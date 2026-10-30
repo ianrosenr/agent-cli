@@ -186,6 +186,12 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
     )
     assert set(result.stdout.split()) == {
         "agent_cli",
+        "agent_cli.adapters",
+        "agent_cli.adapters.domain",
+        "agent_cli.adapters.harness",
+        "agent_cli.adapters.provider",
+        "agent_cli.adapters.registry",
+        "agent_cli.adapters.status",
         "agent_cli.cli",
         "agent_cli.commands",
         "agent_cli.commands.builtin",
@@ -196,4 +202,5 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.config.service",
         "agent_cli.guided_setup",
         "agent_cli.startup",
+        "agent_cli.terms",
     }

@@ -11,6 +11,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from agent_cli import __version__
+from agent_cli.adapters import AdapterRegistry
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
 from agent_cli.config import ConfigError, ConfigPaths, ConfigService
@@ -40,10 +41,15 @@ def run_shell(
     write_line: WriteLine,
     startup: str,
     config: ConfigService | None = None,
+    adapters: AdapterRegistry | None = None,
 ) -> int:
     """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
     context = CommandContext(
-        registry=registry, config=config, read_line=read_line, write_line=write_line
+        registry=registry,
+        config=config,
+        read_line=read_line,
+        write_line=write_line,
+        adapters=adapters,
     )
     write_line(startup)
     while True:
@@ -79,9 +85,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         problem = config_problem(config)
         if problem:
             startup += f"\n{problem}\n"
-        return run_shell(build_registry(), terminal_reader(), print, startup, config)
+        return run_shell(
+            build_registry(), terminal_reader(), print, startup, config, default_adapters()
+        )
     except KeyboardInterrupt:
         return 130
+
+
+def default_adapters() -> AdapterRegistry:
+    """The harness and provider adapters available to every session.
+
+    Real adapters are registered here as they are added (Pi is the first candidate). Adapter
+    construction must stay cheap: detection happens later, through ``readiness()``.
+    """
+    return AdapterRegistry()
 
 
 def config_problem(config: ConfigService) -> str | None:

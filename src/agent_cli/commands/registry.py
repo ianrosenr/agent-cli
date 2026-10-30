@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from agent_cli.adapters import AdapterRegistry
     from agent_cli.config import ConfigService
 
 SLASH = "/"
@@ -45,6 +46,8 @@ class CommandContext:
     """Prompts for a line of input, for commands that ask follow-up questions."""
     write_line: Callable[[str], None] = print
     """Shows a line of output before the command returns its final response."""
+    adapters: AdapterRegistry | None = None
+    """Harness and provider adapters; ``None`` when none are available in this session."""
 
 
 class ExitShell(Exception):

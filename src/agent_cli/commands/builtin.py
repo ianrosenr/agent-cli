@@ -1,12 +1,13 @@
 """Built-in slash commands.
 
-Apart from ``/help``, ``/exit``, and ``/startup``, these are placeholders that establish the
-user-facing shell contract. Each names the roadmap issue that will implement it (see
+Apart from ``/help``, ``/exit``, ``/startup``, and ``/providers``, these are placeholders that
+establish the user-facing shell contract. Each names the roadmap issue that will implement it (see
 docs/BUILD_GUIDE.md, Build Order).
 """
 
 from __future__ import annotations
 
+from agent_cli.adapters import AdapterRegistry, adapter_status
 from agent_cli.commands.registry import (
     SLASH,
     Command,
@@ -14,6 +15,7 @@ from agent_cli.commands.registry import (
     CommandRegistry,
     ExitShell,
 )
+from agent_cli.config import Config, ConfigError
 from agent_cli.guided_setup import GuidedSetup
 
 HELP_INTRO = """\
@@ -54,10 +56,30 @@ def exit_command(context: CommandContext, args: str) -> str:
     raise ExitShell
 
 
+def adapters_of(context: CommandContext) -> AdapterRegistry:
+    return context.adapters if context.adapters is not None else AdapterRegistry()
+
+
 def startup_command(context: CommandContext, args: str) -> str:
     if context.config is None:
         return "Configuration is unavailable in this session."
-    return GuidedSetup(context.config, context.read_line, context.write_line).run()
+    adapters = adapters_of(context)
+    return GuidedSetup(
+        context.config,
+        context.read_line,
+        context.write_line,
+        lambda config: adapter_status(adapters, config),
+    ).run()
+
+
+def providers_command(context: CommandContext, args: str) -> str:
+    config = Config()
+    if context.config is not None:
+        try:
+            config = context.config.resolve()
+        except ConfigError as error:
+            return f"Cannot read configuration: {error}"
+    return "\n".join(adapter_status(adapters_of(context), config))
 
 
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
@@ -73,11 +95,8 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this help.", help_command),
     Command("exit", "Exit Agent CLI.", exit_command),
     Command("startup", "Guided setup for budgets, workers, review, and Git.", startup_command),
-    planned(
-        "providers",
-        "Show configured providers and harnesses.",
-        "provider and harness adapters",
-        "V1-04",
+    Command(
+        "providers", "Show configured and detected harnesses and providers.", providers_command
     ),
     planned("status", "Show current task state.", "persistent task state", "V1-05"),
     planned("skills", "Show available skills and routing.", "skill discovery and routing", "V1-06"),

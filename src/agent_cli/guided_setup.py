@@ -12,15 +12,16 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from agent_cli.adapters import AdapterRegistry, adapter_status
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
-from agent_cli.config.model import ACCESS_KINDS, IMPLEMENTATION_MODES
 from agent_cli.config.schema import merge, to_raw
 from agent_cli.config.service import CostLimitError, CostOrderError
+from agent_cli.terms import ACCESS_KINDS, IMPLEMENTATION_MODES
 
 type ReadLine = Callable[[str], str]
 type WriteLine = Callable[[str], None]
 type HarnessProviderStatus = Callable[[Config], Sequence[str]]
-"""Hook for V1-04: lines describing detected harnesses and providers for the setup screen."""
+"""Lines describing configured and detected harnesses and providers for the setup screen."""
 
 INTRO = """\
 Agent CLI setup
@@ -268,14 +269,8 @@ def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
 
 
 def default_status(config: Config) -> list[str]:
-    def names(entries: Mapping[str, Any]) -> str:
-        return ", ".join(sorted(entries)) or "none"
-
-    return [
-        "Harnesses and providers: detection and provider setup arrive in V1-04.",
-        f"  Configured harnesses: {names(config.harnesses)}",
-        f"  Configured providers: {names(config.providers)}",
-    ]
+    """Configured harnesses and providers, with no adapters to report runtime readiness."""
+    return adapter_status(AdapterRegistry(), config)
 
 
 @dataclass(frozen=True, slots=True)

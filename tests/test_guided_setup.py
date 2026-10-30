@@ -34,18 +34,6 @@ class Conversation:
         return "\n".join(self.output + self.prompts)
 
 
-@pytest.fixture
-def paths(tmp_path: Path) -> ConfigPaths:
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    return ConfigPaths(tmp_path / "home" / ".agent-cli" / "config.yaml", repo)
-
-
-@pytest.fixture
-def service(paths: ConfigPaths) -> ConfigService:
-    return ConfigService(paths)
-
-
 def run(service: ConfigService, *answers: str | type[BaseException]) -> tuple[str, Conversation]:
     conversation = Conversation(*answers)
     result = GuidedSetup(service, conversation.read_line, conversation.output.append).run()
@@ -483,11 +471,10 @@ def test_advanced_settings_are_not_shown(service: ConfigService) -> None:
         assert word not in transcript
 
 
-def test_harness_and_provider_status_is_honest_placeholder(service: ConfigService) -> None:
+def test_harness_and_provider_status_without_adapters(service: ConfigService) -> None:
     _, conversation = run(service, *ENTER_THROUGH)
-    assert "detection and provider setup arrive in V1-04" in conversation.transcript
-    assert "Configured harnesses: none" in conversation.transcript
-    assert "Configured providers: none" in conversation.transcript
+    assert "Harnesses: none configured or detected" in conversation.transcript
+    assert "Providers: none configured or detected" in conversation.transcript
 
 
 def test_harness_provider_status_hook_can_be_supplied(service: ConfigService) -> None:
