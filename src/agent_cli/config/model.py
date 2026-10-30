@@ -8,15 +8,12 @@ Per-field constraints live in field metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, get_args
+from typing import Any, Literal
 
-type ImplementationMode = Literal["autopilot", "checkpoint", "plan-only"]
-type AccessKind = Literal["subscription", "local", "api"]
+from agent_cli.terms import AccessKind, ImplementationMode
+
 type SkillActivation = Literal["always", "auto", "explicit", "disabled"]
 type Tier = Literal["low", "mid", "high"]
-
-IMPLEMENTATION_MODES: tuple[str, ...] = get_args(ImplementationMode.__value__)
-ACCESS_KINDS: tuple[str, ...] = get_args(AccessKind.__value__)
 
 
 def constrained(default: Any, **constraints: Any) -> Any:
@@ -73,7 +70,11 @@ class SkillsConfig:
 
 @dataclass(frozen=True, slots=True)
 class HarnessConfig:
-    """A configured external harness. V1-04 populates these from real detection."""
+    """A configured external harness.
+
+    Only what the user set. Runtime facts (detected, version, signed in) come from adapters and
+    are never stored here; see ``agent_cli.adapters``.
+    """
 
     enabled: bool = True
     command: str | None = None

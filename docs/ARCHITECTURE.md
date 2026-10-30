@@ -38,8 +38,8 @@
 | Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
 | Provider health | cooldowns and normalized failure state | model quality |
 | Worker manager | worker lifecycle, worktrees, recovery | what workers should do |
-| Harness adapter | translating Agent CLI worker requests to an existing coding-agent harness | the coding-agent tool loop/runtime itself |
-| Provider adapter | sending requests to a model and reporting usage and errors | agent behavior |
+| Harness adapter | translating Agent CLI worker requests to an existing coding-agent harness ([ADAPTERS.md](ADAPTERS.md)) | the coding-agent tool loop/runtime itself |
+| Provider adapter | sending requests to a model and reporting usage and errors ([ADAPTERS.md](ADAPTERS.md)) | agent behavior |
 
 ## Control plane, not coding-agent harness
 

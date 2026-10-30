@@ -52,18 +52,6 @@ routing:
 )
 
 
-@pytest.fixture
-def paths(tmp_path: Path) -> ConfigPaths:
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    return ConfigPaths(tmp_path / "home" / ".agent-cli" / "config.yaml", repo)
-
-
-@pytest.fixture
-def service(paths: ConfigPaths) -> ConfigService:
-    return ConfigService(paths)
-
-
 def write(path: Path | None, data: Any) -> None:
     assert path is not None
     path.parent.mkdir(parents=True, exist_ok=True)

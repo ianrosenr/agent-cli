@@ -9,11 +9,12 @@ The list below describes the final V1 startup experience.
 Implementation is staged:
 
 - **V1-03** owns configuration loading, validation, persistence, and the guided setup UI. It exposes harness/provider configuration hooks but does not implement their adapters.
-- **V1-04** supplies real harness/provider detection, readiness, authentication status, and adapter-backed provider information to that existing setup UI.
+- **V1-04** defines the normalized harness/provider adapter contracts and connects adapter-backed runtime readiness/status to the existing setup UI.
+- **Later real-adapter work (first required by V1-15)** supplies concrete harness/provider detection, authentication/configuration flows, and execution through those same interfaces.
 
 Do not duplicate V1-04 detection logic inside V1-03 just to make the startup screen look complete.
 
-V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`) and the typed `harnesses` / `providers` entries in `src/agent_cli/config/model.py`. Until then, setup shows that detection arrives in V1-04 and lists only entries already present in config.
+V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`): `/startup` passes `adapter_status` over the session's `AdapterRegistry`, which shows each configured or registered harness and provider with its live readiness. Readiness is runtime state and is never written to config. No real adapters are registered yet, so V1-04 alone cannot perform concrete detection/authentication; the first real adapter will reuse this contract rather than redesign setup. See [ADAPTERS.md](ADAPTERS.md).
 
 ## Steps
 
