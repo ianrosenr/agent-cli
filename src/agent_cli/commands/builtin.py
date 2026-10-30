@@ -1,7 +1,8 @@
 """Built-in slash commands.
 
-Apart from ``/help``, these are placeholders that establish the user-facing shell contract.
-Each names the roadmap issue that will implement it (see docs/BUILD_GUIDE.md, Build Order).
+Apart from ``/help``, ``/exit``, and ``/startup``, these are placeholders that establish the
+user-facing shell contract. Each names the roadmap issue that will implement it (see
+docs/BUILD_GUIDE.md, Build Order).
 """
 
 from __future__ import annotations
@@ -52,6 +53,14 @@ def exit_command(context: CommandContext, args: str) -> str:
     raise ExitShell
 
 
+def startup_command(context: CommandContext, args: str) -> str:
+    if context.config is None:
+        return "Configuration is unavailable in this session."
+    from agent_cli.guided_setup import GuidedSetup
+
+    return GuidedSetup(context.config, context.read_line, context.write_line).run()
+
+
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
     """A placeholder command for a capability that a later roadmap issue implements."""
 
@@ -64,12 +73,7 @@ def planned(name: str, description: str, capability: str, issue: str) -> Command
 BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this help.", help_command),
     Command("exit", "Exit Agent CLI.", exit_command),
-    planned(
-        "startup",
-        "Guided setup for harnesses, providers, and budgets.",
-        "configuration and guided setup",
-        "V1-03",
-    ),
+    Command("startup", "Guided setup for budgets, workers, review, and Git.", startup_command),
     planned(
         "providers",
         "Show configured providers and harnesses.",

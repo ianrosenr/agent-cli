@@ -4,13 +4,21 @@ version = "0.1.0"
 description = "A local-first orchestration and routing control plane for coding agents."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["prompt_toolkit>=3.0"]
+dependencies = [
+    "prompt_toolkit>=3.0",
+    "pyyaml>=6.0",
+]
 
 [project.scripts]
 agent-cli = "agent_cli.cli:main"
 
 [dependency-groups]
-dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.5"]
+dev = [
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "types-pyyaml>=6.0",
+]
 
 [build-system]
 requires = ["hatchling"]

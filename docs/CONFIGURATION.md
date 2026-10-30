@@ -11,7 +11,9 @@ task     set by the orchestrator or user for one task
 
 The most specific layer wins: global → project → session → task. A key absent from a layer inherits from the layer above. Defaults apply when no layer sets a key.
 
-A project or task layer may **lower** a cost limit but may not raise one above the global limit.
+A project, session, or task layer may **lower** a cost limit but may not raise one above the global limit, or remove a global limit by setting it to `null`. The global limit is the global file's value, or the default when the global file does not set it. Only global config may raise or remove limits. This rule is enforced in code when configuration is resolved.
+
+Session and task layers are in-memory override mappings with the same schema as the files.
 
 ## Defaults
 
@@ -78,4 +80,13 @@ Values come from environment variables or the OS credential store.
 
 ## Validation
 
-Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them.
+Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them. Keys that look like secret values (`api_key`, `token`, `password`, …) are rejected with a pointer to `api_key_env` / `api_key_keyring`.
+
+## Writing
+
+`/startup` writes to the layer the user chooses:
+
+- **global** records every setting the flow asks about, so the file describes the user's full baseline.
+- **project** records only settings that differ from what the project would otherwise inherit, so it keeps following global changes.
+
+Keys `/startup` does not manage (providers, harnesses, routing, …) are preserved. Writes are atomic (temporary file + rename), create parent directories, and are validated against every other layer first. Saving also git-ignores project runtime directories (`.agent-cli/state/` and the worktree directory).

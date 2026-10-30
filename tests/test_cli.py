@@ -3,11 +3,13 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 from agent_cli import cli
 from agent_cli.commands import CommandContext, build_registry
+from agent_cli.config import Config, ConfigPaths, ConfigService
 from agent_cli.startup import TAGLINE, WORDMARK
 
 
@@ -148,6 +150,32 @@ def test_python_dash_m_uses_the_same_entry_point() -> None:
     assert result.stdout.strip() == "agent-cli 0.1.0"
 
 
+def test_shell_passes_its_io_and_config_to_commands(tmp_path: Path) -> None:
+    service = ConfigService(ConfigPaths(tmp_path / "config.yaml", None))
+    output: list[str] = []
+    code = cli.run_shell(
+        build_registry(), scripted("/startup", *[""] * 12), output.append, STARTUP, service
+    )
+    assert code == 0
+    assert output[1].startswith("Agent CLI setup")
+    assert output[-1] == f"Settings saved to {tmp_path / 'config.yaml'}."
+    assert service.resolve() == Config()
+
+
+def test_main_reports_invalid_configuration_at_startup(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = isolated_home / ".agent-cli" / "config.yaml"
+    config.parent.mkdir()
+    config.write_text("agents:\n  max_parallel: 2\n")
+    monkeypatch.chdir(isolated_home)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(EOFError))
+    assert cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert f"Configuration error: global config ({config}): agents: unknown key" in out
+
+
 def test_startup_imports_only_the_shell_and_command_layer() -> None:
     code = (
         "import sys; import agent_cli.cli; "
@@ -162,5 +190,9 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.commands",
         "agent_cli.commands.builtin",
         "agent_cli.commands.registry",
+        "agent_cli.config",
+        "agent_cli.config.model",
+        "agent_cli.config.schema",
+        "agent_cli.config.service",
         "agent_cli.startup",
     }

@@ -91,7 +91,10 @@ def test_dispatch_calls_handler_with_args() -> None:
     assert calls == ["hello world"]
 
 
-@pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - {"help", "exit"}))
+IMPLEMENTED_COMMANDS = {"help", "exit", "startup"}
+
+
+@pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - IMPLEMENTED_COMMANDS))
 def test_placeholder_commands_say_not_implemented(context: CommandContext, name: str) -> None:
     command = context.registry.get(name)
     assert command is not None and command.planned_in is not None
@@ -105,6 +108,23 @@ def test_unknown_command_is_reported(context: CommandContext, line: str) -> None
     output = context.registry.dispatch(line, context)
     assert output.startswith(f"Unknown command: {line}.")
     assert "/help" in output
+
+
+@pytest.mark.parametrize("name", sorted(IMPLEMENTED_COMMANDS))
+def test_implemented_commands_are_not_placeholders(context: CommandContext, name: str) -> None:
+    command = context.registry.get(name)
+    assert command is not None and command.planned_in is None
+
+
+def test_startup_is_listed_as_available_in_help(context: CommandContext) -> None:
+    available = context.registry.dispatch("/help", context).split("Coming in later issues:")[0]
+    assert "/startup" in available
+
+
+def test_status_remains_owned_by_v1_05(context: CommandContext) -> None:
+    command = context.registry.get("status")
+    assert command is not None and command.planned_in == "V1-05"
+    assert context.registry.dispatch("/status", context).endswith("arrives in V1-05.")
 
 
 def test_exit_command_signals_shell_exit(context: CommandContext) -> None:
