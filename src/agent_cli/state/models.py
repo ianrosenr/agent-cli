@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, get_args
 
-from agent_cli.adapters.domain import Selection
+from agent_cli.adapters.domain import Selection, WorkerStatus
 
 type PinKind = Literal["model", "provider", "harness"]
 type RequirementSource = Literal["user", "derived"]
@@ -132,7 +132,7 @@ class Worker:
     provider: str | None
     harness: str | None
     worktree: str | None
-    status: str
+    status: WorkerStatus
     created_at: str
     heartbeat_at: str
 
