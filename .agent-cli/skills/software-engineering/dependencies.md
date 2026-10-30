@@ -2,7 +2,6 @@
 name: dependencies
 description: Rules for reproducible environments, dependency choices, and type safety.
 version: 1.0.0
-policy_domain: dependencies
 ---
 
 # Dependencies

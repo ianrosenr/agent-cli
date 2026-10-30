@@ -2,7 +2,6 @@
 name: creating-a-new-skill
 description: Rules for creating compact, non-redundant skill files with valid metadata.
 version: 1.0.0
-policy_domain: skill-authoring
 ---
 
 # Creating a New Skill

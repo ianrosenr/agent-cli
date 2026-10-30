@@ -2,7 +2,6 @@
 name: delivery
 description: Rules for safe configuration, deployment, rollout, recovery, health checks, and CI/CD.
 version: 1.0.0
-policy_domain: delivery
 ---
 
 # Delivery

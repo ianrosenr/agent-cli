@@ -2,7 +2,6 @@
 name: observability
 description: Rules for OpenTelemetry-based metrics, traces, logs, and diagnostic coverage.
 version: 1.0.0
-policy_domain: observability
 ---
 
 # Observability

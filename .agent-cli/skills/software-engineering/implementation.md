@@ -2,7 +2,6 @@
 name: implementation
 description: Rules for cohesive, minimal, maintainable code implementation.
 version: 1.0.0
-policy_domain: implementation
 ---
 
 # Implementation

@@ -2,7 +2,6 @@
 name: performance
 description: Rules for measured performance work, benchmarking, and resource efficiency.
 version: 1.0.0
-policy_domain: performance
 ---
 
 # Performance

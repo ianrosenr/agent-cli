@@ -2,7 +2,6 @@
 name: review
 description: Rules for adversarial implementation review against approved specifications.
 version: 1.0.0
-policy_domain: review
 ---
 
 # Review

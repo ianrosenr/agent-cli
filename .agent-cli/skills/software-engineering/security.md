@@ -2,7 +2,6 @@
 name: security
 description: Rules for trust boundaries, input validation, authorization, secrets, and secure execution.
 version: 1.0.0
-policy_domain: security
 ---
 
 # Security

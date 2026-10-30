@@ -2,7 +2,6 @@
 name: testing
 description: Rules for risk-proportional verification, regression tests, and test integrity.
 version: 1.0.0
-policy_domain: testing
 ---
 
 # Testing

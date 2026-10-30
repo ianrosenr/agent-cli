@@ -2,7 +2,6 @@
 name: resilience
 description: Rules for timeouts, retries, idempotency, bounded resources, and failure isolation.
 version: 1.0.0
-policy_domain: resilience
 ---
 
 # Resilience

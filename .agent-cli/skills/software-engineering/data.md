@@ -2,7 +2,6 @@
 name: data
 description: Rules for persistent data, migrations, transactions, backfills, and indexes.
 version: 1.0.0
-policy_domain: data
 ---
 
 # Data
