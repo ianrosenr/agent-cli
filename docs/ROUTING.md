@@ -10,10 +10,12 @@ The router turns `(role, task, risk)` into `(model, provider, harness)`.
 2. **Healthy access paths.** For each model, providers not in cooldown.
 3. **Budget check.** Drop paid paths that would exceed any hard limit.
 4. **Preference.** Prefer subscription → local → paid API. Within a class, prefer the cheapest path that meets the floor.
-5. **Harness.** Pick a configured harness that supports the chosen provider.
+5. **Harness.** Pick a configured external harness whose reported capabilities support the chosen task/model/provider combination.
 6. **No path.** If nothing remains, ask the user. Never silently drop below a role floor.
 
 Every decision is logged with the reasons that ruled out other candidates.
+
+Harness capabilities come from adapters. Core routing must not contain vendor-specific Pi, Codex, Claude Code, or OpenCode logic. A harness may constrain model/provider combinations; those constraints are adapter data, not orchestration policy.
 
 ## Model registry
 

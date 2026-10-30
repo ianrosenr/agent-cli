@@ -1,8 +1,8 @@
 # Agent CLI
 
-A local-first CLI that orchestrates coding agents inside your repository.
+A local-first orchestration and routing control plane for coding agents.
 
-Describe a goal in natural language. Agent CLI inspects the repo, has a strong model write a short implementation spec, gets the spec reviewed, hands it to a cheaper implementer in an isolated Git worktree, challenges the result with a reviewer, and shows you the final diff. It enforces budgets and handles provider throttling along the way.
+Describe a goal in natural language. Agent CLI inspects the repo, plans and reviews the work, selects the model/provider/harness, and delegates execution to existing coding-agent harnesses. It does not implement its own coding-agent tool loop. It adds policy, economics, routing, memory, and review above the harness layer.
 
 > Spend expensive reasoning where decisions matter. Use inexpensive models for well-specified execution.
 
@@ -12,7 +12,7 @@ Pre-alpha. The repository currently contains design docs and agent contracts onl
 
 ## What V1 targets
 
-- Harnesses: Codex CLI, Claude Code, OpenCode
+- Harness adapters: Pi, Codex CLI, Claude Code, OpenCode
 - Providers: subscription access, local OpenAI-compatible endpoints, paid APIs
 - Default paid-API budget: $20/month, no daily limit, $1/task, $0.30/call
 - Implementation modes: autopilot (default), checkpoint, plan-only

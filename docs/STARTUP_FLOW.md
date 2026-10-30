@@ -4,7 +4,7 @@
 
 ## Steps
 
-1. **Detect harnesses.** Look for Codex CLI, Claude Code, and OpenCode on `PATH`. Show what was found and its version. Offer install hints for missing ones; do not install anything.
+1. **Detect harnesses.** Look for supported external harnesses such as Pi, Codex CLI, Claude Code, and OpenCode. Show what was found and its version/capabilities. Offer install hints for missing ones; do not install anything.
 2. **Providers and auth.** For each detected harness, offer its subscription login path. Offer to add paid API providers and custom OpenAI-compatible endpoints. Store only credential *references* (env var name or keyring entry). See [CONFIGURATION.md](CONFIGURATION.md#credentials).
 3. **Local models.** Offer to add local endpoints (e.g. vLLM, Ollama with an OpenAI-compatible API). Probe the endpoint and list its models.
 4. **Budgets.** Confirm monthly ($20), per-task ($1), and per-call ($0.30) limits. No daily limit by default.

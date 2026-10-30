@@ -23,7 +23,7 @@
                                │
               ┌────────────────┴────────────────┐
      Harness adapter                    Provider adapter
-   (Codex CLI, Claude Code, OpenCode)   (subscription, local, API)
+   (Pi, Codex CLI, Claude Code, OpenCode)   (subscription, local, API)
 ```
 
 | Component | Owns | Does not own |
@@ -38,8 +38,29 @@
 | Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
 | Provider health | cooldowns and normalized failure state | model quality |
 | Worker manager | worker lifecycle, worktrees, recovery | what workers should do |
-| Harness adapter | running a coding agent with a prompt, skills, and a working directory | model access |
+| Harness adapter | translating Agent CLI worker requests to an existing coding-agent harness | the coding-agent tool loop/runtime itself |
 | Provider adapter | sending requests to a model and reporting usage and errors | agent behavior |
+
+## Control plane, not coding-agent harness
+
+Agent CLI owns orchestration. It MUST NOT grow its own general-purpose coding-agent runtime.
+
+Existing harnesses already solve low-level execution concerns such as tool loops, model streaming, harness sessions, terminal interaction, and file-edit tooling. Agent CLI should integrate with those systems through adapters.
+
+Agent CLI owns:
+
+- decomposition and coordination
+- role authority and selected skills
+- repository/context selection
+- model/provider/harness routing
+- budgets and provider health
+- canonical task state
+- worktree assignment
+- review and escalation policy
+
+Harnesses own the mechanics of executing a coding agent.
+
+Pi, Codex CLI, Claude Code, and OpenCode are examples of external harnesses. Pi is a preferred early adapter target, not an architectural dependency.
 
 ## Model, provider, harness
 
@@ -47,7 +68,7 @@ These are three independent choices:
 
 - **Model** — the intelligence (e.g. a specific model version).
 - **Provider** — the access path to that model (subscription, local vLLM, paid API).
-- **Harness** — the coding-agent environment that does the work (Codex CLI, Claude Code, OpenCode).
+- **Harness** — the existing coding-agent environment that executes the work (Pi, Codex CLI, Claude Code, OpenCode).
 
 Keeping them separate allows the same model to be reached through another provider during an outage, and lets routing prefer subscription access.
 

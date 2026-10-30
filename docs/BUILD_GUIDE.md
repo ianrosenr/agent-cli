@@ -8,7 +8,7 @@ It explains what the product is, what V1 should do, what ideas are borrowed from
 
 # 1. Product Goal
 
-Agent CLI is a local-first developer orchestration CLI.
+Agent CLI is a local-first developer orchestration and routing control plane.
 
 The user should be able to open the CLI inside a repository and describe a software-engineering goal in natural language.
 
@@ -31,6 +31,18 @@ The orchestration agent should then:
 The central philosophy is:
 
 > Spend expensive reasoning where decisions matter. Use inexpensive models for well-specified execution.
+
+### Control-plane boundary
+
+Agent CLI does not replace coding-agent harnesses.
+
+It coordinates them.
+
+Existing harnesses should own low-level agent execution: tool loops, streaming, session mechanics, file-edit tools, and harness-native terminal behavior. Agent CLI should own the decisions above that layer: decomposition, role authority, skills, context, model/provider/harness routing, budgets, memory, worktrees, review, and escalation.
+
+Pi, Codex CLI, Claude Code, and OpenCode are adapter targets. Pi is a preferred early integration candidate, but core Agent CLI must remain harness-agnostic.
+
+Do not build a new general-purpose coding-agent runtime unless an external harness cannot satisfy a demonstrated product requirement.
 
 ---
 
@@ -343,8 +355,9 @@ The CLI should include a guided `/startup` flow.
 
 It should detect installed harnesses and guide provider setup.
 
-V1 targets:
+V1 adapter targets:
 
+- Pi
 - Codex CLI
 - Claude Code
 - OpenCode
@@ -514,7 +527,7 @@ Runnable Python CLI.
 Config and `/startup`.
 
 ### V1-04
-Provider/harness adapter interfaces.
+Provider/harness adapter interfaces that wrap existing execution systems.
 
 At this point, the CLI exists but does not yet orchestrate real work.
 
@@ -585,6 +598,7 @@ Do not block V1 on:
 
 - dozens of providers
 - dozens of harnesses
+- a custom coding-agent runtime/tool loop
 - remote distributed workers
 - sophisticated UI
 - perfect benchmark aggregation

@@ -4,7 +4,7 @@ The contract for Agent CLI V1. [BUILD_GUIDE.md](BUILD_GUIDE.md) explains the rea
 
 ## Objective
 
-A developer runs Agent CLI inside a Git repository, describes a software-engineering goal, and receives a reviewed, understandable diff without choosing a model for each subtask.
+A developer runs Agent CLI inside a Git repository, describes a software-engineering goal, and receives a reviewed, understandable diff while Agent CLI delegates execution through existing coding-agent harnesses and chooses the appropriate model/provider/harness for each subtask.
 
 Reference scenario:
 
@@ -15,7 +15,7 @@ Reference scenario:
 1. **CLI shell.** An interactive Python CLI that accepts natural-language goals and slash commands, including `/startup`.
 2. **Configuration.** Layered config (global → project → session → task) with usable defaults. See [CONFIGURATION.md](CONFIGURATION.md).
 3. **Guided setup.** `/startup` detects harnesses and configures providers, budgets, and preferences. See [STARTUP_FLOW.md](STARTUP_FLOW.md).
-4. **Adapters.** Separate, stable interfaces for providers and harnesses. See [ARCHITECTURE.md](ARCHITECTURE.md).
+4. **Adapters.** Separate, stable interfaces for providers and existing coding-agent harnesses. Agent CLI is the control plane, not a coding-agent runtime. See [ARCHITECTURE.md](ARCHITECTURE.md).
 5. **Shared memory and repository facts.** Persist orchestration state plus a reusable, incremental repository fact index for cheap task inspection. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
 7. **Model registry and role floors.** Capability-scored models; each role has a minimum reasoning tier. See [ROUTING.md](ROUTING.md).
@@ -43,7 +43,7 @@ Reference scenario:
 
 ## Non-goals for V1
 
-Listed in [ENHANCEMENTS.md](ENHANCEMENTS.md). In short: no broad provider/harness catalog, remote workers, rich UI, benchmark automation, learned routing, vector memory, multi-user features, semantic skill retrieval, auto-merge, or support for every Git host.
+Listed in [ENHANCEMENTS.md](ENHANCEMENTS.md). In short: no custom coding-agent harness/tool loop, broad provider/harness catalog, remote workers, rich UI, benchmark automation, learned routing, vector memory, multi-user features, semantic skill retrieval, auto-merge, or support for every Git host.
 
 ## Acceptance
 
@@ -52,6 +52,7 @@ V1 is done when the reference scenario runs end to end (issue V1-15):
 - the repo is inspected before the user is asked anything the repo can answer
 - planning uses a model at or above the spec-author floor
 - implementation uses a cheaper compliant model when the spec permits
+- implementation/review execution runs through at least one real external harness adapter
 - work happens in a worktree
 - budgets are never exceeded
 - relevant skills are selected within budget
