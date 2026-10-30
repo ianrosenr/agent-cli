@@ -73,6 +73,47 @@ flowchart TD
     C --> D[Relevant files, symbols, and code regions]
 ```
 
+## Storage
+
+Use two local stores because they have different lifetimes.
+
+### Project-local repository state
+
+Store repository-specific mappings under:
+
+`<repo>/.agent-cli/state/repository.sqlite`
+
+This database is git-ignored and belongs to that repository. It stores things that depend on repository context, such as:
+
+- file path -> Git blob SHA
+- package/service membership
+- repository-specific relationships
+- task-inspection state
+- repository fact provenance
+- index schema/analyzer version metadata
+
+### Global content-analysis cache
+
+Store reusable content analysis under:
+
+`~/.agent-cli/cache/repository-analysis.sqlite`
+
+This cache is shared across repositories, branches, sessions, and worktrees. It is keyed primarily by:
+
+`git blob SHA + analyzer version`
+
+It stores path-independent analysis of file contents, such as:
+
+- detected language
+- parsed symbols
+- imports
+- structural classifications
+- optional cached summaries
+
+This split lets a worktree or another repository reuse analysis for identical file contents without sharing repository-specific state.
+
+Both stores are local. Neither is committed to Git.
+
 ## Core idea: index once, reuse often
 
 Repository analysis is cached by:
