@@ -5,14 +5,20 @@ selection_inputs:
   - approved_spec
   - affected_repository_surfaces
 
+# Inject these skills into every delegated worker, regardless of routing signals.
 always:
   - software-engineering
 
+# Persist routing decisions so skill selection can be inspected, debugged, and evaluated.
 audit:
+  # Record the final set of skills supplied to each worker.
   record_selected_skills: true
+  # Record why each non-always skill was selected.
   record_selection_reasons: true
+  # Record skills requested after work begins and why they were added.
   record_escalations: true
 
+# Allow workers to request a missing skill when newly discovered work crosses a policy domain.
 dynamic_escalation: true
 
 skills:
