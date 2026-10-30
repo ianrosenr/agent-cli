@@ -33,6 +33,11 @@ audit:
 # Adding a skill never expands the worker's role authority.
 dynamic_escalation: true
 
+# Signals are normalized semantic tags derived from the selection inputs above.
+# They describe what the work involves; they are NOT literal prompt keywords.
+# A non-default skill becomes eligible when at least one of its signals is detected.
+# Detected signals are recorded as selection reasons for auditability.
+# Signal matching never changes role authority; it only adds relevant policy context.
 skills:
   specification:
     signals: [specification, requirement_change, acceptance_criteria, ambiguity]
