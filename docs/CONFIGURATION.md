@@ -54,8 +54,8 @@ skills:
   activation: {}                 # skill name → always | auto | explicit | disabled
   context_budget_tokens: 8000
 
-harnesses: {}                    # edit by hand; detection is runtime-only, never saved
-providers: {}                    # edit by hand; /startup preserves but does not edit these
+harnesses: {}                    # persistent user config; runtime detection/readiness is never saved
+providers: {}                    # persistent user config; runtime health/readiness is never saved
 
 # Advanced. Not shown in /startup.
 routing:
@@ -98,7 +98,9 @@ Config is validated on load. Unknown keys and invalid values are errors that nam
 - **global** records every setting the flow asks about, so the file describes the user's full baseline.
 - **project** records only settings that differ from what the project would inherit from global config. Setting a project value back to the inherited value removes the project override, so the project keeps following global changes.
 
-Keys `/startup` does not manage (providers, harnesses, routing, …) are preserved, but the file is rewritten from its values: comments other than the generated header are not kept.
+At the V1-04 stage, `/startup` preserves provider/harness entries while showing adapter-backed runtime readiness. As real adapters land, the final V1 startup flow will guide harness/provider configuration and authentication using these same persistent fields. Runtime detection, readiness, health, and session state are never written into config.
+
+Keys the current setup flow does not manage (including routing and any provider/harness fields not explicitly edited) are preserved, but the file is rewritten from its values: comments other than the generated header are not kept.
 
 Writes are atomic (temporary file + rename), create parent directories, and are validated against every other layer first. A symlinked config file is written through to its target, and an existing file keeps its permissions.
 
