@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_cli.adapters import Selection
+from agent_cli.adapters import Selection, WorkerStatus
 from agent_cli.state import Approval, TaskStateError, TaskStatus, TaskStore, status_lines
 from agent_cli.state.migrations import MIGRATIONS
 from agent_cli.state.task_store import TASKS_FILE
@@ -196,8 +196,10 @@ def test_invalid_pins_are_rejected(store: TaskStore, kind: str, value: str) -> N
 def test_workers_findings_blockers_reviews_and_artifacts(store: TaskStore) -> None:
     session = store.start_session()
     task = store.create_task(session.id, "Work")
-    worker = store.record_worker(task.id, "implementer", "running", harness="pi", worktree="wt/1")
-    store.update_worker(worker.id, status="completed")
+    worker = store.record_worker(
+        task.id, "implementer", WorkerStatus.RUNNING, harness="pi", worktree="wt/1"
+    )
+    store.update_worker(worker.id, status=WorkerStatus.COMPLETED)
     finding = store.add_finding(task.id, "code_reviewer", "high", "Missing test")
     store.resolve_finding(finding.id, "added test")
     blocker = store.add_blocker(task.id, "Choose TTL default")
@@ -205,7 +207,7 @@ def test_workers_findings_blockers_reviews_and_artifacts(store: TaskStore) -> No
     store.add_artifact(task.id, "diff", "artifacts/1.diff", {"files": "2"})
 
     store = reopen(store)
-    assert store.workers(task.id)[0].status == "completed"
+    assert store.workers(task.id)[0].status is WorkerStatus.COMPLETED
     assert store.findings(task.id, open_only=True) == []
     assert store.findings(task.id)[0].resolution == "added test"
     assert [b.id for b in store.blockers(session.id)] == [blocker.id]
@@ -215,6 +217,13 @@ def test_workers_findings_blockers_reviews_and_artifacts(store: TaskStore) -> No
     assert store.artifacts(task.id)[0].metadata == {"files": "2"}
     kinds = [e.kind for e in store.events(session.id)]
     assert "worker_status_changed" in kinds and "blocker_resolved" in kinds
+
+
+def test_invalid_worker_status_is_rejected_before_persistence(store: TaskStore) -> None:
+    task = store.create_task(store.start_session().id, "Work")
+    with pytest.raises(TaskStateError, match="unknown worker status"):
+        store.record_worker(task.id, "implementer", "busy")  # type: ignore[arg-type]
+    assert store.workers(task.id) == []
 
 
 def test_latest_session_prefers_open_sessions(store: TaskStore) -> None:
