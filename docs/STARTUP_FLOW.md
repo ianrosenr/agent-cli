@@ -22,7 +22,7 @@ V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src
 2. **Providers and auth.** For each detected harness, offer its subscription login path. Offer to add paid API providers and custom OpenAI-compatible endpoints. Store only credential *references* (env var name or keyring entry). See [CONFIGURATION.md](CONFIGURATION.md#credentials).
 3. **Local models.** Offer to add local endpoints (e.g. vLLM, Ollama with an OpenAI-compatible API). Probe the endpoint and list its models.
 4. **Budgets.** Confirm monthly ($20), per-task ($1), and per-call ($0.30) limits. No daily limit by default.
-5. **Concurrency.** Maximum parallel workers (default 3).
+5. **Concurrency.** Maximum parallel workers (default 3, recommended 2–4 for normal local use, hard maximum 16). This is a ceiling; orchestration should not launch workers just to fill it.
 6. **Skill directories.** Show default locations; allow extra paths.
 7. **Implementation mode.** autopilot (default), checkpoint, or plan-only. See [ORCHESTRATION.md](ORCHESTRATION.md#implementation-modes).
 8. **Review preference.** Require review before merge requests (default yes).
