@@ -9,6 +9,7 @@ from agent_cli.commands import (
     ExitShell,
     build_registry,
 )
+from agent_cli.commands.builtin import help_command
 from agent_cli.commands.registry import parse_command
 
 REQUIRED_COMMANDS = {
@@ -38,8 +39,36 @@ def test_registry_contains_every_required_command() -> None:
 def test_help_lists_every_registered_command_and_description(context: CommandContext) -> None:
     output = context.registry.dispatch("/help", context)
     for command in context.registry:
-        line = next(line for line in output.splitlines() if f"/{command.name} " in line)
+        line = next(line for line in output.splitlines() if line.startswith(f"  /{command.name} "))
         assert command.description in line
+
+
+def test_help_explains_how_to_use_the_cli_before_listing_commands(
+    context: CommandContext,
+) -> None:
+    output = context.registry.dispatch("/help", context)
+    assert output.startswith("Agent CLI help")
+    assert output.index("> prompt") < output.index("Commands:")
+
+
+def test_help_separates_working_commands_from_planned_ones(context: CommandContext) -> None:
+    output = context.registry.dispatch("/help", context)
+    available, planned = output.split("Coming in later issues:")
+    assert "/help" in available and "/exit" in available
+    for command in context.registry:
+        if command.planned_in is not None:
+            assert f"/{command.name}" not in available
+            line = next(
+                line for line in planned.splitlines() if line.startswith(f"  /{command.name} ")
+            )
+            assert line.endswith(f"  {command.planned_in}")
+
+
+def test_help_omits_planned_section_when_nothing_is_planned() -> None:
+    registry = CommandRegistry()
+    registry.register(Command("help", "Help.", help_command))
+    context = CommandContext(registry=registry)
+    assert "Coming in later issues" not in registry.dispatch("/help", context)
 
 
 def test_help_reflects_newly_registered_commands(context: CommandContext) -> None:
@@ -64,9 +93,11 @@ def test_dispatch_calls_handler_with_args() -> None:
 
 @pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - {"help", "exit"}))
 def test_placeholder_commands_say_not_implemented(context: CommandContext, name: str) -> None:
+    command = context.registry.get(name)
+    assert command is not None and command.planned_in is not None
     output = context.registry.dispatch(f"/{name}", context)
     assert output.startswith("Not implemented yet:")
-    assert "V1-" in output
+    assert output.endswith(f"arrives in {command.planned_in}.")
 
 
 @pytest.mark.parametrize("line", ["/nope", "/", "/HELP"])

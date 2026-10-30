@@ -22,6 +22,8 @@ class Command:
     name: str
     description: str
     handler: CommandHandler
+    planned_in: str | None = None
+    """Roadmap issue that will implement the command, while it is still a placeholder."""
 
     def __post_init__(self) -> None:
         if not self.name or self.name.startswith(SLASH) or any(c.isspace() for c in self.name):

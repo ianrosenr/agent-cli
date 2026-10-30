@@ -39,7 +39,7 @@ def test_slash_commands_only_start_with_slash(context: CommandContext, line: str
 def test_slash_input_is_trimmed_and_dispatched(context: CommandContext) -> None:
     output = cli.handle_input("  /help  ", context)
     assert output is not None
-    assert output.startswith("Available commands:")
+    assert output.startswith("Agent CLI help")
 
 
 def scripted(*events: str | type[BaseException]) -> cli.ReadLine:
@@ -133,7 +133,7 @@ def test_piped_input_runs_without_a_terminal() -> None:
     assert result.stdout.lstrip().startswith(WORDMARK[0])
     assert TAGLINE in result.stdout
     assert "\033[" not in result.stdout
-    assert "Available commands:" in result.stdout
+    assert "Agent CLI help" in result.stdout
     assert cli.NATURAL_LANGUAGE_PLACEHOLDER in result.stdout
     assert result.stderr == ""
 
