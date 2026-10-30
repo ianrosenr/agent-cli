@@ -13,39 +13,41 @@ All repository changes should:
 
 Do not push implementation changes directly to `main`.
 
-GitHub repository rules should enforce this policy by requiring a pull request before updates to `main` and requiring the `pytest` status check from the `CI` workflow.
+GitHub repository rules should enforce this policy by requiring a pull request before updates to `main` and requiring the `ruff`, `mypy`, and `pytest` status checks from the `CI` workflow.
 
-## Required test gate
+## Required CI gates
 
 Every pull request to `main` runs `.github/workflows/ci.yml`.
 
-Once the Python package exists, the required test command is:
+Required checks:
 
 ```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
 uv run pytest
 ```
 
-A pull request must not merge while any pytest test is failing.
+A pull request must not merge while any required check is failing.
 
-Before V1-02 bootstraps the Python package, the workflow reports a successful pre-bootstrap state only when neither Python source nor tests exist.
+CI installs dependencies from the committed lock file with `uv sync --dev --locked`.
 
 ## Version impact
 
 Agent CLI uses semantic versioning.
 
-The default version impact for a merged change is:
+The default version impact is:
 
 `[PATCH]`
 
-Use another impact only when the change clearly requires it:
+The PR title is authoritative:
 
-- `[PATCH]` — default; bug fixes, internal changes, compatible refinements
-- `[MINOR]` — backward-compatible new user-facing capability
-- `[MAJOR]` — breaking public behavior or compatibility change
-- `[NONE]` — explicitly no release/version change
+- no marker → `[PATCH]`
+- `[PATCH]` → patch
+- `[MINOR]` → backward-compatible new user-facing capability
+- `[MAJOR]` → breaking public behavior or compatibility change
+- `[NONE]` → explicitly no release/version change
 
-If no explicit version marker is supplied, treat the change as `[PATCH]`.
-
-Agent CLI-generated pull requests should use `[PATCH]` by default.
+Do not duplicate the selected version impact in the PR body.
 
 See [docs/VERSIONING.md](docs/VERSIONING.md).

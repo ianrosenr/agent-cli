@@ -9,6 +9,53 @@ permissions:
   contents: read
 
 jobs:
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install locked dependencies
+        run: uv sync --dev --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  mypy:
+    name: mypy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install locked dependencies
+        run: uv sync --dev --locked
+
+      - name: Mypy
+        run: uv run mypy
+
   pytest:
     name: pytest
     runs-on: ubuntu-latest
@@ -25,18 +72,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run all pytest tests
-        shell: bash
-        run: |
-          if [[ ! -f pyproject.toml ]]; then
-            if [[ -d src || -d tests ]]; then
-              echo "::error::Python source/tests exist but pyproject.toml is missing."
-              exit 1
-            fi
+      - name: Install locked dependencies
+        run: uv sync --dev --locked
 
-            echo "Python project is not bootstrapped yet; pytest gate becomes active in V1-02."
-            exit 0
-          fi
-
-          uv sync --dev
-          uv run pytest
+      - name: Pytest
+        run: uv run pytest
