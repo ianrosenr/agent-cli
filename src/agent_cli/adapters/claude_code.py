@@ -202,17 +202,20 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
                 "run claude auth login and choose your Claude subscription",
             )
         method = payload.get("authMethod")
-        if method not in SUBSCRIPTION_AUTH_METHODS:
+        subscription = payload.get("subscriptionType")
+        plan = subscription if isinstance(subscription, str) and subscription else None
+        subscription_auth = method == "claude.ai" or (
+            method == "oauth_token" and plan is not None
+        )
+        if method not in SUBSCRIPTION_AUTH_METHODS or not subscription_auth:
             shown = method if isinstance(method, str) and method else "non-subscription credentials"
             return HarnessReadiness(
                 ReadinessState.AUTH_REQUIRED,
                 f"authenticated with {shown}; sign in with a Claude subscription instead",
             )
-        subscription = payload.get("subscriptionType")
-        plan = subscription if isinstance(subscription, str) and subscription else "Claude account"
         return HarnessReadiness(
             ReadinessState.READY,
-            f"{self._version}; subscription auth ({plan})",
+            f"{self._version}; subscription auth ({plan or 'Claude account'})",
         )
 
     def capabilities(self) -> HarnessCapabilities:
