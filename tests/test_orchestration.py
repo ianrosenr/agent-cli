@@ -500,6 +500,14 @@ def test_singular_role_agent_wording_cannot_be_widened_to_all_children() -> None
         validate_proposal(proposal(item(planning), pins=(wide,)), planning)
 
 
+def test_everything_alone_cannot_authorize_an_all_child_pin() -> None:
+    planning = planning_input(f"{GOAL} Use Claude to review everything.")
+    wide = pinned("Use Claude to review everything", "Claude", "all")
+
+    with pytest.raises(PlanRejected, match="not about all"):
+        validate_proposal(proposal(item(planning), pins=(wide,)), planning)
+
+
 def test_specific_pins_win_over_all_subagent_pins(store: TaskStore, config: ConfigService) -> None:
     goal = f"{GOAL} Use model-b for the implementer. Use model-a for all other subagents."
     research = partial(
