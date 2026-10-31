@@ -379,7 +379,7 @@ def all_children_scope(sentence: str) -> bool:
     """
     return contains(sentence, "everything") or bool(
         re.search(
-            r"\b(?:all|every|each)\s+(?:other\s+)?(?:sub\s+)?(?:agents?|workers?|tasks?)\b",
+            r"\b(?:all|every|each)\s+(?:other\s+)?(?:subagents?|agents?|workers?|tasks?)\b",
             sentence,
         )
     )
