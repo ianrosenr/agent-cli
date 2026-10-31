@@ -111,9 +111,11 @@ V1-09 never approves its own specs. V1-10 owns spec review and approval.
 Validation details worth knowing:
 
 - Every work item must cite the IDs of the user requirements it serves; that citation is its authority for scope.
-- A pin must quote the user's own words (a requirement or a planning answer), and the quote must name the pinned value. Repository text therefore cannot authorize a pin. A hedged instruction ("prefer ...", "ideally ...") is reported as a preference, not pinned.
-- Pin scopes are `all`, a delegated role, a work-item ID, or `orchestrator` (the planning calls themselves). Role and `all` scopes are copied onto matching children and kept as scoped pins for roles created later, such as a V1-12 code reviewer. When a proposal adds an `orchestrator` model pin, planning reruns once under it; if the pinned model cannot run, planning stops rather than substituting.
-- Planner and spec-author replies are parsed strictly: unknown fields (such as skill or model choices) are errors.
+- A pin must quote words from one sentence the user wrote (in the request or a planning answer), and the quote must give a directive (`use`, `with`, `via`, `run`, ...) naming the pinned value. Repository text therefore cannot authorize a pin, and neither can a passing mention of a model. A hedged ("prefer ...", "ideally ...") or negated ("don't use ...") sentence is reported under "Not pinned" instead.
+- Pin scopes are `all`, a delegated role, a work-item ID, or `orchestrator` (the planning calls themselves). A role, `all`, or `orchestrator` scope must match the user's sentence. Pins apply from least to most specific, so a role or work-item pin beats an `all` pin of the same kind. Role and `all` scopes are copied onto matching children and kept as scoped pins for roles created later, such as a V1-12 code reviewer.
+- When a proposal adds an `orchestrator` model or provider pin that the call producing it did not honor, planning is redone once under the pin; spend for both calls is shown in "Planned with". If the pinned model cannot run, planning stops rather than substituting.
+- Planner and spec-author replies are parsed strictly: unknown fields (such as skill or model choices) are errors. A spec may name an existing file the index knows, a known directory, or a new file directly inside a known directory; dotted module names and prose areas are always allowed.
+- Answers to planning questions are added to the inspection anchors before re-planning. After three questions on one request, planning stops and asks for a restated request. `/cancel` withdraws a pending question and cancels its request, so the next line starts a new one.
 
 `/autopilot` shows the effective `implementation.mode` and where it comes from; `/autopilot on|off|plan-only [global|project]` saves only that key (default: global). `off` means `checkpoint`. V1-10 applies the mode.
 

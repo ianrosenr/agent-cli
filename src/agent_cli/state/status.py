@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from agent_cli.state.models import ALL_CHILDREN, PIN_KINDS, Task
+from agent_cli.state.models import ALL_CHILDREN, PIN_KINDS, ScopedPin, Task
 from agent_cli.state.task_store import TaskStore
 
 NO_ACTIVE_TASK = "No active task."
@@ -42,11 +42,10 @@ def status_lines(store: TaskStore) -> list[str]:
     later = [
         f"{INDENT}{pin.root_task_id}: {pin.scope} {pin.kind}={pin.value}"
         for task in children[None]
-        for pin in store.scoped_pins(task.id)
-        if pin.scope != ALL_CHILDREN
+        for pin in pins_for_later_roles(store, task.id)
     ]
     if later:
-        lines += ["", "Pinned for delegated roles:", *later]
+        lines += ["", "Pinned for later roles:", *later]
 
     blockers = store.blockers(session.id)
     if blockers:
@@ -56,6 +55,16 @@ def status_lines(store: TaskStore) -> list[str]:
             for blocker in blockers
         ]
     return lines
+
+
+def pins_for_later_roles(store: TaskStore, root_id: str) -> list[ScopedPin]:
+    """Role-scoped user pins no child holds yet, such as a reviewer pin for V1-12."""
+    roles = {task.role for task in store.subtasks(root_id)}
+    return [
+        pin
+        for pin in store.scoped_pins(root_id)
+        if pin.scope != ALL_CHILDREN and pin.scope not in roles
+    ]
 
 
 def task_line(store: TaskStore, task: Task) -> str:

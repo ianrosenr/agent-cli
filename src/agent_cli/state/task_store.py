@@ -1001,16 +1001,30 @@ class TaskStore:
     def pin_by_user(self, task_id: str, kind: PinKind, value: str, instruction: str) -> Pin:
         """Pin a task as the user instructed, recording the instruction as a user requirement."""
         with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            self._insert_requirement(db, session_id, instruction, "user", task_id)
+            self._instruction(db, task_id, instruction)
             return self._insert_pin(db, task_id, kind, value, True)
+
+    def _instruction(self, db: sqlite3.Connection, task_id: str, text: str) -> str:
+        """The ID of the task's current user requirement with exactly ``text``, recorded now if
+        there is none, so one instruction behind several pins is recorded once."""
+        row = db.execute(
+            "SELECT id FROM requirements WHERE task_id = ? AND text = ? AND source = 'user' "
+            "AND superseded_by IS NULL",
+            (task_id, text),
+        ).fetchone()
+        if row is not None:
+            existing: str = row[0]
+            return existing
+        return self._insert_requirement(db, self._session_of(db, task_id), text, "user", task_id).id
 
     def persist_plan(self, plan: PlanWrite) -> dict[str, str]:
         """Write a validated child graph in one transaction; return each task key's new ID.
 
         Children, roles, dependencies, assumptions, and user pins are committed together or not
         at all. Pins scoped to ``all`` or a role are copied onto every matching child and kept as
-        scoped pins for children created later. A root task's plan is written only once.
+        scoped pins for children created later. Pins apply from least to most specific (``all``,
+        then a role, then one task), so the most specific pin of a kind wins on each child. A
+        root task's plan is written only once.
         """
         root_id = plan.root_task_id
         with self._write() as db:
@@ -1041,19 +1055,17 @@ class TaskStore:
             for text in plan.assumptions:
                 self._insert_assumption(db, root_id, text, plan.made_by)
 
-            instructions: dict[str, str] = {}
-            for pin in plan.pins:
-                if pin.evidence not in instructions:
-                    requirement = self._insert_requirement(
-                        db, session_id, pin.evidence, "user", root_id
-                    )
-                    instructions[pin.evidence] = requirement.id
+            def specificity(pin: PlannedPin) -> int:
+                return 2 if pin.scope in ids else 0 if pin.scope == ALL_CHILDREN else 1
+
+            for pin in sorted(plan.pins, key=specificity):
+                requirement_id = self._instruction(db, root_id, pin.evidence)
                 if pin.scope in ids:
                     targets = [ids[pin.scope]]
                 else:
                     if pin.scope != ALL_CHILDREN and pin.scope not in CANONICAL_ROLES:
                         raise TaskStateError(f"unknown pin scope: {pin.scope}")
-                    self._insert_scoped_pin(db, root_id, pin, instructions[pin.evidence])
+                    self._insert_scoped_pin(db, root_id, pin, requirement_id)
                     targets = [
                         task_id
                         for task_id, role in roles.items()
@@ -1161,6 +1173,38 @@ class TaskStore:
             )
             self._event(db, session_id, task_id, "question_answered", question_id)
         return decision
+
+    def cancel_planning_question(self, question_id: str) -> None:
+        """Withdraw a pending question: its blocker is resolved and its task is canceled."""
+        with self._write() as db:
+            row = db.execute(
+                "SELECT * FROM planning_questions WHERE id = ?", (question_id,)
+            ).fetchone()
+            if row is None:
+                raise TaskStateError(f"unknown planning question: {question_id}")
+            if row["status"] != "pending":
+                raise TaskStateError(f"planning question {question_id} is {row['status']}")
+            db.execute(
+                "UPDATE planning_questions SET status = 'canceled', answered_at = ? WHERE id = ?",
+                (self._clock(), question_id),
+            )
+            if row["blocker_id"] is not None:
+                self._resolve_in(db, "blockers", row["blocker_id"], "canceled", "blocker_resolved")
+            self._set_task(
+                db,
+                row["task_id"],
+                "status",
+                TaskStatus.CANCELED,
+                "status_changed",
+                reason="canceled",
+            )
+            self._event(
+                db,
+                self._session_of(db, row["task_id"]),
+                row["task_id"],
+                "question_canceled",
+                question_id,
+            )
 
     def planning_questions(self, task_id: str) -> list[PlanningQuestion]:
         rows = self._read(

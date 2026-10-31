@@ -9,17 +9,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agent_cli.state import PIN_KINDS, PlanningQuestion, TaskStore
+from agent_cli.state.status import pins_for_later_roles
 
 INDENT = "   "
 READY = "Ready for spec review. Nothing has been implemented."
-ANSWER_HINT = "Reply at the prompt: your next line is taken as the answer."
+ANSWER_HINT = "Your next line is taken as the answer; /cancel withdraws the request instead."
 
 
 def render_plan(
     store: TaskStore,
     root_id: str,
     summary: str,
-    preferences: Sequence[str] = (),
+    unpinned: Sequence[str] = (),
     problems: Sequence[str] = (),
     planned_by: Sequence[str] = (),
 ) -> str:
@@ -41,15 +42,11 @@ def render_plan(
         if pins:
             pinned = ", ".join(f"{kind}={pins[kind].value}" for kind in PIN_KINDS if kind in pins)
             lines.append(f"{INDENT}pinned: {pinned}")
-    later = [
-        f"- {pin.scope}: {pin.kind}={pin.value}"
-        for pin in store.scoped_pins(root_id)
-        if pin.scope != "all" and not any(task.role == pin.scope for task in children)
-    ]
+    later = [f"- {p.scope}: {p.kind}={p.value}" for p in pins_for_later_roles(store, root_id)]
     sections = [
-        ("Pinned for later work", later),
+        ("Pinned for later roles", later),
         ("Assumptions (unconfirmed)", [f"- {a.text}" for a in store.assumptions(root_id)]),
-        ("Preferences, not pins", [f'- "{text}"' for text in preferences]),
+        ("Not pinned", [f"- {text}" for text in unpinned]),
         ("Blocked", [f"- {problem}" for problem in problems]),
     ]
     for title, body in sections:

@@ -11,7 +11,7 @@ never skip it.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,7 +27,7 @@ from agent_cli.models import (
     runtime_paths,
     select_classifier,
 )
-from agent_cli.orchestration.calls import DirectModelCall, PlanningUnavailable
+from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
     PlanningInput,
     PlanRejected,
@@ -48,6 +48,7 @@ from agent_cli.orchestration.spec_author import (
     SpecContext,
     SpecRequest,
     draft_problems,
+    known_area,
     match_drafts,
     render_spec,
 )
@@ -58,7 +59,10 @@ from agent_cli.state import PinKind, Task, TaskStateError, TaskStore
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
 
 PLANNING_ATTEMPTS = 2
-"""A first proposal may add planning pins; the second is then made under them."""
+"""A proposal may pin the planning model; if the call that made it broke the pin, planning is
+redone once under it."""
+MAX_QUESTIONS = 3
+"""Questions one request may ask before planning stops and asks for a restated request."""
 
 
 @dataclass(slots=True)
@@ -101,25 +105,35 @@ class OrchestrationService:
         except (ConfigError, RegistryError) as error:
             return self.stop(root, str(error))
         guard = BudgetGuard.from_config(config, self.ledger, self.estimator, self.store)
-        repository, facts = self.inspect(root.goal)
+        answers = [d.decision for d in self.store.task_decisions(root.id) if d.decided_by == "user"]
+        repository, facts = self.inspect(" ".join([root.goal, *answers]))
 
+        replies: list[ModelReply] = []
         for attempt in range(PLANNING_ATTEMPTS):
             pins = {kind: pin.value for kind, pin in self.store.pins(root.id).items()}
             planning = self.planning_input(root, repository, pins)
-            call = DirectModelCall(self.adapters, config, registry, guard, root.id, pins)
+            call = DirectModelCall(self.adapters, config, registry, guard, root.id, pins, replies)
+            made = len(replies)
             try:
                 plan = validate_proposal(self.planner.propose(planning, call), planning)
             except (PlanningUnavailable, ModelOutputError, PlanRejected) as error:
                 return self.stop(root, f"{failure(error)}: {error}")
-            added = [pin for pin in plan.planning_pins if pins.get(pin.kind) != pin.value]
-            for pin in added:
-                self.store.pin_by_user(root.id, pin.kind, pin.value, pin.evidence)
-            if not any(pin.kind != "harness" for pin in added):
+            for pin in plan.planning_pins:
+                if pins.get(pin.kind) != pin.value:
+                    self.store.pin_by_user(root.id, pin.kind, pin.value, pin.evidence)
+            pins = {kind: pin.value for kind, pin in self.store.pins(root.id).items()}
+            if honored(replies[made:], pins, registry):
                 break
             if attempt + 1 == PLANNING_ATTEMPTS:
-                return self.stop(root, "the planner kept changing its own pinned model")
+                return self.stop(root, "planning could not be made under the pinned model")
 
         if plan.question is not None:
+            if len(self.store.planning_questions(root.id)) >= MAX_QUESTIONS:
+                return self.stop(
+                    root,
+                    f"{MAX_QUESTIONS} questions were not enough to settle the plan; "
+                    "restate the request with the decisions it needs",
+                )
             asked = self.store.ask_planning_question(
                 root.id, plan.question.question, plan.question.why
             )
@@ -130,7 +144,7 @@ class OrchestrationService:
             return self.stop(root, f"the plan could not be saved: {error}")
 
         items = {ids[item.id]: item for item in plan.proposal.work_items}
-        problems = self.route_skills(config, guard, items, facts)
+        problems = self.route_skills(config, guard, registry, items, facts)
         problems += self.write_specs(call, items, planning, plan, repository)
         if problems:
             self.block([root.id], "planning is incomplete: " + "; ".join(problems))
@@ -138,9 +152,9 @@ class OrchestrationService:
             self.store,
             root.id,
             plan.proposal.summary,
-            plan.preferences,
+            plan.unpinned,
             problems,
-            [reply.describe() for reply in call.replies],
+            [reply.describe() for reply in replies],
         )
 
     # -- Phases --------------------------------------------------------------------------------
@@ -176,12 +190,16 @@ class OrchestrationService:
         self,
         config: Config,
         guard: BudgetGuard,
+        registry: ModelRegistry,
         items: Mapping[str, WorkItem],
         facts: RepositoryFacts | None,
     ) -> list[str]:
         """Route every child's skills in one V1-06 batch, after roles are fixed."""
         try:
-            classifier = (self.classifier or self.configured_classifier)(config, guard)
+            if self.classifier is not None:
+                classifier = self.classifier(config, guard)
+            else:
+                classifier = self.configured_classifier(config, guard, registry)
             router = SkillRouter.from_config(self.config, classifier, self.store, self.home)
             router.route(
                 [
@@ -189,14 +207,15 @@ class OrchestrationService:
                     for task_id, item in items.items()
                 ]
             )
-        except (RoutingError, SkillError, ConfigError, RegistryError, TaskStateError) as error:
+        except (RoutingError, SkillError, ConfigError, TaskStateError) as error:
             reason = f"skill routing failed: {error}"
             self.block(items, reason)
             return [reason]
         return []
 
-    def configured_classifier(self, config: Config, guard: BudgetGuard) -> SignalClassifier | None:
-        registry = self.registry if self.registry is not None else load_registry()
+    def configured_classifier(
+        self, config: Config, guard: BudgetGuard, registry: ModelRegistry
+    ) -> SignalClassifier | None:
         runtime = runtime_paths(self.adapters, config)
         choice = select_classifier(
             config.routing.classifier, registry, runtime, config.access.preference
@@ -255,7 +274,7 @@ class OrchestrationService:
             issues = (
                 ["no spec was written"]
                 if draft is None
-                else draft_problems(draft, repository.paths)
+                else draft_problems(draft, lambda area: self.known(area, repository.paths))
             )
             if issues:
                 reason = f"spec for {item.goal!r} rejected: {'; '.join(issues)}"
@@ -265,6 +284,23 @@ class OrchestrationService:
                 assert draft is not None
                 self.store.add_spec_version(task_id, render_spec(draft))
         return problems
+
+    def known(self, area: str, inspected: Sequence[str]) -> bool:
+        """Whether the repository supports ``area``: the index when open, else the inspection."""
+        index = self._index
+
+        def file(path: str) -> bool:
+            return index.file(path) is not None if index else path in inspected
+
+        def directory(path: str) -> bool:
+            if index:
+                return bool(index.files(path))
+            return any(known.startswith(path + "/") for known in inspected)
+
+        try:
+            return known_area(area, file, directory)
+        except RepositoryError:
+            return False
 
     # -- Blocking ------------------------------------------------------------------------------
 
@@ -277,6 +313,20 @@ class OrchestrationService:
         for task_id in task_ids:
             with suppress(TaskStateError):  # the reason is still shown to the user
                 self.store.block_task(task_id, reason)
+
+
+def honored(
+    replies: Sequence[ModelReply], pins: Mapping[PinKind, str], registry: ModelRegistry
+) -> bool:
+    """Whether every call in ``replies`` ran on the pinned planning model and provider."""
+    model, provider = pins.get("model"), pins.get("provider")
+    entry = None if model is None else registry.get(model)
+    names = {n.casefold() for n in (entry.names if entry else (model,) if model else ())}
+    return all(
+        (model is None or reply.model_id.casefold() in names)
+        and (provider is None or reply.provider_id == provider)
+        for reply in replies
+    )
 
 
 def failure(error: Exception) -> str:

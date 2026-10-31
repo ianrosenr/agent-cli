@@ -1,7 +1,7 @@
 """Built-in slash commands.
 
 Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, ``/skills``,
-``/models``, ``/budget``, and ``/autopilot``, these are placeholders that establish the
+``/models``, ``/budget``, ``/autopilot``, and ``/cancel``, these are placeholders that establish the
 user-facing shell contract. Each names the roadmap issue that will implement it (see
 docs/BUILD_GUIDE.md, Build Order).
 """
@@ -116,6 +116,25 @@ def budget_command(context: CommandContext, args: str) -> str:
     return "\n".join(budget_lines(context.config, context.tasks))
 
 
+NO_QUESTION = "There is no open question to cancel."
+
+
+def cancel_command(context: CommandContext, args: str) -> str:
+    """Withdraw the open planning question, so the next line starts a new request."""
+    tasks = context.tasks
+    if tasks is None or not tasks.exists():
+        return NO_QUESTION
+    try:
+        session = tasks.latest_session()
+        question = None if session is None else tasks.pending_planning_question(session.id)
+        if question is None:
+            return NO_QUESTION
+        tasks.cancel_planning_question(question.id)
+    except TaskStateError as error:
+        return f"Cannot update task state: {error}"
+    return f"Canceled the question and its request ({question.task_id}). Type a new request."
+
+
 AUTOPILOT_SETTINGS: dict[str, ImplementationMode] = {
     "on": "autopilot",
     "off": "checkpoint",
@@ -212,6 +231,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("models", "Show the model registry and role thresholds.", models_command),
     Command("budget", "Show paid-API spend, reservations, and limits.", budget_command),
     Command("autopilot", "Show or choose the implementation mode.", autopilot_command),
+    Command("cancel", "Cancel the open planning question and its request.", cancel_command),
     planned(
         "diff", "Show the diff produced by delegated work.", "worktrees and worker diffs", "V1-11"
     ),

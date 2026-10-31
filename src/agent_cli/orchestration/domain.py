@@ -24,10 +24,38 @@ DELEGATED_ROLES: tuple[str, ...] = tuple(r for r in CANONICAL_ROLES if r not in 
 MAX_WORK_ITEMS = 12
 """Far above any useful plan for one request; a larger graph is decomposing too finely."""
 MAX_GOAL_CHARS = 200
+DIRECTIVES = frozenset({"use", "using", "run", "running", "with", "via", "through", "pin"})
+"""Words that make a quote an instruction rather than a passing mention."""
 HEDGES = frozenset(
-    {"prefer", "preferably", "preferred", "ideally", "maybe", "perhaps", "possibly", "similar"}
+    {
+        "prefer",
+        "preferably",
+        "preferred",
+        "ideally",
+        "maybe",
+        "perhaps",
+        "possibly",
+        "possible",
+        "similar",
+        "something",
+        "try",
+        "might",
+    }
 )
-"""Words that make an instruction a routing preference rather than a hard pin."""
+"""Words that make a sentence a routing preference rather than a hard pin."""
+NEGATIONS = frozenset({"don", "dont", "not", "never", "avoid", "no", "without", "except"})
+SCOPE_WORDS: dict[str, tuple[str, ...]] = {
+    ALL_CHILDREN: ("all", "every", "each", "subagent", "agent", "worker", "everything"),
+    PLANNING_SCOPE: ("plan", "orchestrat"),
+    "implementer": ("implement", "cod", "build", "writ"),
+    "code_reviewer": ("review",),
+    "architect": ("architect", "design"),
+    "research_investigator": ("research", "investigat"),
+    "security_investigator": ("secur",),
+    "skill_author": ("skill",),
+    "skill_evaluator": ("skill", "evaluat"),
+}
+"""Word stems a role-, ``all``-, or ``orchestrator``-scoped instruction must contain."""
 
 
 class PlanRejected(ValueError):
@@ -148,8 +176,8 @@ class ValidatedPlan:
     planning_pins: tuple[PlannedPin, ...] = ()
     """Pins on the orchestrator's own planning calls; held on the root task."""
     delegated_pins: tuple[PlannedPin, ...] = ()
-    preferences: tuple[str, ...] = ()
-    """Hedged instructions kept as routing preferences instead of hard pins."""
+    unpinned: tuple[str, ...] = ()
+    """Quoted instructions that were not explicit enough to pin, with why."""
 
     @property
     def question(self) -> ProposedQuestion | None:
@@ -193,7 +221,7 @@ def validate_proposal(proposal: PlanProposal, planning: PlanningInput) -> Valida
     if not proposal.questions and not proposal.work_items:
         problems.append("the plan has neither work items nor a question for the user")
     problems += work_item_problems(proposal.work_items, {r.id for r in planning.requirements})
-    pins, preferences, pin_problems = check_pins(proposal, planning)
+    pins, unpinned, pin_problems = check_pins(proposal, planning)
     problems += pin_problems
     if problems:
         raise PlanRejected(problems)
@@ -201,7 +229,7 @@ def validate_proposal(proposal: PlanProposal, planning: PlanningInput) -> Valida
         proposal,
         tuple(pin for pin in pins if pin.scope == PLANNING_SCOPE),
         tuple(pin for pin in pins if pin.scope != PLANNING_SCOPE),
-        preferences,
+        unpinned,
     )
 
 
@@ -283,35 +311,65 @@ def find_cycle(graph: dict[str, tuple[str, ...]]) -> list[str]:
 def check_pins(
     proposal: PlanProposal, planning: PlanningInput
 ) -> tuple[list[PlannedPin], tuple[str, ...], list[str]]:
-    """Keep only pins the user explicitly authorized.
+    """Keep only pins the user explicitly instructed.
 
-    A pin must quote the user's own words, and those words must name its value. Repository text
-    can therefore never authorize one. A hedged instruction ("prefer ...") is a routing
-    preference, not a hard pin.
+    A pin must quote words from one sentence the user wrote, and the quote must give a
+    directive ("use", "with", "via", ...) naming its value. Repository text can therefore never
+    authorize one, nor can a passing mention of a model. A role, ``all``, or ``orchestrator``
+    scope must match the user's sentence. A hedged ("prefer ...") or negated ("don't use ...")
+    sentence is reported as not pinned instead.
     """
-    user = [normalize(text) for text in planning.user_texts]
+    sentences = [normalize(part) for text in planning.user_texts for part in split_sentences(text)]
     scopes = {ALL_CHILDREN, PLANNING_SCOPE, *DELEGATED_ROLES, *(i.id for i in proposal.work_items)}
     pins: list[PlannedPin] = []
-    preferences: list[str] = []
+    unpinned: list[str] = []
     problems: list[str] = []
     chosen: dict[tuple[str, str], str] = {}
     for pin in proposal.pins:
         name = f"{pin.kind} pin {pin.value!r} for {pin.scope!r}"
-        evidence = normalize(pin.evidence)
+        evidence, value = normalize(pin.evidence), normalize(pin.value)
+        sentence = next((text for text in sentences if contains(text, evidence)), None)
         if pin.kind not in PIN_KINDS:
             problems.append(f"{name}: unknown pin kind")
-        elif not pin.value.strip():
+        elif not value:
             problems.append(f"{pin.kind} pin for {pin.scope!r} has no value")
         elif pin.scope not in scopes:
             problems.append(f"{name}: unknown scope")
-        elif not any(contains(text, evidence) for text in user):
+        elif sentence is None:
             problems.append(f"{name} does not quote an instruction the user gave")
-        elif not contains(evidence, normalize(pin.value)):
+        elif not contains(evidence, value):
             problems.append(f"{name}: the quoted instruction does not name {pin.value!r}")
-        elif HEDGES & set(evidence.split()):
-            preferences.append(pin.evidence.strip())
+        elif reason := not_an_instruction(evidence, sentence, value):
+            unpinned.append(f'"{pin.evidence}" ({reason})')
+        elif not scope_matches(pin.scope, sentence):
+            problems.append(f"{name}: the user's instruction is not about {pin.scope}")
         elif chosen.setdefault((pin.scope, pin.kind), pin.value) != pin.value:
             problems.append(f"conflicting {pin.kind} pins for {pin.scope!r}")
         elif (kept := PlannedPin(pin.kind, pin.value, pin.scope, pin.evidence)) not in pins:
             pins.append(kept)
-    return pins, tuple(dict.fromkeys(preferences)), problems
+    return pins, tuple(dict.fromkeys(unpinned)), problems
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split on sentence punctuation followed by space, so ``GPT-5.6`` stays whole."""
+    return [part for part in re.split(r"(?<=[.!?;])\s+|\n+", text) if part.strip()]
+
+
+def scope_matches(scope: str, sentence: str) -> bool:
+    stems = SCOPE_WORDS.get(scope)
+    if stems is None:
+        return True  # a work-item ID: the planner's own name for part of this request
+    return any(word.startswith(stems) for word in sentence.split())
+
+
+def not_an_instruction(evidence: str, sentence: str, value: str) -> str:
+    """Why an otherwise valid quote is not an explicit instruction, or ``""``."""
+    words = sentence.split()
+    before = f" {sentence} ".split(f" {value} ", 1)[0].split()
+    if not DIRECTIVES & set(evidence.split()):
+        return "mentions the model without asking for it"
+    if NEGATIONS & set(before):
+        return "negated"
+    if HEDGES & set(words):
+        return "a preference, not an instruction"
+    return ""

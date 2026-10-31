@@ -49,7 +49,7 @@ from agent_cli.orchestration import (
 from agent_cli.orchestration import planner as planner_module
 from agent_cli.orchestration.domain import RepositoryContext, UserText
 from agent_cli.orchestration.planner import render_prompt
-from agent_cli.orchestration.spec_author import SpecRequest, draft_problems
+from agent_cli.orchestration.spec_author import SpecRequest, draft_problems, known_area
 from agent_cli.skills import FakeClassifier
 from agent_cli.state import (
     Approval,
@@ -411,7 +411,7 @@ def test_scoped_pins_land_on_the_right_children_and_are_kept_for_later_work(
     texts = [(r.text, r.source) for r in store.task_requirements(root)]
     assert ("Review this with GPT-5.6", "user") in texts
     assert "pinned: model=claude-sonnet" in output
-    assert "Pinned for later work\n- code_reviewer: model=GPT-5.6" in output
+    assert "Pinned for later roles\n- code_reviewer: model=GPT-5.6" in output
     status = "\n".join(status_lines(store))
     assert "role: implementer · pinned: model=claude-sonnet" in status
     assert f"{root}: code_reviewer model=GPT-5.6" in status
@@ -459,22 +459,50 @@ def test_repository_text_can_never_authorize_a_pin(store: TaskStore, config: Con
 
 
 @pytest.mark.parametrize(
-    ("goal", "evidence", "value"),
+    ("goal", "evidence", "value", "reason"),
     [
-        ("Add expiry. I'd prefer Claude for this.", "prefer Claude", "claude"),
-        ("Add expiry, ideally with GPT-5.6.", "ideally with GPT-5.6", "GPT-5.6"),
+        ("Add expiry. I'd prefer to use Claude.", "use Claude", "claude", "a preference"),
+        ("Add expiry, ideally with GPT-5.6.", "with GPT-5.6", "GPT-5.6", "a preference"),
+        ("Add expiry. Don't use opus for this.", "use opus", "opus", "negated"),
+        ("Fix the opus adapter timeout.", "opus adapter", "opus", "mentions the model"),
     ],
 )
-def test_hedged_preferences_are_not_hard_pins(
-    store: TaskStore, config: ConfigService, goal: str, evidence: str, value: str
+def test_hedged_negated_or_passing_mentions_are_not_pins(
+    store: TaskStore, config: ConfigService, goal: str, evidence: str, value: str, reason: str
 ) -> None:
-    output = service(store, config, plan(one_item, pins=(pinned(evidence, value, "all"),))).handle(
-        goal
-    )
+    steps = plan(one_item, pins=(pinned(evidence, value, "all"),))
+    output = service(store, config, steps).handle(goal)
 
     [child] = store.subtasks(root_of(store))
     assert store.pins(child.id) == {} and store.scoped_pins(root_of(store)) == []
-    assert f'Preferences, not pins\n- "{evidence}"' in output
+    assert f'Not pinned\n- "{evidence}" ({reason}' in output
+
+
+def test_a_pin_scope_must_match_the_users_instruction() -> None:
+    planning = planning_input(f"{GOAL} Use opus for the tests.")
+    wide = pinned("Use opus for the tests", "opus", "all")
+    with pytest.raises(PlanRejected, match="not about all"):
+        validate_proposal(proposal(item(planning), pins=(wide,)), planning)
+    planning = planning_input(f"{GOAL} Use Claude Sonnet for the implementer.")
+    wrong_role = pinned("Use Claude Sonnet for the implementer", "claude-sonnet", "code_reviewer")
+    with pytest.raises(PlanRejected, match="not about code_reviewer"):
+        validate_proposal(proposal(item(planning), pins=(wrong_role,)), planning)
+
+
+def test_specific_pins_win_over_all_subagent_pins(store: TaskStore, config: ConfigService) -> None:
+    goal = f"{GOAL} Use model-b for the implementer. Use model-a for all other subagents."
+    research = partial(
+        item, id="facts", role="research_investigator", goal="Map callers", changes_code=False
+    )
+    pins = (
+        pinned("Use model-b for the implementer", "model-b", "implementer"),
+        pinned("Use model-a for all other subagents", "model-a", "all"),
+    )
+    service(store, config, plan(research, one_item, pins=pins)).handle(goal)
+
+    facts, implementer = store.subtasks(root_of(store))
+    assert store.pins(facts.id)["model"].value == "model-a"
+    assert store.pins(implementer.id)["model"].value == "model-b"
 
 
 def test_a_pin_must_name_the_model_the_user_named() -> None:
@@ -486,26 +514,23 @@ def test_a_pin_must_name_the_model_the_user_named() -> None:
 
 def test_conflicting_pins_for_one_scope_are_rejected() -> None:
     planning = planning_input(f"{GOAL} Use model-a or model-b for all subagents.")
-    pins = (
-        pinned("Use model-a", "model-a", "all"),
-        pinned("model-b for all subagents", "model-b", "all"),
-    )
+    evidence = "Use model-a or model-b for all subagents"
+    pins = (pinned(evidence, "model-a", "all"), pinned(evidence, "model-b", "all"))
     with pytest.raises(PlanRejected, match="conflicting model pins"):
         validate_proposal(proposal(item(planning), pins=pins), planning)
 
 
-def test_a_planning_pin_reruns_planning_under_that_pin(
+def test_a_planning_pin_held_by_the_call_needs_no_second_attempt(
     store: TaskStore, config: ConfigService
 ) -> None:
     goal = f"{GOAL} Plan this with deep-planner."
     pin = (pinned("Plan this with deep-planner", "deep-planner", "orchestrator"),)
-    planner = FakePlanner([plan(one_item, pins=pin), plan(one_item, pins=pin)])
+    planner = FakePlanner([plan(one_item, pins=pin)])
     service(store, config, planner=planner).handle(goal)
 
-    assert [i.constraints for i in planner.inputs] == [(), ("model=deep-planner",)]
     root = root_of(store)
+    assert len(planner.inputs) == 1
     assert store.pins(root)["model"].value == "deep-planner"
-    assert [c.role for c in store.subtasks(root)] == ["implementer"]
     assert store.pins(store.subtasks(root)[0].id) == {}
 
 
@@ -592,6 +617,44 @@ def test_answers_can_authorize_pins(store: TaskStore, config: ConfigService) -> 
     assert store.pins(child.id)["model"].value == "haiku-x"
 
 
+def test_cancel_withdraws_the_question_so_the_next_line_is_a_new_request(
+    store: TaskStore, config: ConfigService
+) -> None:
+    orchestrator = service(store, config, ask(), plan(one_item))
+    orchestrator.handle(GOAL)
+    first = root_of(store)
+    context = CommandContext(registry=build_registry(), tasks=store)
+    assert context.registry.dispatch("/cancel", context).startswith("Canceled the question")
+    assert context.registry.dispatch("/cancel", context) == "There is no open question to cancel."
+
+    orchestrator.handle("Add a health endpoint.")
+    second = root_of(store)
+    assert second != first
+    assert store.planning_questions(first)[0].status == "canceled"
+    assert status(store, first) is TaskStatus.CANCELED
+    assert store.task_decisions(first) == []
+
+
+def test_planning_stops_after_too_many_questions(store: TaskStore, config: ConfigService) -> None:
+    orchestrator = service(store, config, *(ask(f"Question {i}?") for i in range(4)))
+    for line in (GOAL, "a", "b", "c"):
+        output = orchestrator.handle(line)
+
+    assert len(store.planning_questions(root_of(store))) == 3
+    assert output.startswith("Planning stopped: 3 questions were not enough")
+
+
+def test_answers_are_inspected_on_the_next_planning_pass(
+    store: TaskStore, config: ConfigService
+) -> None:
+    planner = FakePlanner([ask("Where should expiry live?"), plan(one_item)])
+    orchestrator = service(store, config, planner=planner)
+    orchestrator.handle("Add expiration support.")
+    orchestrator.handle("In tests/test_store.py and CacheStore.")
+
+    assert "tests/test_store.py" in planner.inputs[1].repository.paths
+
+
 # -- Partial phases ----------------------------------------------------------------------------
 
 
@@ -618,7 +681,7 @@ def test_a_spec_naming_unsupported_files_is_rejected(
         return SpecDraft(
             request.task_id,
             "Add expiry.",
-            affected_areas=("src/cache/expiry_manager.py",),
+            affected_areas=("lib/expiry/manager.py",),
             required_behavior=("Entries expire.",),
             tests=("Expiry test.",),
             success_criteria=("Tests pass.",),
@@ -760,17 +823,27 @@ def test_specs_render_every_section_in_order() -> None:
 
 
 def test_spec_drafts_must_be_concise_complete_and_evidence_backed() -> None:
-    draft = SpecDraft("t", "", affected_areas=("src/cache/new.py", "src/cache", "cache layer"))
-    problems = draft_problems(draft, ["src/cache/store.py"])
+    inspected = ["src/cache/store.py"]
+
+    def known(area: str) -> bool:
+        return known_area(
+            area,
+            lambda path: path in inspected,
+            lambda path: any(k.startswith(path + "/") for k in inspected),
+        )
+
+    areas = ("lib/new.py", "src/cache/ttl.py", "src/cache", "agent_cli.cache", "cache layer")
+    problems = draft_problems(SpecDraft("t", "", affected_areas=areas), known)
     assert "the spec has no objective" in problems
     assert "the spec has no required behavior" in problems
     assert "the spec has no tests" in problems
-    assert any("'src/cache/new.py' is not supported" in p for p in problems)
-    assert not any("'src/cache'" in p or "cache layer" in p for p in problems)
+    assert [p for p in problems if "not supported" in p] == [
+        "affected area 'lib/new.py' is not supported by repository evidence"
+    ]
     wordy = SpecDraft(
         "t", "x", required_behavior=("y" * 301,), tests=("t",), success_criteria=("s",)
     )
-    assert any("over 300 characters" in p for p in draft_problems(wordy, []))
+    assert any("over 300 characters" in p for p in draft_problems(wordy, known))
 
 
 # -- Provider-backed planning and budgets ------------------------------------------------------
@@ -922,6 +995,43 @@ def test_a_pinned_planning_model_is_used_even_below_the_floor(
     orchestrator.plan(root)
 
     assert {r.model_id for r in provider.requests} == {"weak-model"}
+
+
+def test_planning_reruns_when_the_call_broke_a_new_planning_pin(
+    store: TaskStore, config: ConfigService
+) -> None:
+    def pin_planner(payload: dict[str, Any]) -> dict[str, Any]:
+        reply = default_plan_reply(payload)
+        reply["pins"] = [
+            {
+                "kind": "model",
+                "value": "deep-planner",
+                "scope": "orchestrator",
+                "evidence": "Plan this with deep-planner",
+            }
+        ]
+        return reply
+
+    provider = ScriptedProvider(
+        "subscription", ("planner-model", "deep-planner"), plan_reply=pin_planner
+    )
+    deep = model("deep-planner", scores={**PLANNER_SCORES, "reasoning": 4})
+    two = registry(model("planner-model", scores=PLANNER_SCORES), deep)
+    output = provider_service(store, config, provider, registry=two).handle(
+        f"{GOAL} Plan this with deep-planner."
+    )
+
+    assert [r.model_id for r in provider.requests] == [
+        "planner-model",  # automatic choice; its plan is redone under the pin
+        "deep-planner",
+        "deep-planner",  # spec authoring under the same root pin
+    ]
+    assert (
+        "Planned with planner-model via scripted (subscription); "
+        "deep-planner via scripted (subscription)." in output
+    )
+    pin_texts = [r.text for r in store.task_requirements(root_of(store))]
+    assert pin_texts.count("Plan this with deep-planner") == 1
 
 
 PRICES = PriceTable.of(
