@@ -131,6 +131,10 @@ def test_valid_skill_parses_with_body_only() -> None:
         (VALID.replace("name: security", "name: Security"), "kebab-case"),
         (VALID.replace("name: security", "name: secure"), "does not match its directory"),
         (VALID.replace("description: Rules.", "description: Rules\n  that wrap."), "one line"),
+        (
+            VALID.replace("description: Rules.", 'description: "First\\nSecond"'),
+            "description must be one line",
+        ),
         (VALID.replace("description: Rules.", "description: " + "x" * 121), "121 characters"),
         (VALID.replace("1.2.3", "v1.2.3"), "semantic version"),
         (VALID.replace("1.2.3", "'01.2.3'"), "semantic version"),
@@ -302,6 +306,8 @@ def test_policy_parses_vocabulary_derivations_and_stable_mapping_order() -> None
         (lambda d: d["skills"].update(Bad={"signals": ["database"]}), "invalid skill name"),
         (lambda d: d["role_defaults"].update(implementer="testing"), "list of names"),
         (lambda d: d["role_defaults"].update(implementer=["testing", "testing"]), "repeat"),
+        (lambda d: d["role_defaults"].update(wizard=["testing"]), "unknown role"),
+        (lambda d: d["role_defaults"].pop("architect"), "missing role"),
         (lambda d: d["signals"].append("unused_signal"), "mapped to no skill"),
         (
             lambda d: d["repository_signals"]["facts"]["database"].update(strength="huge"),
