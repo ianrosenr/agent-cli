@@ -96,13 +96,16 @@ V1-09 never approves its own specs. V1-10 owns spec review and approval.
 
 | Role | Reasoning floor | May | May not |
 | --- | --- | --- | --- |
-| Orchestrator | high | decompose work, write canonical memory, dispatch and stop workers, ask the user, escalate | edit code directly |
+| Orchestrator | high | decompose work, write canonical memory, coordinate, ask the user, escalate | edit code directly |
 | Spec author | high | read the repo, write and revise specs | edit code, expand the user's goal |
 | Spec reviewer | mid (escalates on risk) | question the spec author, approve or reject specs | rewrite the spec itself |
+| Architect | high | analyze architecture and propose bounded design constraints/options | edit code, expand product intent |
 | Implementer | low (with a precise spec) | edit files in its own worktree within spec scope, run tests | redesign, infer requirements, broaden scope, do unrelated refactors, silently resolve consequential ambiguity |
 | Code reviewer | mid (escalates on risk) | question the implementer, request changes, approve | edit code |
 | Research investigator | high | read the repo and approved external sources, report findings | edit code, make design decisions |
 | Security investigator | high | assess security-sensitive specs and diffs | edit code |
+| Skill author | high | author/revise skill policy content within an explicitly scoped skill task | expand another role's authority or change product scope |
+| Skill evaluator | high | evaluate skill behavior/coverage and report findings | silently rewrite skills or expand another role's authority |
 
 Floors are defaults, configurable but not shown in `/startup`. See [ROUTING.md](ROUTING.md#role-floors).
 
