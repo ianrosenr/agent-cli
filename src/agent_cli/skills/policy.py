@@ -30,6 +30,18 @@ TOP_LEVEL_KEYS = (
     "skills",
 )
 REPOSITORY_KINDS = ("categories", "facts")
+CANONICAL_ROLES = (
+    "orchestrator",
+    "spec_author",
+    "spec_reviewer",
+    "architect",
+    "implementer",
+    "code_reviewer",
+    "research_investigator",
+    "security_investigator",
+    "skill_author",
+    "skill_evaluator",
+)
 
 
 class Strength(IntEnum):
@@ -157,8 +169,14 @@ def parse_policy(data: object, where: str) -> RoutingPolicy:
     role_defaults: dict[str, tuple[str, ...]] = {}
     for role, defaults in mapping(top["role_defaults"], "role_defaults", fail).items():
         role_defaults[str(role)] = skill_names(defaults, f"role_defaults.{role}")
-    if not role_defaults:
-        raise fail("role_defaults must name at least one role")
+    roles = set(role_defaults)
+    expected_roles = set(CANONICAL_ROLES)
+    unknown_roles = sorted(roles - expected_roles)
+    missing_roles = sorted(expected_roles - roles)
+    if unknown_roles:
+        raise fail(f"role_defaults: unknown role(s) {', '.join(unknown_roles)}")
+    if missing_roles:
+        raise fail(f"role_defaults: missing role(s) {', '.join(missing_roles)}")
 
     skills: dict[str, tuple[str, ...]] = {}
     for skill, entry in mapping(top["skills"], "skills", fail).items():
