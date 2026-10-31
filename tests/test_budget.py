@@ -55,14 +55,18 @@ from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigPaths, ConfigService
 from agent_cli.config.model import CostConfig, RoleFloors
 from agent_cli.models import (
+    ClassifierChoice,
     ModelPath,
     ModelPin,
     NoModelAvailable,
     PinnedPaths,
+    build_classifier,
     pinned_paths,
     ranked_model_candidates,
     runtime_paths,
 )
+from agent_cli.skills import ClassificationInput, ClassifierMode, load_policy
+from agent_cli.skills.classifier import classify
 from agent_cli.state import TaskStateError, TaskStatus, TaskStore
 from agent_cli.terms import AccessKind
 from test_models import model, registry
@@ -137,12 +141,17 @@ def limits(**overrides: int | None) -> Limits:
 
 
 def provider(
-    id: str, access: AccessKind | None, *model_ids: str, usage: Usage | None = None
+    id: str,
+    access: AccessKind | None,
+    *model_ids: str,
+    usage: Usage | None = None,
+    reply: str = '{"results": []}',
 ) -> FakeProviderAdapter:
     return FakeProviderAdapter(
         provider_identity=ProviderIdentity(id, id.title(), "fake", access),
         models=[ModelDescriptor(id, model_id) for model_id in model_ids],
         usage=usage,
+        reply=reply,
     )
 
 
@@ -605,6 +614,71 @@ def test_provider_failure_after_dispatch_is_charged_the_reserved_bound(
     assert reservation.settled_micros == reservation.reserved_micros > 0
     assert reservation.settlement_source is SettlementSource.RESERVED_BOUND
     assert reservation.note == "failed after dispatch: AdapterError"
+
+
+def test_paid_classifier_runs_through_budget_guard(
+    ledger: SpendLedger, tasks: TaskStore
+) -> None:
+    session = tasks.start_session()
+    root = tasks.create_task(session.id, "Root")
+    child = tasks.create_task(session.id, "Classify", parent_id=root.id)
+    reply = (
+        '{"results":[{"task_id":"' + child.id + '","signals":[],"evidence":"bounded"}]}'
+    )
+    paid = provider("paid", "api", "m", reply=reply)
+    choice = ClassifierChoice("selected", ModelPath("m", paid.identity()), "m")
+    budget = guard(ledger, tasks)
+    classifier = build_classifier(
+        choice,
+        AdapterRegistry(providers=[paid]),
+        budgeted_invoke=budget.invoke_classifier,
+    )
+    assert classifier is not None
+
+    result = classify(
+        classifier,
+        [ClassificationInput(child.id, "implementer", "implement")],
+        load_policy().vocabulary,
+    )
+
+    assert result.mode is ClassifierMode.USED
+    assert len(paid.requests) == 1
+    (reservation,) = ledger.reservations()
+    assert reservation.call.root_task_id == root.id
+    assert reservation.call.task_id == child.id
+    assert reservation.call.purpose == "skill_classification"
+    assert reservation.status is ReservationStatus.SETTLED
+
+
+def test_paid_classifier_never_batches_different_root_budgets(
+    ledger: SpendLedger, tasks: TaskStore
+) -> None:
+    session = tasks.start_session()
+    first = tasks.create_task(session.id, "First")
+    second = tasks.create_task(session.id, "Second")
+    paid = provider("paid", "api", "m")
+    choice = ClassifierChoice("selected", ModelPath("m", paid.identity()), "m")
+    budget = guard(ledger, tasks)
+    classifier = build_classifier(
+        choice,
+        AdapterRegistry(providers=[paid]),
+        budgeted_invoke=budget.invoke_classifier,
+    )
+    assert classifier is not None
+
+    result = classify(
+        classifier,
+        [
+            ClassificationInput(first.id, "implementer", "one"),
+            ClassificationInput(second.id, "implementer", "two"),
+        ],
+        load_policy().vocabulary,
+    )
+
+    assert result.mode is ClassifierMode.FAILED
+    assert "multiple root-task budgets" in result.error
+    assert paid.requests == []
+    assert ledger.reservations() == []
 
 
 def test_session_and_task_overrides_tighten_the_guard(
