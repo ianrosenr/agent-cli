@@ -62,14 +62,24 @@ routing:
   role_floors:
     orchestrator: high
     spec_author: high
+    spec_reviewer: mid
+    architect: high
+    implementer: low
+    code_reviewer: mid
     research_investigator: high
     security_investigator: high
-    spec_reviewer: mid
-    code_reviewer: mid
-    implementer: low
+    skill_author: high
+    skill_evaluator: high
+  classifier:
+    mode: auto                  # auto | selected | disabled
+    selected_model: null
 ```
 
 `workers.max_concurrency` is a ceiling, not a target: the orchestrator should launch only as many independent workers as useful, up to the configured limit. V1 accepts 1–16 workers, defaults to 3, and recommends 2–4 for normal local use.
+Role floors are capability minimums: `low = 2`, `mid = 3`, and `high = 4` on V1's integer 1–5 score scale. Each canonical role maps to one primary capability as defined in [ROUTING.md](ROUTING.md#role-floors).
+
+Classifier mode is also advanced configuration. `auto` only uses an active low-cost classifier model that meets the built-in classifier floor; if none exists, Agent CLI uses deterministic skill routing. `selected` uses the exact configured model without silent substitution. `disabled` never calls a semantic classifier. No cheap classifier is required for Agent CLI to function.
+
 
 Relative `skills.paths` entries resolve against the repository root (the working directory outside a repository); `~` expands to the home directory. A configured path that does not exist is an error. `skills.context_budget_tokens` budgets skill text only, not the worker's whole context window.
 

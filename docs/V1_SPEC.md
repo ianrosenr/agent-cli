@@ -18,7 +18,7 @@ Reference scenario:
 4. **Adapters.** Separate, stable interfaces for providers and existing coding-agent harnesses. Agent CLI is the control plane, not a coding-agent runtime. See [ARCHITECTURE.md](ARCHITECTURE.md).
 5. **Shared memory and repository facts.** Persist canonical task state in project-local SQLite plus a reusable, incremental repository fact index for cheap task inspection. Canonical task state is durable; repository indexes/caches are rebuildable. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
-7. **Model registry and role floors.** Capability-scored models; each role has a minimum reasoning tier. See [ROUTING.md](ROUTING.md).
+7. **Model registry and role floors.** Capability-scored models; each canonical role has a deterministic minimum score on its primary capability. See [ROUTING.md](ROUTING.md).
 8. **Budget guardrails.** Hard limits enforced in code before each paid call. See [ROUTING.md](ROUTING.md#cost-guardrails).
 9. **Spec-driven work.** Orchestrator → spec author → spec reviewer → implementer → code reviewer. See [ORCHESTRATION.md](ORCHESTRATION.md).
 10. **Worktree isolation.** Each concurrent implementer works in its own Git worktree.
@@ -68,5 +68,4 @@ These are deferred to the issue named. Docs that mention them describe intent, n
 
 | Decision | Owner issue |
 | --- | --- |
-| Capability score scale and initial registry seed | V1-07 |
 | Spend accounting source (provider usage vs. local estimate) | V1-08 |
