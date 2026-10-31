@@ -35,7 +35,7 @@
 | Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md), [SKILL_ROUTING.md](SKILL_ROUTING.md)) | skill content or model choice |
 | Router | choosing model + provider + harness ([ROUTING.md](ROUTING.md)) | task content |
 | Model registry | model capability scores, active/candidate policy | live provider health or provider topology |
-| Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
+| Budget ledger | global spend, atomic reservations, settlement, paid-call allow/deny | model capability or harness execution |
 | Provider health | cooldowns and normalized failure state | model quality |
 | Worker manager | worker lifecycle, worktrees, recovery | what workers should do |
 | Harness adapter | translating Agent CLI worker requests to an existing coding-agent harness ([ADAPTERS.md](ADAPTERS.md)) | the coding-agent tool loop/runtime itself |
@@ -77,7 +77,7 @@ Keeping them separate allows the same model to be reached through another provid
 - **Trust.** Repository content, model output, and tool output are untrusted input. Credentials come from environment variables or the OS credential store, never from ordinary YAML.
 - **State.** Only the orchestrator writes canonical memory. Workers return results; the orchestrator decides what becomes shared truth.
 - **Filesystem.** Each implementer writes only inside its own worktree. The user's checkout is changed only when the user accepts a final diff.
-- **Spend.** The budget ledger is consulted in code before every paid call. An LLM cannot override it.
+- **Spend.** Paid calls require a conservative upper-bound estimate and atomic ledger reservation before dispatch. An LLM or plain approval cannot override hard ceilings. Opaque paid harnesses are eligible only when their integration exposes an enforceable bound.
 - **Failure.** A worker or provider failure is contained to that task and surfaces to the orchestrator. It does not crash the session.
 
 ## Product and runtime layout
@@ -86,7 +86,8 @@ Keeping them separate allows the same model to be reached through another provid
 builtins/skills/                     shipped default skill packages
 builtins/policies/                   shipped default skill-routing policy
 builtins/models/                     shipped model-registry seed
-~/.agent-cli/                        user config, skill overrides, model registry, budget ledger
+~/.agent-cli/                        user config, skill overrides, model registry
+~/.agent-cli/state/spend.sqlite      global canonical paid-spend ledger
 <repo>/.agent-cli/                   project config, skill overrides, policies, task state
 <repo>/.agent-cli/worktrees/         worker worktrees (git-ignored)
 ```
