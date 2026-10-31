@@ -76,10 +76,10 @@ PRICES = PriceTable.of(
     "test-1",
     [
         # $100 per million tokens each way: 1,000 in + 1,000 out costs $0.20.
-        ("paid", "m", Price(100 * USD, 100 * USD)),
-        ("paid", "best", Price(100 * USD, 100 * USD)),
-        ("paid", "cheap", Price(10 * USD, 10 * USD)),
-        ("pricey", "best", Price(200 * USD, 200 * USD)),
+        ("paid", "m", Price(100 * USD, 100 * USD, 1, 256)),
+        ("paid", "best", Price(100 * USD, 100 * USD, 1, 256)),
+        ("paid", "cheap", Price(10 * USD, 10 * USD, 1, 256)),
+        ("pricey", "best", Price(200 * USD, 200 * USD, 1, 256)),
     ],
 )
 
@@ -216,9 +216,27 @@ def test_price_tables_match_ids_case_insensitively_and_are_read_only() -> None:
 
 def test_input_bound_is_at_least_one_token_per_byte() -> None:
     text = "héllo wörld"
-    bound = input_bound(ProviderRequest("m", text, system="sys"))
+    bound = input_bound(
+        ProviderRequest("m", text, system="sys"),
+        max_tokens_per_utf8_byte=1,
+        request_overhead_tokens=256,
+    )
     assert bound >= len(text.encode()) + len(b"sys")
 
+
+def test_paid_guard_rejects_price_source_without_a_trusted_input_bound(
+    ledger: SpendLedger,
+) -> None:
+    rates_only = PriceTable.of(
+        "rates-only", "1", [("paid", "m", Price(100 * USD, 100 * USD))]
+    )
+    paid = provider("paid", "api", "m")
+
+    with pytest.raises(BudgetRejected) as rejected:
+        BudgetGuard(ledger, limits(), rates_only).invoke(paid, request(), "test")
+
+    assert rejected.value.reason is BudgetReason.PRICING_UNKNOWN
+    assert paid.requests == []
 
 def test_amounts_are_formatted_exactly() -> None:
     assert format_usd(20 * USD) == "$20.00"
@@ -529,6 +547,9 @@ def test_unbounded_output_fails_closed(ledger: SpendLedger) -> None:
 
 def test_non_conservative_estimates_cannot_admit_a_call(ledger: SpendLedger) -> None:
     class Optimistic:
+        def input_bound(self, call: PaidCall, request: ProviderRequest) -> int:
+            return 1
+
         def estimate(self, call: PaidCall) -> CostEstimate:
             return CostEstimate(1, 1, 1, "guess", "1", conservative=False)
 
@@ -654,6 +675,20 @@ def test_root_task_ceiling_only_ever_tightens(ledger: SpendLedger) -> None:
     assert ledger.usage("unlimited").task_ceiling == TaskCeiling(300)
     assert ledger.usage("never-admitted").task_ceiling is None
 
+
+def test_rejected_call_still_tightens_the_root_task_ceiling(ledger: SpendLedger) -> None:
+    first = ledger.reserve(call("root"), estimate(100_000), limits(per_task=1 * USD))
+    ledger.mark_dispatched(first.id)
+    ledger.settle(first.id, Usage(cost_usd=0.10))
+
+    with pytest.raises(BudgetRejected) as rejected:
+        ledger.reserve(call("root"), estimate(450_000), limits(per_task=500_000))
+    assert rejected.value.reason is BudgetReason.PER_TASK_LIMIT
+    assert ledger.usage("root").task_ceiling == TaskCeiling(500_000)
+
+    with pytest.raises(BudgetRejected) as sibling:
+        ledger.reserve(call("root"), estimate(450_000), limits(per_task=1 * USD))
+    assert sibling.value.reason is BudgetReason.PER_TASK_LIMIT
 
 def test_budget_shows_the_root_task_ceiling(ledger: SpendLedger, tasks: TaskStore) -> None:
     session = tasks.start_session()
