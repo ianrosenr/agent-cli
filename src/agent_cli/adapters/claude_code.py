@@ -1,8 +1,8 @@
 """Claude Code harness adapter using the user's existing Claude subscription login.
 
 The adapter launches the installed Claude Code CLI in bounded headless mode. It never copies
-Claude credentials and deliberately removes API/cloud billing overrides from child processes so
-this harness cannot silently turn a subscription route into pay-as-you-go API usage.
+Claude credentials and fails closed when API/cloud billing overrides are present, so this
+subscription route cannot silently become pay-as-you-go usage.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ INTERRUPT_TIMEOUT_S = 2.0
 MAX_TURNS = 25
 
 # Claude Code gives environment-based provider credentials precedence over a saved claude.ai
-# login. A subscription harness must not inherit them.
+# login. This subscription-only harness refuses to run while one is configured.
 BILLING_OVERRIDE_ENV = frozenset(
     {
         "ANTHROPIC_API_KEY",
@@ -152,7 +152,13 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         if not self.config.enabled:
             return HarnessReadiness(ReadinessState.MISCONFIGURED, "disabled in config")
         command = self.command()
-        env = self.subscription_env()
+        override = self.billing_override()
+        if override is not None:
+            return HarnessReadiness(
+                ReadinessState.MISCONFIGURED,
+                f"unset {override} to use the Claude subscription harness",
+            )
+        env = dict(self.environ)
         try:
             version = self.runner((command, "--version"), env, READINESS_TIMEOUT_S)
         except FileNotFoundError:
@@ -267,7 +273,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             process = self.launcher(
                 argv,
                 request.working_directory,
-                self.subscription_env(),
+                dict(self.environ),
                 prompt,
                 stdout,
                 stderr,
@@ -384,14 +390,18 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
     def command(self) -> str:
         return self.config.command or DEFAULT_COMMAND
 
-    def subscription_env(self) -> dict[str, str]:
-        env = dict(self.environ)
-        for name in BILLING_OVERRIDE_ENV:
-            env.pop(name, None)
-        return env
+    def billing_override(self) -> str | None:
+        return next(
+            (
+                name
+                for name in sorted(BILLING_OVERRIDE_ENV)
+                if self.environ.get(name)
+            ),
+            None,
+        )
 
     def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        mode = "plan" if request.mode == "plan-only" else "auto"
+        mode = "plan" if request.mode == "plan-only" else "acceptEdits"
         argv = [
             self.command(),
             "--print",
