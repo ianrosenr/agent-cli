@@ -384,6 +384,8 @@ def test_routing_decisions_survive_restart(catalog: SkillCatalog, store: TaskSto
         ("testing", "1.0.0", "builtin"),
         ("data", "1.0.0", "builtin"),
     ]
+    expected_source = str(decision.selection.selected[0].skill.source.root.resolve())
+    assert {s.source_path for s in record.selected} == {expected_source}
     assert record.selected[0].reason == "role default for implementer"
     assert [(d.name, d.reason.split(":")[0]) for d in record.dropped] == [
         ("observability", "context budget")
