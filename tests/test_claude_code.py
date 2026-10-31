@@ -41,9 +41,7 @@ class FakeCommands:
     version: str = "2.1.307 (Claude Code)\n"
     missing: bool = False
     auth_returncode: int = 0
-    calls: list[tuple[tuple[str, ...], dict[str, str], float]] = field(
-        default_factory=list
-    )
+    calls: list[tuple[tuple[str, ...], dict[str, str], float]] = field(default_factory=list)
 
     def __call__(
         self,
@@ -119,9 +117,7 @@ class FakeLauncher:
         stderr.write(self.error)
         stderr.flush()
         self.process = FakeProcess(self.returncode)
-        self.calls.append(
-            {"argv": argv, "cwd": cwd, "env": dict(env), "prompt": prompt}
-        )
+        self.calls.append({"argv": argv, "cwd": cwd, "env": dict(env), "prompt": prompt})
         return self.process
 
 
@@ -129,9 +125,7 @@ class FakeLauncher:
 class FakeGit:
     fail: bool = False
 
-    def __call__(
-        self, argv: tuple[str, ...], cwd: Path
-    ) -> subprocess.CompletedProcess[str]:
+    def __call__(self, argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
         code = 1 if self.fail else 0
         if "--name-only" in argv:
             stdout = "src/example.py\n"
@@ -214,9 +208,7 @@ def test_billing_override_fails_closed_before_running_claude(name: str) -> None:
     ["api_key", "api_key_helper", "third_party", "none"],
 )
 def test_non_subscription_auth_is_rejected(method: str) -> None:
-    commands = FakeCommands(
-        auth={"loggedIn": True, "authMethod": method}
-    )
+    commands = FakeCommands(auth={"loggedIn": True, "authMethod": method})
     readiness = adapter(commands=commands).readiness()
     assert readiness.state is ReadinessState.AUTH_REQUIRED
     assert "subscription" in readiness.reason
@@ -273,9 +265,7 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
 def test_plan_only_uses_plan_permission_mode(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(
-        request(tmp_path, mode="plan-only", model=None)
-    )
+    harness.start(request(tmp_path, mode="plan-only", model=None))
     argv = launcher.calls[0]["argv"]
     index = argv.index("--permission-mode")
     assert argv[index + 1] == "plan"
@@ -337,9 +327,7 @@ def test_process_failure_does_not_leak_vendor_output(
 
 
 def test_invalid_json_is_a_normalized_failure(tmp_path: Path) -> None:
-    harness = adapter(
-        launcher=FakeLauncher(output="not-json")
-    )
+    harness = adapter(launcher=FakeLauncher(output="not-json"))
     result = harness.result(harness.start(request(tmp_path)))
     assert result.status is WorkerStatus.FAILED
     assert result.error is not None
@@ -362,19 +350,11 @@ def test_custom_command_is_used_for_detection_and_launch(
     harness = adapter(
         commands=commands,
         launcher=launcher,
-        config=HarnessConfig(
-            command="/opt/claude/bin/claude"
-        ),
+        config=HarnessConfig(command="/opt/claude/bin/claude"),
     )
     harness.start(request(tmp_path))
-    assert (
-        commands.calls[0][0][0]
-        == "/opt/claude/bin/claude"
-    )
-    assert (
-        launcher.calls[0]["argv"][0]
-        == "/opt/claude/bin/claude"
-    )
+    assert commands.calls[0][0][0] == "/opt/claude/bin/claude"
+    assert launcher.calls[0]["argv"][0] == "/opt/claude/bin/claude"
 
 
 def test_runtime_registers_claude_code_without_persisting_auth() -> None:
