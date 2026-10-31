@@ -149,10 +149,47 @@ cost:
   per_call_limit_usd: 0.30
 ```
 
-- Limits apply to paid token APIs. Subscription and local access do not count against them.
-- The budget ledger checks the estimated cost before every paid call and records actual cost after. This is enforced in code, not by prompting.
-- If a paid call would exceed a limit, try in order: subscription alternative → local model → cheaper compliant API model → ask the user.
-- A compliant alternative must still meet the role floor.
+These are hard ceilings, not approval thresholds. A model response or plain user approval cannot bypass them.
+
+Paid spend applies to `api` access paths. Subscription and local access consume $0 in the V1 paid-API ledger.
+
+The authoritative spend ledger is global:
+
+```text
+~/.agent-cli/state/spend.sqlite
+```
+
+Monthly and daily periods use UTC calendar boundaries. The per-task ceiling applies to the root user task and all descendant subtasks combined.
+
+Ledger arithmetic uses integer micro-dollars rather than floating-point dollars:
+
+```text
+1 USD = 1,000,000 usd_micros
+```
+
+Before a paid call, Agent CLI must have a conservative upper-bound cost estimate. Unknown pricing, unbounded output, or an unenforceable paid opaque-harness execution makes that path budget-ineligible. Do not guess pricing from the model registry's coarse cost category.
+
+Admission and reservation are atomic across processes. Active `reserved` and `dispatched` amounts consume headroom until settled or safely released.
+
+Settlement source precedence is:
+
+```text
+provider-reported Usage.cost_usd
+→ reliable token usage + the same versioned pricing source
+→ reserved conservative upper bound
+```
+
+Unknown actual usage is never treated as zero.
+
+For automatic routing, V1-08 consumes all V1-07 model/provider candidate paths rather than choosing the strongest model first. Remove over-budget/unknown-price API paths, then apply `access.preference`. Under the default preference, a compliant subscription model may beat a stronger paid API model. Within API access, prefer lower reserved cost before capability rank.
+
+Candidate ranking does not reserve spend. Reservation happens only immediately before the selected paid invocation/launch boundary.
+
+If no path is budget-compliant, require user action: choose another path/model, reduce the bound/scope, or explicitly change budget configuration. Do not offer a one-off approval that bypasses the ceiling.
+
+Explicit model/provider pins never bypass hard budgets.
+
+External harnesses may make internal calls Agent CLI cannot observe. A paid opaque harness path is hard-budget-safe only when its integration exposes an enforceable upper bound or equivalent budget control that can be reserved before launch. Agent CLI must not claim per-internal-call enforcement otherwise.
 
 ## Provider health and fallback
 
