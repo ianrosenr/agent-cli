@@ -244,7 +244,7 @@ def test_start_uses_stdin_context_cwd_exact_model_and_workspace_sandbox(tmp_path
     assert argv[0] == "codex"
     assert 'forced_login_method="chatgpt"' in argv
     assert 'model_provider="openai"' in argv
-    assert ("exec", "--json", "--ephemeral") == argv[5:8]
+    assert argv[5:8] == ("exec", "--json", "--ephemeral")
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "workspace-write"
     model_index = argv.index("--model")
