@@ -122,4 +122,6 @@ def build_classifier(
     adapter = adapters.provider(choice.path.provider.id)
     if adapter is None:
         return None
-    return ProviderSignalClassifier(adapter, choice.path, choice.mode, budgeted_invoke=budgeted_invoke)
+    return ProviderSignalClassifier(
+        adapter, choice.path, choice.mode, budgeted_invoke=budgeted_invoke
+    )
