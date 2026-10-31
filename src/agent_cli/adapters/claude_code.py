@@ -204,9 +204,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         method = payload.get("authMethod")
         subscription = payload.get("subscriptionType")
         plan = subscription if isinstance(subscription, str) and subscription else None
-        subscription_auth = method == "claude.ai" or (
-            method == "oauth_token" and plan is not None
-        )
+        subscription_auth = method == "claude.ai" or (method == "oauth_token" and plan is not None)
         if method not in SUBSCRIPTION_AUTH_METHODS or not subscription_auth:
             shown = method if isinstance(method, str) and method else "non-subscription credentials"
             return HarnessReadiness(
