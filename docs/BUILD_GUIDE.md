@@ -359,9 +359,9 @@ It should detect installed harnesses and guide provider setup.
 
 V1 adapter targets:
 
-- Claude Code — first integration
-- Pi — second, used to prove portability
-- Codex CLI
+- Claude Code — first integration; real subscription harness implemented in V1-10.5
+- Pi — portability target
+- Codex CLI — next subscription harness
 - OpenCode
 
 Support custom providers through a stable provider adapter.
@@ -556,6 +556,9 @@ Root-prompt orchestration planning: inspect repository context, persist a valida
 
 ### V1-10
 Spec review and bounded implementers.
+
+### V1-10.5
+First real coding harness: Claude Code using the user's existing Claude subscription login. Agent CLI supplies bounded worker context and owns routing/policy; Claude Code owns its tool loop.
 
 ### V1-11
 Git worktrees and worker lifecycle.
