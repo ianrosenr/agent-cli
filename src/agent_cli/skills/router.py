@@ -97,7 +97,14 @@ class RoutingDecision:
         """The canonical task-state record for this decision (ID and time set by the store)."""
 
         def routed(skill: Skill, reason: str) -> RoutedSkill:
-            return RoutedSkill(skill.name, skill.version, skill.source.kind, skill.tokens, reason)
+            return RoutedSkill(
+                skill.name,
+                skill.version,
+                skill.source.kind,
+                str(skill.source.root.resolve()),
+                skill.tokens,
+                reason,
+            )
 
         return SkillRouting(
             id="",
