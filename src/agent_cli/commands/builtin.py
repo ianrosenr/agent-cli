@@ -1,6 +1,6 @@
 """Built-in slash commands.
 
-Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, ``/skills``,
+Apart from ``/help``, ``/exit``, ``/startup``, ``/login``, ``/providers``, ``/status``, ``/skills``,
 ``/models``, ``/budget``, ``/autopilot``, and ``/cancel``, these are placeholders that establish the
 user-facing shell contract. Each names the roadmap issue that will implement it (see
 docs/BUILD_GUIDE.md, Build Order).
@@ -21,6 +21,7 @@ from agent_cli.commands.registry import (
 )
 from agent_cli.config import Config, ConfigError, ConfigService, Layer
 from agent_cli.guided_setup import GuidedSetup
+from agent_cli.login import HarnessLoginService
 from agent_cli.state import TaskStateError, status_view
 from agent_cli.state.status import NO_ACTIVE_TASK
 from agent_cli.terms import ImplementationMode
@@ -92,9 +93,43 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
         lambda config: providers_view(adapters, config),
     )
     result = setup.run()
-    if setup.saved and context.reload_adapters is not None:
+    if not setup.saved:
+        return result
+    if context.reload_adapters is not None:
         context.reload_adapters()
-    return result
+    try:
+        config = context.config.resolve()
+    except ConfigError as problem:
+        return blocks(result, error("Cannot read saved configuration.", str(problem)))
+    if "subscription" not in config.access.preference:
+        return result
+    login = HarnessLoginService(
+        adapters_of(context),
+        config,
+        context.read_line,
+        context.write_line,
+    ).offer()
+    return blocks(result, login) if login is not None else result
+
+
+def login_command(context: CommandContext, args: str) -> RenderableType:
+    if context.config is None:
+        return error(UNAVAILABLE)
+    try:
+        config = context.config.resolve()
+    except ConfigError as problem:
+        return error("Cannot read configuration.", str(problem))
+    if "subscription" not in config.access.preference:
+        return info(
+            "Subscription access is disabled.",
+            "Run /startup to add subscription to your access preference.",
+        )
+    return HarnessLoginService(
+        adapters_of(context),
+        config,
+        context.read_line,
+        context.write_line,
+    ).run(args)
 
 
 def providers_command(context: CommandContext, args: str) -> RenderableType:
@@ -255,7 +290,8 @@ def planned(name: str, description: str, capability: str, issue: str) -> Command
 BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this help.", help_command),
     Command("exit", "Exit Agent CLI.", exit_command),
-    Command("startup", "Guided setup for budgets, workers, review, and Git.", startup_command),
+    Command("startup", "Guided setup for access, harnesses, budgets, review, and Git.", startup_command),
+    Command("login", "Sign into enabled subscription harnesses.", login_command),
     Command(
         "providers", "Show configured and detected harnesses and providers.", providers_command
     ),
