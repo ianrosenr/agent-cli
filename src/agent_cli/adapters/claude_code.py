@@ -233,11 +233,6 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
 
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
-        if request.mode == "checkpoint":
-            raise AdapterError(
-                ErrorKind.INCOMPATIBLE,
-                "Claude Code headless workers cannot pause for Agent CLI checkpoint approvals",
-            )
         blocking = self.readiness().blocking_error()
         if blocking is not None:
             raise blocking
