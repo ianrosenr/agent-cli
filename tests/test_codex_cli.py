@@ -190,6 +190,7 @@ def test_chatgpt_login_is_ready_and_auth_route_is_forced() -> None:
     auth_argv = commands.calls[1][0]
     assert 'forced_login_method="chatgpt"' in auth_argv
     assert 'model_provider="openai"' in auth_argv
+    assert 'openai_base_url=""' in auth_argv
     assert auth_argv[-2:] == ("login", "status")
 
 
@@ -244,7 +245,9 @@ def test_start_uses_stdin_context_cwd_exact_model_and_workspace_sandbox(tmp_path
     assert argv[0] == "codex"
     assert 'forced_login_method="chatgpt"' in argv
     assert 'model_provider="openai"' in argv
-    assert argv[5:8] == ("exec", "--json", "--ephemeral")
+    assert 'openai_base_url=""' in argv
+    exec_index = argv.index("exec")
+    assert argv[exec_index : exec_index + 3] == ("exec", "--json", "--ephemeral")
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "workspace-write"
     model_index = argv.index("--model")
