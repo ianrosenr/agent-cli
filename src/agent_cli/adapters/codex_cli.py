@@ -76,6 +76,9 @@ type ProcessLauncher = Callable[
     [tuple[str, ...], Path, Mapping[str, str], IO[str], IO[str], IO[str]], Process
 ]
 type GitRunner = Callable[[tuple[str, ...], Path], subprocess.CompletedProcess[str]]
+type InteractiveRunner = Callable[
+    [tuple[str, ...], Mapping[str, str]], subprocess.CompletedProcess[str]
+]
 
 
 def run_command(
@@ -112,6 +115,12 @@ def launch_process(
     return process
 
 
+def run_interactive(
+    argv: tuple[str, ...], env: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(argv, env=dict(env), text=True, check=False)
+
+
 def run_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
@@ -142,6 +151,7 @@ class CodexCliHarnessAdapter(HarnessAdapter):
     launcher: ProcessLauncher = field(default=launch_process, repr=False)
     git_runner: GitRunner = field(default=run_git, repr=False)
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ), repr=False)
+    interactive_runner: InteractiveRunner = field(default=run_interactive, repr=False)
     _version: str | None = None
     _workers: dict[str, _Worker] = field(default_factory=dict, repr=False)
 
@@ -151,15 +161,8 @@ class CodexCliHarnessAdapter(HarnessAdapter):
     def readiness(self) -> HarnessReadiness:
         if not self.config.enabled:
             return HarnessReadiness(ReadinessState.MISCONFIGURED, "disabled in config")
-        override = self.billing_override()
-        if override is not None:
-            return HarnessReadiness(
-                ReadinessState.MISCONFIGURED,
-                f"unset {override} to use the ChatGPT subscription harness",
-            )
-
         command = self.command()
-        env = dict(self.environ)
+        env = self.subscription_env()
         try:
             version = self.runner((command, "--version"), env, READINESS_TIMEOUT_S)
         except FileNotFoundError:
@@ -207,6 +210,7 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             frozenset(
                 {
                     Capability.START_WORKER,
+                    Capability.LOGIN,
                     Capability.INTERRUPT,
                     Capability.MODEL_SELECTION,
                     Capability.WORKING_DIRECTORY,
@@ -241,7 +245,7 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             process = self.launcher(
                 argv,
                 request.working_directory,
-                dict(self.environ),
+                self.subscription_env(),
                 prompt,
                 stdout,
                 stderr,
@@ -338,10 +342,36 @@ class CodexCliHarnessAdapter(HarnessAdapter):
     def command(self) -> str:
         return self.config.command or DEFAULT_COMMAND
 
-    def billing_override(self) -> str | None:
-        return next(
-            (name for name in sorted(BILLING_OVERRIDE_ENV) if self.environ.get(name)),
-            None,
+    def subscription_env(self) -> dict[str, str]:
+        env = dict(self.environ)
+        for name in BILLING_OVERRIDE_ENV:
+            env.pop(name, None)
+        return env
+
+    def login(self) -> HarnessReadiness:
+        try:
+            result = self.interactive_runner(self.login_argv(), self.subscription_env())
+        except FileNotFoundError:
+            raise AdapterError(ErrorKind.NOT_FOUND, "Codex CLI is not installed") from None
+        except OSError as error:
+            raise AdapterError(
+                ErrorKind.HARNESS_ERROR,
+                f"cannot launch Codex login ({type(error).__name__})",
+            ) from None
+        if result.returncode != 0:
+            raise AdapterError(ErrorKind.AUTH_FAILED, "Codex login did not complete")
+        return self.readiness()
+
+    def login_argv(self) -> tuple[str, ...]:
+        return (
+            self.command(),
+            "-c",
+            'forced_login_method="chatgpt"',
+            "-c",
+            'model_provider="openai"',
+            "-c",
+            'openai_base_url=""',
+            "login",
         )
 
     def auth_status_argv(self) -> tuple[str, ...]:
