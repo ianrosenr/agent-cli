@@ -119,11 +119,16 @@ def parse_reply(text: str, task_ids: set[str]) -> list[ClassificationResult]:
         raise ClassifierOutputError("classifier reply must be an object with a results list")
 
     parsed: list[ClassificationResult] = []
+    seen: set[str] = set()
     for index, item in enumerate(results):
         if not isinstance(item, dict) or not isinstance(item.get("task_id"), str):
             raise ClassifierOutputError(f"results[{index}] must be an object with a task_id")
-        if item["task_id"] not in task_ids:
+        task_id = item["task_id"]
+        if task_id not in task_ids:
             continue
+        if task_id in seen:
+            raise ClassifierOutputError(f"duplicate result for task_id {task_id!r}")
+        seen.add(task_id)
         signals = item.get("signals", [])
         if not isinstance(signals, list) or not all(isinstance(s, str) for s in signals):
             raise ClassifierOutputError(f"results[{index}].signals must be a list of strings")
@@ -133,7 +138,7 @@ def parse_reply(text: str, task_ids: set[str]) -> list[ClassificationResult]:
         normalized = tuple(dict.fromkeys(s.strip() for s in signals if s.strip()))
         parsed.append(
             ClassificationResult(
-                item["task_id"],
+                task_id,
                 normalized[:MAX_SIGNALS_PER_TASK],
                 evidence.strip()[:MAX_EVIDENCE_CHARS],
             )
