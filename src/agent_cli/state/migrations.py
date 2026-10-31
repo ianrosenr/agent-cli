@@ -221,8 +221,14 @@ def schema_version(connection: sqlite3.Connection) -> int:
     return version
 
 
-def migrate(connection: sqlite3.Connection, migrations: Sequence[Migration] = MIGRATIONS) -> int:
+def migrate(
+    connection: sqlite3.Connection,
+    migrations: Sequence[Migration] = MIGRATIONS,
+    subject: str = "task state",
+) -> int:
     """Bring the schema to ``len(migrations)``; return the version the database started at.
+
+    ``subject`` names the database in errors, such as ``task state`` or ``spend ledger``.
 
     ``connection`` must be in autocommit mode (``isolation_level=None``) so this function
     controls the transaction.
@@ -232,10 +238,10 @@ def migrate(connection: sqlite3.Connection, migrations: Sequence[Migration] = MI
     if current > latest:
         raise MigrationError(
             f"schema version {current} is newer than this Agent CLI supports ({latest}); "
-            "upgrade Agent CLI to use this task state"
+            f"upgrade Agent CLI to use this {subject}"
         )
     if current == 0 and has_tables(connection):
-        raise MigrationError("not an Agent CLI task-state database")
+        raise MigrationError(f"not an Agent CLI {subject} database")
     if current == latest:
         return current
     connection.execute("BEGIN IMMEDIATE")

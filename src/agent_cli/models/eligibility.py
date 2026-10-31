@@ -17,7 +17,6 @@ from agent_cli.config.model import RoleFloors, Tier
 from agent_cli.models.access import (
     ModelPath,
     RuntimePaths,
-    choose_path,
     unusable_reason,
     usable_paths,
 )
@@ -180,7 +179,10 @@ def select_model(
     pin: ModelPin,
     context_tokens: int | None = None,
 ) -> ModelSelection:
-    """Resolve an explicit worker-model pin to one usable path.
+    """Resolve an explicit worker-model pin to one usable path, by access preference only.
+
+    Paid work should use ``pinned_paths`` and ``agent_cli.budget.budget_pinned`` instead, so
+    budget policy can still choose among the pinned model's provider paths.
 
     Automatic routing intentionally uses ``ranked_model_candidates`` instead so V1-08,
     V1-13, and the full router can apply budget, health, access, and harness policy before
@@ -188,6 +190,45 @@ def select_model(
     """
     need = requirement(role, floors)
     return select_pinned(registry, need, runtime, preference, pin, context_tokens)
+
+
+@dataclass(frozen=True, slots=True)
+class PinnedPaths:
+    """Every usable path for one pinned model, in access-preference order."""
+
+    pin: ModelPin
+    model_id: str
+    """The resolved canonical registry ID, or the requested ID for an unregistered model."""
+    entry: ModelEntry | None
+    paths: tuple[ModelPath, ...]
+    """Never empty."""
+
+
+def pinned_paths(
+    registry: ModelRegistry,
+    runtime: RuntimePaths,
+    preference: Sequence[AccessKind],
+    pin: ModelPin,
+    context_tokens: int | None = None,
+) -> PinnedPaths:
+    """All usable paths for the pinned model, without choosing one yet.
+
+    Use this instead of ``select_model`` when budget policy must still pick among the pinned
+    model's provider paths (``agent_cli.budget.budget_pinned``). Never substitutes another
+    model: raises ``NoModelAvailable`` when no path can run it.
+    """
+    entry = registry.get(pin.requested)
+    names = (pin.requested,) if entry is None else entry.names
+    serving = runtime.serving(names)
+    paths = usable_paths(serving, preference, context_tokens)
+    if not paths:
+        reason = unusable_reason(serving, runtime, preference, context_tokens)
+        raise NoModelAvailable(
+            f"pinned model {pin.requested!r} ({pin.scope}) cannot run: {reason}; "
+            "ask the user how to proceed",
+            pin,
+        )
+    return PinnedPaths(pin, pin.requested if entry is None else entry.id, entry, paths)
 
 
 def select_pinned(
@@ -198,21 +239,12 @@ def select_pinned(
     pin: ModelPin,
     context_tokens: int | None,
 ) -> ModelSelection:
-    entry = registry.get(pin.requested)
-    names = (pin.requested,) if entry is None else entry.names
-    serving = runtime.serving(names)
-    path = choose_path(serving, preference, context_tokens)
-    if path is None:
-        reason = unusable_reason(serving, runtime, preference, context_tokens)
-        raise NoModelAvailable(
-            f"pinned model {pin.requested!r} ({pin.scope}) cannot run: {reason}; "
-            "ask the user how to proceed",
-            pin,
-        )
+    pinned = pinned_paths(registry, runtime, preference, pin, context_tokens)
+    entry, path = pinned.entry, pinned.paths[0]
 
     if entry is None or not entry.active:
         # Candidate scores are unreviewed, so a pinned candidate is treated as unscored.
-        model_id = pin.requested if entry is None else entry.id
+        model_id = pinned.model_id
         warning = (
             f"{model_id} has no active registry scores; using it unscored because the user "
             f"pinned it for {pin.scope}"

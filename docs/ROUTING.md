@@ -159,7 +159,7 @@ The authoritative spend ledger is global:
 ~/.agent-cli/state/spend.sqlite
 ```
 
-Monthly and daily periods use UTC calendar boundaries. The per-task ceiling applies to the root user task and all descendant subtasks combined.
+Monthly and daily periods use UTC calendar boundaries. The per-task ceiling applies to the root user task and all descendant subtasks combined. The ledger records the per-task limit a root task is first admitted under; later calls in that tree, whatever config they were built with, may only lower it. Spend counts toward the UTC day and month in which it was reserved.
 
 Ledger arithmetic uses integer micro-dollars rather than floating-point dollars:
 
@@ -188,6 +188,10 @@ Candidate ranking does not reserve spend. Reservation happens only immediately b
 If no path is budget-compliant, require user action: choose another path/model, reduce the bound/scope, or explicitly change budget configuration. Do not offer a one-off approval that bypasses the ceiling.
 
 Explicit model/provider pins never bypass hard budgets.
+
+`/budget` shows UTC month and day spend (settled), active reservations, limits, and remaining headroom, plus the active root task's line and any dispatched calls still awaiting settlement.
+
+Agent CLI ships no real provider prices. Until a trusted, versioned price source is configured for a paid API path, that path is `pricing_unknown` and fails closed; subscription and local paths are unaffected.
 
 External harnesses may make internal calls Agent CLI cannot observe. A paid opaque harness path is hard-budget-safe only when its integration exposes an enforceable upper bound or equivalent budget control that can be reserved before launch. Agent CLI must not claim per-internal-call enforcement otherwise.
 

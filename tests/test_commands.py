@@ -97,7 +97,16 @@ def test_dispatch_calls_handler_with_args() -> None:
     assert calls == ["hello world"]
 
 
-IMPLEMENTED_COMMANDS = {"help", "exit", "startup", "providers", "status", "skills", "models"}
+IMPLEMENTED_COMMANDS = {
+    "help",
+    "exit",
+    "startup",
+    "providers",
+    "status",
+    "skills",
+    "models",
+    "budget",
+}
 
 
 @pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - IMPLEMENTED_COMMANDS))

@@ -232,6 +232,32 @@ class TaskStore:
         rows = self._read("SELECT * FROM tasks WHERE parent_id = ? ORDER BY rowid", task_id)
         return [to_task(row) for row in rows]
 
+    def root_task(self, task_id: str) -> str:
+        """The ID of the root user task whose tree contains ``task_id`` (itself if a root).
+
+        Budget scopes use it so decomposing a request never multiplies its per-task limit.
+        """
+        rows = self._read(
+            "WITH RECURSIVE up (id, parent_id) AS ("
+            "SELECT id, parent_id FROM tasks WHERE id = ? "
+            "UNION SELECT t.id, t.parent_id FROM tasks t JOIN up ON t.id = up.parent_id) "
+            "SELECT id FROM up WHERE parent_id IS NULL",
+            task_id,
+        )
+        if not rows:
+            raise TaskStateError(f"unknown task: {task_id}")
+        root: str = rows[0][0]
+        return root
+
+    def record_budget_event(self, task_id: str, kind: str, subject_id: str, **detail: str) -> None:
+        """Link a paid-spend decision to a task, as event ``budget_<kind>``.
+
+        Concise only: the global spend ledger stays the authoritative financial record.
+        """
+        with self._write() as db:
+            session_id = self._session_of(db, task_id)
+            self._event(db, session_id, task_id, f"budget_{kind}", subject_id, **detail)
+
     def set_status(self, task_id: str, status: TaskStatus, reason: str = "") -> None:
         self._update_task(task_id, "status", status, "status_changed", reason=reason)
 

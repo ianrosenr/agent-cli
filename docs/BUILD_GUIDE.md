@@ -391,7 +391,7 @@ When a paid call would exceed a hard limit:
 1. try a subscription-backed alternative
 2. try a local model
 3. try a cheaper compliant API model
-4. ask the user if no valid path exists
+4. require user action if no compliant path exists (choose another path, reduce scope, or change the budget configuration); a plain approval never bypasses a hard limit
 
 Configuration precedence:
 
