@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import yaml
+from rich.console import RenderableType
 
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
-from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup, Setting
+from agent_cli.config.schema import to_raw
+from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup, Setting, lookup
+from agent_cli.ui import plain
 
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
 ADVANCED = ("role_floors", "orchestrator", "routing", "capability", "fallback", "classifier")
@@ -21,6 +25,10 @@ class Conversation:
         self.answers: Iterator[str | type[BaseException]] = iter(answers)
         self.prompts: list[str] = []
         self.output: list[str] = []
+
+    def write_line(self, shown: RenderableType) -> None:
+        """Record output as plain text, one entry per line."""
+        self.output += plain(shown).splitlines() or [""]
 
     def read_line(self, prompt: str) -> str:
         self.prompts.append(prompt)
@@ -36,8 +44,34 @@ class Conversation:
 
 def run(service: ConfigService, *answers: str | type[BaseException]) -> tuple[str, Conversation]:
     conversation = Conversation(*answers)
-    result = GuidedSetup(service, conversation.read_line, conversation.output.append).run()
-    return result, conversation
+    result = GuidedSetup(service, conversation.read_line, conversation.write_line).run()
+    return plain(result), conversation
+
+
+def summary_of(conversation: Conversation) -> str:
+    """The summary shown before the save confirmation, through the end of the output."""
+    start = next(i for i, line in enumerate(conversation.output) if line.startswith("Summary"))
+    return "\n".join(conversation.output[start:])
+
+
+def hint(how: str, example: str, default: str = "") -> list[str]:
+    """The aligned answer hint lines, as rendered."""
+    lines = [f"  How to answer  {how}", f"  Example        {example}"]
+    if default:
+        lines.append(f"  Default        {default}  press Enter to keep it")
+    return lines
+
+
+def defaults_for(conversation: Conversation, label: str) -> list[str]:
+    """Every default shown for the step or question titled ``label``, in order."""
+    shown, current = [], None
+    for line in conversation.output:
+        header = re.match(r"^(?:Step \d+ of \d+  )?(.+)$", line)
+        if line and not line.startswith(" ") and header:
+            current = header[1]
+        elif line.startswith("  Default        ") and current == label:
+            shown.append(line.removeprefix("  Default        ").split("  ")[0])
+    return shown
 
 
 def answers_for(**values: str) -> list[str]:
@@ -56,7 +90,7 @@ def test_enter_through_writes_a_valid_complete_global_config(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     result, _ = run(service, *ENTER_THROUGH)
-    assert result == f"Settings saved to {paths.global_file}."
+    assert result == f"Done  Settings saved to {paths.global_file}."
     assert ConfigService(paths).resolve() == Config()
     saved = load(paths.global_file)
     assert isinstance(saved, dict)
@@ -68,7 +102,7 @@ def test_enter_through_writes_a_valid_complete_global_config(
 def test_enter_through_outside_a_repository_writes_global(tmp_path: Path) -> None:
     paths = ConfigPaths(tmp_path / ".agent-cli" / "config.yaml", None)
     result, conversation = run(ConfigService(paths), *ENTER_THROUGH[1:])
-    assert result == f"Settings saved to {paths.global_file}."
+    assert result == f"Done  Settings saved to {paths.global_file}."
     assert "Not inside a Git repository" in conversation.transcript
     assert ConfigService(paths).resolve() == Config()
 
@@ -88,7 +122,7 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
         git__branch_prefix="bot/",
     )
     result, _ = run(service, "y", *answers, "y")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     config = ConfigService(paths).resolve()
     assert config.access.preference == ("local", "subscription")
     assert config.cost.monthly_limit_usd == 50.0
@@ -105,7 +139,7 @@ def test_worker_concurrency_guidance_allows_eight(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     result, conversation = run(service, "y", *answers_for(workers__max_concurrency="8"), "")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     assert ConfigService(paths).resolve().workers.max_concurrency == 8
     assert "Recommended: 2-4. Maximum: 16." in conversation.transcript
     assert "Type a whole number from 1 to 16." in conversation.transcript
@@ -123,9 +157,9 @@ def test_rerun_shows_current_values_as_defaults_and_keeps_them(
     before = paths.global_file.read_text()
 
     result, conversation = run(service, *ENTER_THROUGH)
-    assert result.startswith("Settings saved")
-    assert "Parallel workers [5]: " in conversation.prompts
-    assert "Implementation mode [plan-only]: " in conversation.prompts
+    assert result.startswith("Done  Settings saved")
+    assert defaults_for(conversation, "Parallel workers") == ["5"]
+    assert defaults_for(conversation, "Implementation mode") == ["plan-only"]
     assert paths.global_file.read_text() == before
 
 
@@ -155,13 +189,13 @@ def test_project_target_writes_only_changed_values(
     result, conversation = run(
         service, "n", *answers_for(cost__monthly_limit_usd="5", git__branch_prefix="x/"), ""
     )
-    assert result == f"Settings saved to {paths.project_file}."
+    assert result == f"Done  Settings saved to {paths.project_file}."
     assert load(paths.project_file) == {
         "cost": {"monthly_limit_usd": 5.0},
         "git": {"branch_prefix": "x/"},
     }
     assert not paths.global_file.exists()
-    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    summary = summary_of(conversation)
     assert "project config" in summary
     assert "→ project (was $20.00)" in summary
     assert "inherited" in summary
@@ -172,8 +206,9 @@ def test_target_prompt_is_yes_for_global_and_no_for_project(
 ) -> None:
     run(service, "n", *answers_for(workers__max_concurrency="2"), "")
     _, conversation = run(service, "n", *ENTER_THROUGH[1:])
-    assert conversation.prompts[0] == "Save to [global] (y/n): "
-    assert "Parallel workers [2]: " in conversation.prompts
+    assert conversation.prompts[0] == "Save to (y/n): "
+    assert defaults_for(conversation, "Where to save") == ["global"]
+    assert defaults_for(conversation, "Parallel workers") == ["2"]
     assert not paths.global_file.exists()
 
 
@@ -190,8 +225,8 @@ def test_global_target_shows_global_values_and_flags_project_overrides(
 ) -> None:
     run(service, "n", *answers_for(workers__max_concurrency="2"), "")
     result, conversation = run(service, "y", *ENTER_THROUGH[1:])
-    assert result.startswith("Settings saved")
-    assert "Parallel workers [3]: " in conversation.prompts
+    assert result.startswith("Done  Settings saved")
+    assert defaults_for(conversation, "Parallel workers") == ["3"]
     assert "(overridden by project config)" in conversation.transcript
     assert ConfigService(paths).resolve(through=Layer.GLOBAL).workers.max_concurrency == 3
     assert ConfigService(paths).resolve().workers.max_concurrency == 2
@@ -204,7 +239,7 @@ def test_project_cost_cannot_exceed_global_and_is_asked_again(
     index = [s.key for s in SETTINGS].index("cost.monthly_limit_usd")
     answers.insert(index + 1, "10")
     result, conversation = run(service, "n", *answers, "")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     assert "$50.00 is above the default limit of $20.00" in conversation.transcript
     assert load(paths.project_file) == {"cost": {"monthly_limit_usd": 10.0}}
 
@@ -235,7 +270,7 @@ def test_budget_limits_can_be_lowered_in_any_prompt_order(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     result, conversation = run(service, "y", *budget_answers(("0.5", "0.25", "0.1")), "")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     assert "cannot be above" not in conversation.transcript
     cost = ConfigService(paths).resolve().cost
     assert (cost.monthly_limit_usd, cost.per_task_limit_usd, cost.per_call_limit_usd) == (
@@ -250,13 +285,14 @@ def test_contradictory_budget_limits_are_asked_again_with_answers_as_defaults(
 ) -> None:
     answers = budget_answers(("0.5", "", ""), ("", "0.4", ""))
     result, conversation = run(service, "y", *answers, "")
-    assert result.startswith("Settings saved")
-    assert (
-        "  Not allowed: the per-task limit ($1.00) cannot be above the monthly limit ($0.50). "
-        "Please enter the spending limits again." in conversation.output
+    assert result.startswith("Done  Settings saved")
+    failure = conversation.output.index(
+        "  Warning  Not allowed: the per-task limit ($1.00) cannot be above the monthly limit "
+        "($0.50)."
     )
-    assert conversation.prompts.count("Monthly spending limit [$0.50]: ") == 1
-    assert "Per-task spending limit [$1.00]: " in conversation.prompts
+    assert conversation.output[failure + 1].strip() == "Please enter the spending limits again."
+    assert defaults_for(conversation, "Monthly spending limit").count("$0.50") == 1
+    assert "$1.00" in defaults_for(conversation, "Per-task spending limit")
     cost = ConfigService(paths).resolve().cost
     assert (cost.monthly_limit_usd, cost.per_task_limit_usd) == (0.5, 0.4)
 
@@ -302,11 +338,14 @@ def test_answers_not_in_the_stated_format_are_asked_again(
     answers = [""] * len(SETTINGS)
     answers.insert(index, bad)
     result, conversation = run(service, "y", *answers, "")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     setting = SETTINGS[index]
-    failure = conversation.output.index("  Format not followed, please try again.")
-    assert conversation.output[failure + 1] == f"  How to answer: {setting.how}"
-    assert conversation.output[failure + 2] == f"  {setting.example_line}"
+    failure = conversation.output.index("  Warning  Format not followed, please try again.")
+    note = f"  ({setting.example_note})" if setting.example_note else ""
+    default = setting.format(lookup(to_raw(Config()), setting.key))
+    assert conversation.output[failure + 1 : failure + 4] == hint(
+        setting.how, setting.example + note, default
+    )
     assert conversation.prompts.count(conversation.prompts[index + 1]) == 2
     assert ConfigService(paths).resolve() == Config()
 
@@ -319,7 +358,7 @@ def test_every_example_is_a_working_answer(
         answers = [""] * len(SETTINGS)
         answers[SETTINGS.index(setting)] = setting.example
         result, conversation = run(ConfigService(paths), layer, *answers, "")
-        assert result.startswith("Settings saved"), conversation.transcript
+        assert result.startswith("Done  Settings saved"), conversation.transcript
         assert "Format not followed" not in conversation.transcript
         assert "Not allowed" not in conversation.transcript
 
@@ -329,12 +368,14 @@ def test_every_step_shows_what_it_does_how_to_answer_and_an_example(
 ) -> None:
     _, conversation = run(service, *ENTER_THROUGH)
     for number, setting in enumerate(SETTINGS, start=1):
-        header = conversation.output.index(f"Step {number} of {len(SETTINGS)}: {setting.label}")
-        assert conversation.output[header + 1 : header + 4] == [
-            f"  {setting.what}",
-            f"  How to answer: {setting.how}",
-            f"  {setting.example_line}",
-        ]
+        header = conversation.output.index(f"Step {number} of {len(SETTINGS)}  {setting.label}")
+        what = setting.what.splitlines()
+        body = conversation.output[header + 1 : header + len(what) + 5]
+        assert body[: len(what)] == [f"  {line.removeprefix('  ')}" for line in what]
+        assert body[len(what)] == ""
+        note = f"  ({setting.example_note})" if setting.example_note else ""
+        default = setting.format(lookup(to_raw(Config()), setting.key))
+        assert body[len(what) + 1 :] == hint(setting.how, setting.example + note, default)
 
 
 def test_access_preference_explains_that_kinds_can_be_left_out(
@@ -348,7 +389,7 @@ def test_access_preference_explains_that_kinds_can_be_left_out(
         conversation.transcript
     )
     assert (
-        "  Example: subscription, local  "
+        "  Example        subscription, local  "
         "(uses your plans first, then local models, and never paid APIs)" in conversation.output
     )
     assert ConfigService(paths).resolve().access.preference == ("subscription", "local")
@@ -361,7 +402,7 @@ def test_access_preference_accepts_one_two_or_three_kinds(
     answers = [""] * len(SETTINGS)
     answers[[s.key for s in SETTINGS].index("access.preference")] = answer
     result, _ = run(service, "y", *answers, "")
-    assert result.startswith("Settings saved")
+    assert result.startswith("Done  Settings saved")
     assert ConfigService(paths).resolve().access.preference == tuple(answer.split(", "))
 
 
@@ -371,7 +412,7 @@ def test_setting_a_project_value_back_to_global_removes_the_override(
     run(service, "n", *answers_for(workers__max_concurrency="5", git__branch_prefix="x/"), "")
     _, conversation = run(service, "n", *answers_for(workers__max_concurrency="3"), "")
     assert load(paths.project_file) == {"git": {"branch_prefix": "x/"}}
-    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    summary = summary_of(conversation)
     workers = next(line for line in summary.splitlines() if "Parallel workers" in line)
     assert "inherited from global (project override removed) (was 5)" in workers
     prefix = next(line for line in summary.splitlines() if "Branch prefix" in line)
@@ -383,7 +424,7 @@ def test_unchanged_project_values_are_labeled_as_project_values(
 ) -> None:
     run(service, "n", *answers_for(implementation__mode="plan-only"), "")
     _, conversation = run(service, "n", *ENTER_THROUGH[1:])
-    summary = next(line for line in conversation.output if line.startswith("Summary"))
+    summary = summary_of(conversation)
     mode = next(line for line in summary.splitlines() if "Implementation mode" in line)
     assert mode.rstrip().endswith("→ project")
     workers = next(line for line in summary.splitlines() if "Parallel workers" in line)
@@ -422,17 +463,17 @@ def test_rule_violations_explain_the_rule_instead_of_the_format(
     answers.insert(index + 1, "")
     _, conversation = run(service, "n", *answers, "")
     assert (
-        "  Not allowed: $50.00 is above the default limit of $20.00; more-specific config may "
-        "only lower cost limits. Please try again." in conversation.output
+        "  Warning  Not allowed: $50.00 is above the default limit of $20.00; more-specific "
+        "config may only lower cost limits." in conversation.output
     )
-    assert "  Format not followed, please try again." not in conversation.output
+    assert "Format not followed" not in conversation.transcript
 
 
 def test_invalid_target_is_asked_again(service: ConfigService, paths: ConfigPaths) -> None:
     result, conversation = run(service, "galaxy", *ENTER_THROUGH)
-    assert result.startswith("Settings saved")
-    assert conversation.prompts[0] == "Save to [global] (y/n): "
-    assert "  Format not followed, please try again." in conversation.output
+    assert result.startswith("Done  Settings saved")
+    assert conversation.prompts[0] == "Save to (y/n): "
+    assert "  Warning  Format not followed, please try again." in conversation.output
 
 
 @pytest.mark.parametrize("decline", ["n", "no"])
@@ -440,7 +481,7 @@ def test_declining_the_summary_writes_nothing(
     service: ConfigService, paths: ConfigPaths, decline: str
 ) -> None:
     result, _ = run(service, *ENTER_THROUGH[:-1], decline)
-    assert result == CANCELED
+    assert result == f"Note  {CANCELED}"
     assert not paths.global_file.exists()
     assert paths.project_root is not None and not (paths.project_root / ".agent-cli").exists()
 
@@ -451,7 +492,7 @@ def test_canceling_midway_writes_nothing(
     service: ConfigService, paths: ConfigPaths, interrupt: type[BaseException], after: int
 ) -> None:
     result, _ = run(service, *ENTER_THROUGH[:after], interrupt)
-    assert result == CANCELED
+    assert result == f"Note  {CANCELED}"
     assert not paths.global_file.exists()
     assert paths.project_root is not None and not (paths.project_root / ".agent-cli").exists()
 
@@ -460,19 +501,18 @@ def test_summary_lists_every_setting_and_target_before_confirming(
     service: ConfigService, paths: ConfigPaths
 ) -> None:
     _, conversation = run(service, *ENTER_THROUGH[:-1], "n")
-    summary = next(line for line in conversation.output if line.startswith("Summary"))
-    assert conversation.output[-2:] == [
-        "How to answer: type y to save these settings or n to cancel.",
-        "Example: y",
-    ]
+    summary = summary_of(conversation)
+    assert conversation.output[-3:] == hint(
+        "Type y to save these settings or n to cancel.", "y", "yes"
+    )
     assert summary.startswith(
-        f"Summary: changes are written to global config ({paths.global_file})"
+        f"Summary  changes are written to global config ({paths.global_file})"
     )
     for setting in SETTINGS:
         assert f"  {setting.label} " in summary
     assert summary.count("→ global") == len(SETTINGS)
     assert "git-ignored" not in summary
-    assert conversation.prompts[-1] == "Save these settings? [yes] (y/n): "
+    assert conversation.prompts[-1] == "Save these settings? (y/n): "
 
 
 def test_advanced_settings_are_not_shown(service: ConfigService) -> None:
@@ -484,19 +524,19 @@ def test_advanced_settings_are_not_shown(service: ConfigService) -> None:
 
 def test_harness_and_provider_status_without_adapters(service: ConfigService) -> None:
     _, conversation = run(service, *ENTER_THROUGH)
-    assert "Harnesses: none configured or detected" in conversation.transcript
-    assert "Providers: none configured or detected" in conversation.transcript
+    assert "Harnesses  none configured or detected" in conversation.transcript
+    assert "Providers  none configured or detected" in conversation.transcript
 
 
 def test_harness_provider_status_hook_can_be_supplied(service: ConfigService) -> None:
     conversation = Conversation(*ENTER_THROUGH)
     seen: list[Config] = []
 
-    def status(config: Config) -> list[str]:
+    def status(config: Config) -> str:
         seen.append(config)
-        return ["Detected harness: example"]
+        return "Detected harness: example"
 
-    GuidedSetup(service, conversation.read_line, conversation.output.append, status).run()
+    GuidedSetup(service, conversation.read_line, conversation.write_line, status).run()
     assert seen == [Config()]
     assert "Detected harness: example" in conversation.output
 
@@ -507,8 +547,8 @@ def test_invalid_existing_config_stops_setup_without_writing(
     paths.global_file.parent.mkdir(parents=True)
     paths.global_file.write_text("workers:\n  max_parallel: 4\n")
     result, conversation = run(service, *ENTER_THROUGH)
-    assert result.startswith("Cannot run setup: global config (")
-    assert "workers.max_parallel: unknown key" in result
+    assert result.startswith("Error  Cannot run setup.\n")
+    assert "workers.max_parallel: unknown key" in " ".join(result.split())
     assert conversation.prompts == []
     assert paths.global_file.read_text() == "workers:\n  max_parallel: 4\n"
 
@@ -536,13 +576,14 @@ def test_startup_command_runs_the_guided_flow(service: ConfigService, paths: Con
         registry=build_registry(),
         config=service,
         read_line=conversation.read_line,
-        write_line=conversation.output.append,
+        write_line=conversation.write_line,
     )
-    result = context.registry.dispatch("/startup", context)
-    assert result == f"Settings saved to {paths.global_file}."
+    result = plain(context.registry.dispatch("/startup", context))
+    assert result == f"Done  Settings saved to {paths.global_file}."
     assert conversation.output[0].startswith("Agent CLI setup")
 
 
 def test_startup_command_without_config_service_explains() -> None:
     context = CommandContext(registry=build_registry())
-    assert context.registry.dispatch("/startup", context).startswith("Configuration is unavailable")
+    output = plain(context.registry.dispatch("/startup", context))
+    assert output.startswith("Error  Configuration is unavailable")

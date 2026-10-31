@@ -104,7 +104,7 @@ V1-09 never approves its own specs. V1-10 owns spec review and approval.
 | `planner.py` | the `Planner` seam, the provider-backed planner prompt and strict reply parser, and `FakePlanner` |
 | `spec_author.py` | `SpecDraft`, draft validation, fixed-order spec rendering, the provider-backed spec author, and `FakeSpecAuthor` |
 | `service.py` | `OrchestrationService`: session/root lifecycle, questions, the atomic plan write, skill routing, specs |
-| `render.py` | the compact plan/question output shown at the prompt |
+| `render.py` | the compact plan/question output shown at the prompt, built with `agent_cli.ui` |
 
 `cli.handle_input` sends every non-slash line to `OrchestrationService.handle`, built on first use so planning stays out of startup. Outside a Git repository there is no task state, so ordinary input explains where to run instead.
 

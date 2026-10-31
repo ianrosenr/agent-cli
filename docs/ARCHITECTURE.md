@@ -80,6 +80,7 @@ Keeping them separate allows the same model to be reached through another provid
 - **Spend.** Paid calls require a conservative upper-bound estimate and atomic ledger reservation before dispatch. An LLM or plain approval cannot override hard ceilings. Opaque paid harnesses are eligible only when their integration exposes an enforceable bound.
 - **Planning.** Root natural-language input may use direct provider reasoning for decomposition/spec authoring, but planning never launches a coding harness or edits repository files. Paid planning calls use the same budget guard as every other paid provider call.
 - **Failure.** A worker or provider failure is contained to that task and surfaces to the orchestrator. It does not crash the session.
+- **Presentation.** `agent_cli.ui` owns terminal rendering through Rich: one console, semantic styles (`agent_cli/ui/styles.py`), and message, table, and home-screen helpers. prompt_toolkit owns input. Services and status views return Rich renderables built with those helpers, never markup strings or raw ANSI; markup is disabled, so user and model text is shown verbatim. Every styled state is also named in words, so output stays readable under `NO_COLOR` and in pipes.
 
 ## Product and runtime layout
 

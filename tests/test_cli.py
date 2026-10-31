@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -10,7 +11,9 @@ import pytest
 from agent_cli import cli
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigPaths, ConfigService
-from agent_cli.startup import TAGLINE, WORDMARK
+from agent_cli.ui import make_console, plain
+from agent_cli.ui.home import TAGLINE, WORDMARK
+from rendered import recorder
 
 
 @pytest.fixture
@@ -70,7 +73,7 @@ def test_slash_commands_bypass_orchestration() -> None:
 def test_slash_input_is_trimmed_and_dispatched(context: CommandContext) -> None:
     output = cli.handle_input("  /help  ", context)
     assert output is not None
-    assert output.startswith("Agent CLI help")
+    assert plain(output).startswith("Agent CLI help")
 
 
 def scripted(*events: str | type[BaseException]) -> cli.ReadLine:
@@ -96,45 +99,43 @@ def test_startup_screen_is_shown_before_the_first_prompt() -> None:
         events.append(f"prompt {prompt!r}")
         raise EOFError
 
-    cli.run_shell(build_registry(), read_line, events.append, STARTUP)
+    cli.run_shell(build_registry(), read_line, lambda shown: events.append(plain(shown)), STARTUP)
 
     assert events == [STARTUP, f"prompt {cli.PROMPT!r}"]
 
 
 def test_first_input_is_a_task_with_no_mode_selection() -> None:
-    output: list[str] = []
-    cli.run_shell(build_registry(), scripted("add a health endpoint"), output.append, STARTUP)
+    output, write_line = recorder()
+    cli.run_shell(build_registry(), scripted("add a health endpoint"), write_line, STARTUP)
 
     assert output == [STARTUP, cli.NO_ORCHESTRATION]
 
 
 def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
-    output: list[str] = []
+    output, write_line = recorder()
     code = cli.run_shell(
-        build_registry(), scripted("", "/review", "/bogus", "hi"), output.append, STARTUP
+        build_registry(), scripted("", "/review", "/bogus", "hi"), write_line, STARTUP
     )
 
     assert code == 0
     assert output[0] == STARTUP
     assert output[1].startswith("Not implemented yet:")
-    assert output[2].startswith("Unknown command: /bogus.")
+    assert output[2].startswith("Error  Unknown command: /bogus.")
     assert output[3] == cli.NO_ORCHESTRATION
     assert len(output) == 4
 
 
 def test_shell_continues_after_ctrl_c() -> None:
-    output: list[str] = []
-    code = cli.run_shell(
-        build_registry(), scripted(KeyboardInterrupt, "hi"), output.append, STARTUP
-    )
+    output, write_line = recorder()
+    code = cli.run_shell(build_registry(), scripted(KeyboardInterrupt, "hi"), write_line, STARTUP)
 
     assert code == 0
     assert output == [STARTUP, cli.NO_ORCHESTRATION]
 
 
 def test_shell_exits_on_exit_command() -> None:
-    output: list[str] = []
-    code = cli.run_shell(build_registry(), scripted("/exit", "hi"), output.append, STARTUP)
+    output, write_line = recorder()
+    code = cli.run_shell(build_registry(), scripted("/exit", "hi"), write_line, STARTUP)
 
     assert code == 0
     assert output == [STARTUP]
@@ -144,6 +145,9 @@ def test_main_runs_shell_through_prompt_toolkit(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeSession:
+        def __init__(self, **options: object) -> None:
+            pass
+
         def prompt(self, message: str) -> str:
             raise EOFError
 
@@ -183,13 +187,13 @@ def test_python_dash_m_uses_the_same_entry_point() -> None:
 
 def test_shell_passes_its_io_and_config_to_commands(tmp_path: Path) -> None:
     service = ConfigService(ConfigPaths(tmp_path / "config.yaml", None))
-    output: list[str] = []
+    output, write_line = recorder()
     code = cli.run_shell(
-        build_registry(), scripted("/startup", *[""] * 12), output.append, STARTUP, service
+        build_registry(), scripted("/startup", *[""] * 12), write_line, STARTUP, service
     )
     assert code == 0
     assert output[1].startswith("Agent CLI setup")
-    assert output[-1] == f"Settings saved to {tmp_path / 'config.yaml'}."
+    assert output[-1] == f"Done  Settings saved to {tmp_path / 'config.yaml'}."
     assert service.resolve() == Config()
 
 
@@ -203,8 +207,9 @@ def test_main_reports_invalid_configuration_at_startup(
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(EOFError))
     assert cli.main([]) == 0
-    out = capsys.readouterr().out
-    assert f"Configuration error: global config ({config}): agents: unknown key" in out
+    out = "\n".join(line.rstrip() for line in capsys.readouterr().out.splitlines())
+    assert "Error  Configuration error.\n" in out
+    assert f"global config ({config}): agents: unknown key" in out
 
 
 def test_startup_imports_only_the_shell_and_command_layer() -> None:
@@ -232,7 +237,12 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.config.schema",
         "agent_cli.config.service",
         "agent_cli.guided_setup",
-        "agent_cli.startup",
+        "agent_cli.ui",
+        "agent_cli.ui.console",
+        "agent_cli.ui.home",
+        "agent_cli.ui.render",
+        "agent_cli.ui.styles",
+        "agent_cli.ui.tables",
         "agent_cli.state",
         "agent_cli.state.migrations",
         "agent_cli.state.models",
@@ -241,3 +251,29 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.state.task_store",
         "agent_cli.terms",
     }
+
+
+def test_the_shell_prompt_is_styled_as_the_accent() -> None:
+    assert cli.prompt_fragments(cli.PROMPT) == [("class:prompt", cli.PROMPT)]
+
+
+def test_setup_questions_set_apart_their_default_and_choices() -> None:
+    assert cli.prompt_fragments("Save these settings? [yes] (y/n): ") == [
+        ("class:question", "Save these settings?"),
+        ("class:default", " [yes]"),
+        ("class:choices", " (y/n)"),
+        ("", ": "),
+    ]
+    assert cli.prompt_fragments("Branch prefix [bot/]: ") == [
+        ("class:question", "Branch prefix"),
+        ("class:default", " [bot/]"),
+        ("", ": "),
+    ]
+    assert cli.prompt_fragments("anything else") == [("", "anything else")]
+
+
+def test_each_response_is_followed_by_a_blank_line() -> None:
+    stream = io.StringIO()
+    console = make_console(stream, width=80)
+    cli.run_shell(build_registry(), scripted("/status", "/status"), console.print, STARTUP)
+    assert stream.getvalue() == f"{STARTUP}\nNo active task.\n\nNo active task.\n\n"

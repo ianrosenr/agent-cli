@@ -20,7 +20,7 @@ from agent_cli.skills.policy import RoutingPolicy, SignalVocabulary, Strength, l
 from agent_cli.skills.router import Discovery, RoutingDecision, RoutingRequest, SkillRouter
 from agent_cli.skills.selection import DroppedSkill, SelectedSkill, SkillSelection
 from agent_cli.skills.signals import DetectedSignal, Priority, SignalSource
-from agent_cli.skills.status import skills_lines
+from agent_cli.skills.status import skills_view
 from agent_cli.skills.tokens import DEFAULT_ESTIMATOR, TokenEstimator, Utf8ByteEstimator
 
 __all__ = [
@@ -56,5 +56,5 @@ __all__ = [
     "load_catalog",
     "load_policy",
     "skill_sources",
-    "skills_lines",
+    "skills_view",
 ]

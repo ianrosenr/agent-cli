@@ -16,6 +16,8 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rich.console import RenderableType
+
 from agent_cli.adapters import AdapterRegistry
 from agent_cli.budget import NO_PRICING, BudgetGuard, CostEstimator, SpendLedger
 from agent_cli.config import Config, ConfigError, ConfigService
@@ -55,6 +57,7 @@ from agent_cli.orchestration.spec_author import (
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
 from agent_cli.state import PinKind, Task, TaskStateError, TaskStore
+from agent_cli.ui import error
 
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
 
@@ -82,7 +85,7 @@ class OrchestrationService:
     home: Path | None = None
     _index: RepositoryIndex | None = None
 
-    def handle(self, text: str) -> str:
+    def handle(self, text: str) -> RenderableType:
         """Plan ``text`` as a new request, or take it as the answer to a pending question."""
         try:
             session = self.store.latest_session() if self.store.exists() else None
@@ -95,10 +98,10 @@ class OrchestrationService:
                 self.store.answer_planning_question(pending.id, text)
                 root = self.store.task(pending.task_id) or missing(pending.task_id)
             return self.plan(root)
-        except TaskStateError as error:
-            return f"Cannot use task state: {error}"
+        except TaskStateError as problem:
+            return error("Cannot use task state.", str(problem))
 
-    def plan(self, root: Task) -> str:
+    def plan(self, root: Task) -> RenderableType:
         try:
             config = self.config.resolve()
             registry = self.registry if self.registry is not None else load_registry()
@@ -304,7 +307,7 @@ class OrchestrationService:
 
     # -- Blocking ------------------------------------------------------------------------------
 
-    def stop(self, root: Task, reason: str) -> str:
+    def stop(self, root: Task, reason: str) -> RenderableType:
         """Keep the root task and its requirement; record why planning stopped."""
         self.block([root.id], reason)
         return render_stopped(reason)
