@@ -378,7 +378,10 @@ def all_children_scope(sentence: str) -> bool:
     every delegated child.
     """
     return contains(sentence, "everything") or bool(
-        re.search(r"\b(?:all|every|each)\s+(?:sub\s+)?(?:agents?|workers?|tasks?)\b", sentence)
+        re.search(
+            r"\b(?:all|every|each)\s+(?:other\s+)?(?:sub\s+)?(?:agents?|workers?|tasks?)\b",
+            sentence,
+        )
     )
 
 
