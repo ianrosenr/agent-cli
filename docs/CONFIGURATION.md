@@ -98,7 +98,7 @@ harnesses:
     command: claude
 ```
 
-Authentication stays owned by Claude Code. Sign in with `claude auth login` using your Claude subscription. Agent CLI never copies Claude credentials. The subscription harness removes Anthropic API/cloud override environment variables from its child process so a configured API key cannot silently change this route to pay-as-you-go.
+Authentication stays owned by Claude Code. Sign in with `claude auth login` using your Claude subscription. Agent CLI never copies Claude credentials. The subscription harness fails closed if Anthropic API/cloud override environment variables are present and tells you which variable to unset, so a configured API key cannot silently change this route to pay-as-you-go.
 
 ## Credentials
 
