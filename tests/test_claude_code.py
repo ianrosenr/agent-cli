@@ -388,9 +388,7 @@ def test_diff_failure_is_normalized(tmp_path: Path) -> None:
 
 
 def test_git_timeout_is_normalized(tmp_path: Path) -> None:
-    def timeout_git(
-        argv: tuple[str, ...], cwd: Path
-    ) -> subprocess.CompletedProcess[str]:
+    def timeout_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(argv, 5)
 
     harness = ClaudeCodeHarnessAdapter(
