@@ -172,7 +172,9 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             )
         if version.returncode != 0:
             return HarnessReadiness(ReadinessState.UNAVAILABLE, "Codex CLI version check failed")
-        self._version = first_line(version.stdout) or first_line(version.stderr) or "unknown version"
+        self._version = (
+            first_line(version.stdout) or first_line(version.stderr) or "unknown version"
+        )
 
         try:
             auth = self.runner(self.auth_status_argv(), env, READINESS_TIMEOUT_S)
