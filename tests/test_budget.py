@@ -145,7 +145,7 @@ def provider(
     access: AccessKind | None,
     *model_ids: str,
     usage: Usage | None = None,
-    reply: str = '{"results": []}',
+    reply: str = "ok",
 ) -> FakeProviderAdapter:
     return FakeProviderAdapter(
         provider_identity=ProviderIdentity(id, id.title(), "fake", access),
