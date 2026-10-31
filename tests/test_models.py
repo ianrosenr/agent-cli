@@ -284,6 +284,20 @@ def test_ranked_candidates_skip_models_without_a_usable_path() -> None:
     assert [path.provider.id for path in candidates[0].paths] == ["p"]
 
 
+def test_automatic_candidate_keeps_all_usable_provider_paths() -> None:
+    reg = registry(model("m", scores={"coding": 5}))
+    runtime = paths(
+        provider("sub", "subscription", "m"),
+        provider("paid", "api", "m"),
+    )
+
+    (candidate,) = ranked_model_candidates(
+        reg, "implementer", RoleFloors(), runtime, PREFERENCE
+    )
+
+    assert [path.provider.id for path in candidate.paths] == ["sub", "paid"]
+
+
 def test_automatic_candidates_do_not_finalize_model_or_provider_choice() -> None:
     reg = registry(
         model("best", scores={"coding": 5}),
