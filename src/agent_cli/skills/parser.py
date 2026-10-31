@@ -83,6 +83,8 @@ def parse_skill_text(text: str, directory: str, where: str) -> ParsedSkill:
         raise SkillError(f"{where}: name {name!r} does not match its directory {directory!r}")
     if len([line for line in lines[1:end] if line.strip()]) != len(METADATA_KEYS):
         raise SkillError(f"{where}: each metadata value must be on one line")
+    if "\n" in description or "\r" in description:
+        raise SkillError(f"{where}: description must be one line")
     if len(description) > MAX_DESCRIPTION:
         raise SkillError(
             f"{where}: description is {len(description)} characters (at most {MAX_DESCRIPTION})"
