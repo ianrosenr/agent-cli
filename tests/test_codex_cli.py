@@ -323,6 +323,23 @@ def test_jsonl_uses_last_agent_message_and_sums_completed_turn_usage(tmp_path: P
     assert result.usage.reference == "thread-abc"
 
 
+def test_partial_usage_is_left_unknown(tmp_path: Path) -> None:
+    events = [
+        {"type": "thread.started", "thread_id": "thread-partial"},
+        {
+            "type": "turn.completed",
+            "usage": {"output_tokens": 7},
+        },
+    ]
+    harness = adapter(
+        launcher=FakeLauncher(output="\n".join(json.dumps(event) for event in events))
+    )
+    result = harness.result(harness.start(request(tmp_path)))
+    assert result.usage is not None
+    assert result.usage.input_tokens is None
+    assert result.usage.output_tokens == 7
+
+
 @pytest.mark.parametrize(
     "output",
     [
