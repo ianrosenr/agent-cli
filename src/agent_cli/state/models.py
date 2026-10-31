@@ -15,6 +15,7 @@ from agent_cli.adapters.domain import Selection, WorkerStatus
 type PinKind = Literal["model", "provider", "harness"]
 type RequirementSource = Literal["user", "derived"]
 type ReviewKind = Literal["spec", "code"]
+type RoutingKind = Literal["initial", "escalation"]
 
 PIN_KINDS: tuple[PinKind, ...] = get_args(PinKind.__value__)
 
@@ -192,4 +193,58 @@ class Event:
     kind: str
     subject_id: str
     detail: dict[str, str]
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class RoutedSignal:
+    signal: str
+    source: str
+    """``repository``, ``classifier``, or ``escalation``."""
+    strength: str | None
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RoutedSkill:
+    name: str
+    version: str
+    source: str
+    """Where the effective package came from: ``builtin``, ``global``, ``project``, ..."""
+    source_path: str
+    """Concrete root directory that supplied the effective skill package."""
+    tokens: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRouting:
+    """One skill-routing decision for a task: enough to reproduce and diagnose it.
+
+    Records are append-only. An escalation links to the decision it extends; a routing miss is
+    recorded here as a regression candidate and never changes the routing policy.
+    """
+
+    id: str
+    task_id: str
+    kind: RoutingKind
+    role: str
+    policy_version: str
+    classifier: str | None
+    """``name@version`` of the classifier, when one was wired."""
+    classifier_mode: str
+    """``none``, ``used``, or ``failed``."""
+    classifier_input_version: str
+    estimator: str
+    budget_tokens: int
+    total_tokens: int
+    signals: tuple[RoutedSignal, ...]
+    selected: tuple[RoutedSkill, ...]
+    """In injection order."""
+    dropped: tuple[RoutedSkill, ...]
+    rejected_signals: tuple[str, ...]
+    """Classifier output outside the vocabulary, ignored."""
+    reason: str
+    """Why an escalation happened (the newly discovered fact); empty for initial routing."""
+    previous_id: str | None
     created_at: str

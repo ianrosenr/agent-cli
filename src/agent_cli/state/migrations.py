@@ -181,7 +181,34 @@ V1 = (
     "CREATE INDEX events_by_task ON events (task_id)",
 )
 
-MIGRATIONS: tuple[Migration, ...] = (V1,)
+V2 = (
+    """
+    CREATE TABLE skill_routings (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks (id),
+        kind TEXT NOT NULL CHECK (kind IN ('initial', 'escalation')),
+        role TEXT NOT NULL,
+        policy_version TEXT NOT NULL,
+        classifier TEXT,
+        classifier_mode TEXT NOT NULL CHECK (classifier_mode IN ('none', 'used', 'failed')),
+        classifier_input_version TEXT NOT NULL,
+        estimator TEXT NOT NULL,
+        budget_tokens INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        signals TEXT NOT NULL DEFAULT '[]',
+        selected TEXT NOT NULL DEFAULT '[]',
+        dropped TEXT NOT NULL DEFAULT '[]',
+        rejected_signals TEXT NOT NULL DEFAULT '[]',
+        reason TEXT NOT NULL DEFAULT '',
+        previous_id TEXT REFERENCES skill_routings (id),
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX skill_routings_by_task ON skill_routings (task_id)",
+)
+"""Skill-routing decisions and escalations (V1-06): append-only, JSON arrays for detail."""
+
+MIGRATIONS: tuple[Migration, ...] = (V1, V2)
 """``MIGRATIONS[n]`` upgrades the schema from version ``n`` to ``n + 1``."""
 
 

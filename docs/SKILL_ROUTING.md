@@ -141,6 +141,19 @@ The Repository Fact Index SHOULD derive signals without a model when structural 
 
 Model and deterministic facts are unioned before skill selection.
 
+The policy's `repository_signals` section holds these rules as data: `categories` maps `RepositoryFacts.categories` and `facts` maps `RepositoryFacts.signals` to vocabulary signals, each rule marked `strong` or `weak`. Every derived signal keeps its source (`repository`, `classifier`, or `escalation`) and evidence for telemetry.
+
+When the budget forces a choice, selection priority is, strongest first:
+
+1. required role defaults
+2. explicitly requested skills
+3. `always` activation
+4. strong repository evidence (and escalation reports)
+5. classifier signals
+6. weak repository evidence
+
+Role defaults and requests keep their declared order; other ties break by policy order, then skill name. Priorities 1–2 are never dropped; if they alone exceed the budget, routing fails before any worker launches.
+
 ## Selection
 
 The skill selector is ordinary deterministic code.

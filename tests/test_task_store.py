@@ -267,6 +267,15 @@ def test_failed_migration_leaves_the_database_unchanged(store: TaskStore) -> Non
     assert intact.pins(task_id)["model"].value == "model-a"
 
 
+def test_v1_task_state_upgrades_to_skill_routing(path: Path) -> None:
+    old = TaskStore(path, migrations=MIGRATIONS[:1])
+    task_id = seeded(old)
+    upgraded = TaskStore(path)
+    assert upgraded.task(task_id) is not None
+    assert upgraded.skill_routings(task_id) == []
+    assert schema_version(path) == len(MIGRATIONS)
+
+
 def test_newer_schema_is_refused_and_kept(store: TaskStore) -> None:
     seeded(store)
     with sqlite3.connect(store.path) as connection:
