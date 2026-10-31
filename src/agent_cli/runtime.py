@@ -17,8 +17,11 @@ from typing import TYPE_CHECKING
 from agent_cli.adapters import AdapterRegistry
 from agent_cli.adapters.anthropic import PROVIDER_ID as ANTHROPIC
 from agent_cli.adapters.anthropic import AnthropicProviderAdapter, ClientFactory, sdk_client
+from agent_cli.adapters.claude_code import HARNESS_ID as CLAUDE_CODE
+from agent_cli.adapters.claude_code import ClaudeCodeHarnessAdapter
 from agent_cli.adapters.credentials import CredentialResolver
 from agent_cli.config import Config, ConfigError, ConfigService
+from agent_cli.config.model import HarnessConfig
 
 if TYPE_CHECKING:
     from agent_cli.budget import CostEstimator, ProviderEstimators
@@ -29,13 +32,15 @@ def default_adapters(
     credentials: CredentialResolver | None = None,
     anthropic_client: ClientFactory = sdk_client,
 ) -> AdapterRegistry:
-    """The real adapters the effective configuration asks for.
+    """Build the real adapters available to this session.
 
-    ``providers.anthropic`` gets the first-party Anthropic adapter, whatever its other fields
-    say, so a wrong type or unsupported URL is reported as misconfigured rather than ignored.
+    Claude Code is always registered so setup/status can detect an installation without first
+    persisting runtime facts. Its config entry only controls enablement or a command override.
+    ``providers.anthropic`` remains opt-in because it is a paid API path.
     """
     credentials = CredentialResolver() if credentials is None else credentials
-    registry = AdapterRegistry()
+    claude_config = config.harnesses.get(CLAUDE_CODE, HarnessConfig())
+    registry = AdapterRegistry([ClaudeCodeHarnessAdapter(claude_config)])
     entry = config.providers.get(ANTHROPIC)
     if entry is not None:
         registry.register_provider(AnthropicProviderAdapter(entry, credentials, anthropic_client))

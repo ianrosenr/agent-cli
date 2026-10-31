@@ -29,7 +29,19 @@ Core code depends only on these types. Adding an adapter means implementing an i
 
 ## Status
 
-The interfaces, fakes, and `/startup` / `/providers` integration exist. No real harness adapter is registered yet; Claude Code is first, with Pi second as the portability test.
+The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude Code is the first real harness; Pi remains the second portability test.
+
+### Claude Code harness (V1-10.5)
+
+`claude-code` (`src/agent_cli/adapters/claude_code.py`) wraps the installed Claude Code CLI and deliberately uses the user's Claude subscription login rather than the Anthropic API.
+
+- **Detection/auth.** Runtime always registers the adapter so `/startup` and `/providers` can detect `claude`. Readiness runs bounded `claude --version` and `claude auth status --json` checks. Runtime auth is never written to Agent CLI config.
+- **Subscription-only.** Readiness fails closed when Anthropic API/cloud billing override variables are set and tells the user which variable to unset. It then accepts Claude account/OAuth auth and rejects API-key or third-party auth, so this path cannot silently become pay-as-you-go.
+- **Execution.** Workers use Claude Code print mode with JSON output, no session persistence, a 25-turn cap, and the exact requested model when one is selected. Task/spec/role/skills context goes over stdin, not argv.
+- **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Claude Code's `auto` permission mode; `plan-only` uses `plan`. Checkpoint approval stays in Agent CLI orchestration, so every harness/model follows the same `/startup` implementation policy rather than inventing vendor-specific review settings.
+- **Lifecycle.** Start/status/result/interruption are normalized. Results retain a concise summary, token usage when Claude reports it, and Git changed-file/diff information. Raw stderr is never surfaced because it may contain task context.
+- **Provider pin.** This fixed access path identifies itself as `claude-subscription`. A conflicting provider pin, including the paid `anthropic` API provider, is rejected rather than substituted.
+- **Config.** No config is required for normal detection. `harnesses.claude-code.command` can override the executable path and `enabled: false` disables it.
 
 ### Anthropic provider (V1-09.5)
 

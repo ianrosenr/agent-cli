@@ -87,6 +87,19 @@ Relative `skills.paths` entries resolve against the repository root (the working
 
 `review.max_rounds`, `workers.max_concurrency`, and `skills.context_budget_tokens` are initial values. Built-in skills and routing ship with the CLI; user/project config overrides them without modifying built-in files.
 
+## Harnesses
+
+Claude Code is auto-detected, so normal subscription use needs no persistent config. The optional entry only disables it or overrides the executable path:
+
+```yaml
+harnesses:
+  claude-code:
+    enabled: true
+    command: claude
+```
+
+Authentication stays owned by Claude Code. Sign in with `claude auth login` using your Claude subscription. Agent CLI never copies Claude credentials. The subscription harness fails closed if Anthropic API/cloud override environment variables are present and tells you which variable to unset, so a configured API key cannot silently change this route to pay-as-you-go.
+
 ## Credentials
 
 Credentials never appear in config YAML. A provider entry refers to a credential by name:
