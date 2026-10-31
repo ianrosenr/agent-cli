@@ -40,7 +40,7 @@ It coordinates them.
 
 Existing harnesses should own low-level agent execution: tool loops, streaming, session mechanics, file-edit tools, and harness-native terminal behavior. Agent CLI should own the decisions above that layer: decomposition, role authority, skills, context, model/provider/harness routing, budgets, memory, worktrees, review, and escalation.
 
-Claude Code, Pi, Codex CLI, and OpenCode are adapter targets. Claude Code is the first harness integration; Pi is the second portability test. Core Agent CLI must remain harness-agnostic.
+Claude Code, Codex CLI, Pi, and OpenCode are adapter targets. Claude Code is the first harness integration, Codex CLI is second, and Pi follows as the portability test. Core Agent CLI must remain harness-agnostic.
 
 Do not build a new general-purpose coding-agent runtime unless an external harness cannot satisfy a demonstrated product requirement.
 
@@ -359,9 +359,9 @@ It should detect installed harnesses and guide provider setup.
 
 V1 adapter targets:
 
-- Claude Code — first integration; real subscription harness implemented in V1-10.5
-- Pi — portability target
-- Codex CLI — next subscription harness
+- Claude Code — first subscription harness, implemented in V1-10.5
+- Codex CLI — second subscription harness, implemented in V1-10.6
+- Pi — next portability target
 - OpenCode
 
 Support custom providers through a stable provider adapter.
@@ -559,6 +559,9 @@ Spec review and bounded implementers.
 
 ### V1-10.5
 First real coding harness: Claude Code using the user's existing Claude subscription login. Agent CLI supplies bounded worker context and owns routing/policy; Claude Code owns its tool loop.
+
+### V1-10.6
+Second real coding harness: Codex CLI using the user's existing ChatGPT subscription login. It consumes the same normalized worker request and shared implementation mode, proving the harness contract is portable without vendor branches in orchestration.
 
 ### V1-11
 Git worktrees and worker lifecycle.
