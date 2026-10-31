@@ -99,6 +99,10 @@ class HarnessAdapter(ABC):
     def result(self, handle: WorkerHandle) -> WorkerResult:
         """The worker's result so far; final once ``status`` is finished."""
 
+    def login(self) -> HarnessReadiness:
+        """Launch the harness's native interactive login, then return fresh readiness."""
+        raise unsupported(self.identity(), Capability.LOGIN)
+
     def send(self, handle: WorkerHandle, message: str) -> None:
         """Send a follow-up message to a running or waiting worker."""
         raise unsupported(self.identity(), Capability.FOLLOW_UP)
