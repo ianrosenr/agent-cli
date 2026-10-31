@@ -34,7 +34,7 @@
 | Repository fact index | cached structural repository facts and task inspection ([REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md)) | semantic decisions or worker authority |
 | Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md), [SKILL_ROUTING.md](SKILL_ROUTING.md)) | skill content or model choice |
 | Router | choosing model + provider + harness ([ROUTING.md](ROUTING.md)) | task content |
-| Model registry | capability scores, tiers, candidate status | live provider health |
+| Model registry | model capability scores, active/candidate policy | live provider health or provider topology |
 | Budget ledger | recorded spend; allow/deny of paid calls | routing preference |
 | Provider health | cooldowns and normalized failure state | model quality |
 | Worker manager | worker lifecycle, worktrees, recovery | what workers should do |
@@ -84,7 +84,8 @@ Keeping them separate allows the same model to be reached through another provid
 
 ```
 builtins/skills/                     shipped default skill packages
-builtins/policies/                   shipped default routing policy
+builtins/policies/                   shipped default skill-routing policy
+builtins/models/                     shipped model-registry seed
 ~/.agent-cli/                        user config, skill overrides, model registry, budget ledger
 <repo>/.agent-cli/                   project config, skill overrides, policies, task state
 <repo>/.agent-cli/worktrees/         worker worktrees (git-ignored)
