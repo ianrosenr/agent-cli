@@ -140,8 +140,6 @@ def text(value: object, key: str) -> str:
     return value
 
 
-
-
 def identifier(value: object, key: str) -> str:
     result = text(value, key)
     if result != result.strip():
