@@ -74,12 +74,13 @@ class HarnessLoginService:
                 muted(f"Authentication is needed for: {names}. Credentials stay with each CLI."),
             )
         )
-        answer = self.read_line("Sign into configured harnesses now? (Y/n): ").strip().lower()
-        if answer in {"n", "no"}:
-            return info("Sign-in skipped.", "Run /login any time.")
-        if answer not in {"", "y", "yes"}:
-            return warning("Sign-in skipped.", "Run /login when ready.")
-        return self.run()
+        while True:
+            answer = self.read_line("Sign into configured harnesses now? (Y/n): ").strip().lower()
+            if answer in {"n", "no"}:
+                return info("Sign-in skipped.", "Run /login any time.")
+            if answer in {"", "y", "yes"}:
+                return self.run()
+            self.write_line(warning("Type y for yes or n for no."))
 
     def run(self, target: str = "") -> RenderableType:
         selected = self.selected(target)
