@@ -153,10 +153,14 @@ def test_no_color_disables_color_on_a_terminal(monkeypatch: pytest.MonkeyPatch) 
     assert "Error  Broken." in stream.getvalue()
 
 
+@pytest.mark.parametrize("columns", [None, "80"])
 def test_piped_output_is_plain_and_does_not_fold_at_80_columns(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, columns: str | None
 ) -> None:
-    monkeypatch.delenv("COLUMNS", raising=False)
+    if columns is None:
+        monkeypatch.delenv("COLUMNS", raising=False)
+    else:
+        monkeypatch.setenv("COLUMNS", columns)  # as CI sets it
     stream = io.StringIO()
     console = make_console(stream)
     assert console.width == PIPE_WIDTH

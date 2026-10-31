@@ -17,8 +17,8 @@ from rich.console import Console, RenderableType
 from agent_cli.ui.styles import THEME
 
 PIPE_WIDTH = 200
-"""Width when output is not a terminal and ``COLUMNS`` is unset: wide enough that piped rows,
-paths, and messages stay on one line instead of folding at Rich's default of 80."""
+"""Width when output is not a terminal: wide enough that piped rows, paths, and messages stay on
+one line. ``COLUMNS`` describes a terminal, so it is ignored here (CI sets it to 80)."""
 
 
 def supports_color(stream: TextIO) -> bool:
@@ -31,7 +31,7 @@ def make_console(stream: TextIO | None = None, width: int | None = None) -> Cons
     everywhere else, with no cursor control or live display when output is piped."""
     stream = sys.stdout if stream is None else stream
     color = supports_color(stream)
-    if width is None and not stream.isatty() and "COLUMNS" not in os.environ:
+    if width is None and not stream.isatty():
         width = PIPE_WIDTH
     return Console(
         file=stream,
