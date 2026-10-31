@@ -377,7 +377,7 @@ def all_children_scope(sentence: str) -> bool:
     A singular phrase such as "reviewer agent" must never let planner output widen a pin to
     every delegated child.
     """
-    return contains(sentence, "everything") or bool(
+    return bool(
         re.search(
             r"\b(?:all|every|each)\s+(?:other\s+)?(?:subagents?|agents?|workers?|tasks?)\b",
             sentence,
