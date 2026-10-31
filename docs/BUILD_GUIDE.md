@@ -552,7 +552,7 @@ At this point, the system understands how work should be represented and routed.
 ## Phase 3 — Orchestration
 
 ### V1-09
-Planner and implementation specs.
+Root-prompt orchestration planning: inspect repository context, persist a validated role-explicit task graph, route skills separately, ask only consequential unresolved questions, and create pending short specs. V1-09 stops before code edits, coding-harness launch, worktrees, or spec approval.
 
 ### V1-10
 Spec review and bounded implementers.

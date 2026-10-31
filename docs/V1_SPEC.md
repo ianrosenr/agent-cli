@@ -20,7 +20,7 @@ Reference scenario:
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
 7. **Model registry and role floors.** Capability-scored models; each canonical role has a deterministic minimum score on its primary capability. See [ROUTING.md](ROUTING.md).
 8. **Budget guardrails.** Hard paid-API limits enforced through conservative pre-call reservation and durable settlement; opaque paid harnesses require an enforceable bound. See [ROUTING.md](ROUTING.md#cost-guardrails).
-9. **Spec-driven work.** Orchestrator → spec author → spec reviewer → implementer → code reviewer. See [ORCHESTRATION.md](ORCHESTRATION.md).
+9. **Spec-driven work.** Root natural-language input first becomes a repository-informed, persisted task graph with role-separated skill routing and pending short specs; review/implementation then consume that state. See [ORCHESTRATION.md](ORCHESTRATION.md).
 10. **Worktree isolation.** Each concurrent implementer works in its own Git worktree.
 11. **Adversarial review.** Reviewers can question spec authors and implementers. Review rounds are capped. See [REVIEW_PIPELINE.md](REVIEW_PIPELINE.md).
 12. **Provider health and fallback.** Normalized failures, cooldowns, and logged fallback. See [ROUTING.md](ROUTING.md#provider-health-and-fallback).
