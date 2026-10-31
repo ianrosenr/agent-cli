@@ -249,9 +249,9 @@ def test_candidate_models_are_never_selected_automatically() -> None:
 
 def test_unknown_runtime_models_are_never_selected_automatically() -> None:
     runtime = paths(provider("p", "api", "mystery"))
-    assert ranked_model_candidates(
-        registry(), "implementer", RoleFloors(), runtime, PREFERENCE
-    ) == ()
+    assert (
+        ranked_model_candidates(registry(), "implementer", RoleFloors(), runtime, PREFERENCE) == ()
+    )
 
 
 def test_ranking_uses_every_tie_break_in_order() -> None:
@@ -291,9 +291,7 @@ def test_automatic_candidate_keeps_all_usable_provider_paths() -> None:
         provider("paid", "api", "m"),
     )
 
-    (candidate,) = ranked_model_candidates(
-        reg, "implementer", RoleFloors(), runtime, PREFERENCE
-    )
+    (candidate,) = ranked_model_candidates(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
 
     assert [path.provider.id for path in candidate.paths] == ["sub", "paid"]
 
@@ -308,9 +306,7 @@ def test_automatic_candidates_do_not_finalize_model_or_provider_choice() -> None
         provider("sub", "subscription", "subscription-option"),
     )
 
-    candidates = ranked_model_candidates(
-        reg, "implementer", RoleFloors(), runtime, PREFERENCE
-    )
+    candidates = ranked_model_candidates(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
 
     assert [candidate.model_id for candidate in candidates] == ["best", "subscription-option"]
     assert candidates[0].paths[0].provider.id == "paid"
@@ -361,9 +357,7 @@ def test_pinned_unscored_runtime_model_is_allowed_without_inventing_scores() -> 
     )
     assert "unscored" in chosen.warnings[0]
     # The pin does not make the model eligible for unrelated automatic selection.
-    assert ranked_model_candidates(
-        registry(), "architect", RoleFloors(), runtime, PREFERENCE
-    ) == ()
+    assert ranked_model_candidates(registry(), "architect", RoleFloors(), runtime, PREFERENCE) == ()
 
 
 def test_pinned_candidate_is_treated_as_unscored() -> None:
