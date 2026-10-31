@@ -316,9 +316,7 @@ def test_automatic_candidates_do_not_finalize_model_or_provider_choice() -> None
 def test_alias_reported_by_a_provider_matches_the_canonical_model() -> None:
     reg = registry(model("canon", aliases=["vendor/canon-2"]))
     runtime = paths(provider("p", "api", "vendor/canon-2"))
-    (candidate,) = ranked_model_candidates(
-        reg, "implementer", RoleFloors(), runtime, PREFERENCE
-    )
+    (candidate,) = ranked_model_candidates(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
     assert candidate.model_id == "canon"
     assert candidate.paths[0].model_id == "vendor/canon-2"
 
