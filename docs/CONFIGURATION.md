@@ -89,7 +89,7 @@ Relative `skills.paths` entries resolve against the repository root (the working
 
 ## Harnesses
 
-Claude Code and Codex CLI are auto-detected, so normal subscription use needs no persistent config. Optional entries only disable a harness or override its executable path:
+Claude Code and Codex CLI are auto-detected. `/startup` persists whether each subscription harness is enabled; optional `command` values override executable paths:
 
 ```yaml
 harnesses:
@@ -101,7 +101,7 @@ harnesses:
     command: codex
 ```
 
-Authentication stays owned by each harness. Sign in to Claude Code with `claude auth login` using your Claude subscription, and sign in to Codex with `codex login` using ChatGPT. Agent CLI never copies either credential set. Each subscription harness fails closed when environment credentials could silently redirect execution to an API or cloud billing route and tells you which variable to unset.
+Authentication stays owned and cached by each native CLI. `/startup` offers sign-in when an enabled harness needs it; later, `/login` checks the saved harness configuration, skips already-authenticated harnesses, and launches native login only where needed. `/login claude` and `/login codex` target one harness. Agent CLI never copies credentials. Subscription child processes isolate API/cloud credential environment variables so existing API setup cannot silently redirect subscription execution.
 
 ## Credentials
 
