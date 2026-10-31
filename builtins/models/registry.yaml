@@ -1,0 +1,31 @@
+# Agent CLI model registry: capability facts per canonical model. See docs/ROUTING.md.
+#
+# Scores are integers 1-5 (1 weak, 2 usable for bounded work, 3 competent, 4 strong,
+# 5 exceptional). Every entry names the evidence for its scores in `sources`. Never infer
+# scores from a model's name, vendor, size, latency, or price, and never add an entry just to
+# fill the registry: models without evidence-backed scores stay out until they have them.
+#
+# Provider access paths are not listed here; provider adapters report them at runtime.
+#
+# Entry shape:
+#
+#   - id: canonical-model-id
+#     display_name: Human Name
+#     status: active              # active | candidate (never selected automatically)
+#     scores:
+#       reasoning: 3
+#       coding: 3
+#       repository_engineering: 3
+#       debugging: 3
+#       tool_use: 3
+#       architecture: 3
+#       security_reasoning: 3
+#     latency: fast               # fast | medium | slow
+#     cost: low                   # free | low | medium | high (coarse hint, not pricing)
+#     confidence: medium          # low | medium | high
+#     sources:
+#       - concise evidence label
+#     aliases: []                 # other IDs providers report this model as
+
+version: 1
+models: []

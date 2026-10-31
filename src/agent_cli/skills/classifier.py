@@ -4,8 +4,8 @@ A classifier maps compact subtask context to normalized signal IDs from the acti
 never selects skills, never sees skill bodies, and never changes role authority. The protocol is
 batch-first: classify every new or changed subtask of one orchestration cycle in one call.
 
-No production classifier ships in V1-06; choosing its model and provider belongs to the model
-registry (V1-07). With no classifier, routing uses role defaults plus repository facts, which is a
+The production classifier and the choice of its model and provider live in ``agent_cli.models``
+(V1-07). With no classifier, routing uses role defaults plus repository facts, which is a
 supported mode rather than an error.
 """
 

@@ -18,7 +18,7 @@ Instead:
 4. Deterministic code maps role defaults and signals to skills.
 5. Only selected `SKILL.md` bodies enter worker context.
 
-V1-06 does not require a production classifier implementation. With no classifier wired, routing still works from role defaults plus deterministic repository facts. Once V1-07 provides model-registry intelligence, a cheap production classifier can use the same seam without changing skill selection.
+V1-06 does not require a production classifier implementation. With no classifier wired, routing still works from role defaults plus deterministic repository facts. V1-07's provider-backed classifier (`agent_cli.models`) uses the same seam without changing skill selection; its model comes from `routing.classifier` and the model registry.
 
 Classifier misses are recovered through dynamic escalation and become routing-evaluation cases.
 

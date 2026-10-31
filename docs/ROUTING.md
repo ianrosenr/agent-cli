@@ -74,6 +74,8 @@ The coarse cost category is a routing hint, not exact provider pricing or the V1
 
 Candidate or unknown models are never automatically promoted because a provider reports them.
 
+A provider path is matched to a registry entry when the provider reports the model's canonical ID or one of its aliases (case-insensitively). Paths whose access kind is unknown or absent from `access.preference` are never used.
+
 ## Role floors
 
 Named floors map exactly to numeric minimum scores:

@@ -14,6 +14,7 @@ from agent_cli.terms import AccessKind, ImplementationMode
 
 type SkillActivation = Literal["always", "auto", "explicit", "disabled"]
 type Tier = Literal["low", "mid", "high"]
+type ClassifierSelection = Literal["auto", "selected", "disabled"]
 
 MAX_WORKER_CONCURRENCY = 16
 
@@ -95,13 +96,33 @@ class ProviderConfig:
 
 @dataclass(frozen=True, slots=True)
 class RoleFloors:
+    """Minimum capability per canonical role (``low`` = 2, ``mid`` = 3, ``high`` = 4).
+
+    Fields are exactly ``agent_cli.terms.CANONICAL_ROLES``, in that order.
+    """
+
     orchestrator: Tier = "high"
     spec_author: Tier = "high"
+    spec_reviewer: Tier = "mid"
+    architect: Tier = "high"
+    implementer: Tier = "low"
+    code_reviewer: Tier = "mid"
     research_investigator: Tier = "high"
     security_investigator: Tier = "high"
-    spec_reviewer: Tier = "mid"
-    code_reviewer: Tier = "mid"
-    implementer: Tier = "low"
+    skill_author: Tier = "high"
+    skill_evaluator: Tier = "high"
+
+
+@dataclass(frozen=True, slots=True)
+class ClassifierConfig:
+    """Which model, if any, classifies skill-routing signals.
+
+    ``selected_model`` may stay stored in any mode; it is only used in ``selected`` mode, which
+    requires it.
+    """
+
+    mode: ClassifierSelection = "auto"
+    selected_model: str | None = constrained(None, kind="nonempty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +130,7 @@ class RoutingConfig:
     """Advanced settings. Loaded from config but never shown by ``/startup``."""
 
     role_floors: RoleFloors = field(default_factory=RoleFloors)
+    classifier: ClassifierConfig = field(default_factory=ClassifierConfig)
 
 
 @dataclass(frozen=True, slots=True)

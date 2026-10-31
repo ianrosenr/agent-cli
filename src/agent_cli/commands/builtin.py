@@ -1,8 +1,8 @@
 """Built-in slash commands.
 
-Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, and ``/skills``, these
-are placeholders that establish the user-facing shell contract. Each names the roadmap issue that
-will implement it (see docs/BUILD_GUIDE.md, Build Order).
+Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, ``/skills``, and
+``/models``, these are placeholders that establish the user-facing shell contract. Each names the
+roadmap issue that will implement it (see docs/BUILD_GUIDE.md, Build Order).
 """
 
 from __future__ import annotations
@@ -100,6 +100,13 @@ def skills_command(context: CommandContext, args: str) -> str:
     return "\n".join(skills_lines(context.config, context.tasks))
 
 
+def models_command(context: CommandContext, args: str) -> str:
+    # Imported on use, like /skills: model routing stays out of startup.
+    from agent_cli.models import models_lines
+
+    return "\n".join(models_lines(context.config, context.adapters))
+
+
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
     """A placeholder command for a capability that a later roadmap issue implements."""
 
@@ -118,9 +125,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
     ),
     Command("status", "Show current task state.", status_command),
     Command("skills", "Show available skills and routing.", skills_command),
-    planned(
-        "models", "Show the model registry and role thresholds.", "the model registry", "V1-07"
-    ),
+    Command("models", "Show the model registry and role thresholds.", models_command),
     planned("budget", "Show budget limits and spend.", "budget guardrails", "V1-08"),
     planned("autopilot", "Choose the implementation mode.", "implementation modes", "V1-09"),
     planned(
