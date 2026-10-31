@@ -171,21 +171,15 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
                 f"cannot run Claude Code ({type(error).__name__})",
             )
         if version.returncode != 0:
-            return HarnessReadiness(
-                ReadinessState.UNAVAILABLE, "Claude Code version check failed"
-            )
+            return HarnessReadiness(ReadinessState.UNAVAILABLE, "Claude Code version check failed")
         self._version = (
             first_line(version.stdout) or first_line(version.stderr) or "unknown version"
         )
 
         try:
-            auth = self.runner(
-                (command, "auth", "status", "--json"), env, READINESS_TIMEOUT_S
-            )
+            auth = self.runner((command, "auth", "status", "--json"), env, READINESS_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            return HarnessReadiness(
-                ReadinessState.UNAVAILABLE, "authentication check timed out"
-            )
+            return HarnessReadiness(ReadinessState.UNAVAILABLE, "authentication check timed out")
         except OSError as error:
             return HarnessReadiness(
                 ReadinessState.UNAVAILABLE,
@@ -209,21 +203,13 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
         method = payload.get("authMethod")
         if method not in SUBSCRIPTION_AUTH_METHODS:
-            shown = (
-                method
-                if isinstance(method, str) and method
-                else "non-subscription credentials"
-            )
+            shown = method if isinstance(method, str) and method else "non-subscription credentials"
             return HarnessReadiness(
                 ReadinessState.AUTH_REQUIRED,
                 f"authenticated with {shown}; sign in with a Claude subscription instead",
             )
         subscription = payload.get("subscriptionType")
-        plan = (
-            subscription
-            if isinstance(subscription, str) and subscription
-            else "Claude account"
-        )
+        plan = subscription if isinstance(subscription, str) and subscription else "Claude account"
         return HarnessReadiness(
             ReadinessState.READY,
             f"{self._version}; subscription auth ({plan})",
@@ -280,9 +266,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
         except FileNotFoundError:
             close_files(prompt, stdout, stderr)
-            raise AdapterError(
-                ErrorKind.NOT_FOUND, "Claude Code executable disappeared"
-            ) from None
+            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code executable disappeared") from None
         except OSError as error:
             close_files(prompt, stdout, stderr)
             raise AdapterError(
@@ -392,11 +376,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
 
     def billing_override(self) -> str | None:
         return next(
-            (
-                name
-                for name in sorted(BILLING_OVERRIDE_ENV)
-                if self.environ.get(name)
-            ),
+            (name for name in sorted(BILLING_OVERRIDE_ENV) if self.environ.get(name)),
             None,
         )
 
@@ -419,29 +399,17 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
 
     def worker(self, handle: WorkerHandle) -> _Worker:
         if handle.harness_id != HARNESS_ID:
-            raise AdapterError(
-                ErrorKind.NOT_FOUND, "worker belongs to another harness"
-            )
+            raise AdapterError(ErrorKind.NOT_FOUND, "worker belongs to another harness")
         worker = self._workers.get(handle.token)
         if worker is None:
-            raise AdapterError(
-                ErrorKind.NOT_FOUND, "Claude Code worker not found"
-            )
+            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code worker not found")
         return worker
 
     def git_changes(self, cwd: Path) -> Changes:
-        tracked = self.git_runner(
-            ("git", "diff", "HEAD", "--name-only", "--"), cwd
-        )
-        untracked = self.git_runner(
-            ("git", "ls-files", "--others", "--exclude-standard"), cwd
-        )
-        diff = self.git_runner(
-            ("git", "diff", "--no-ext-diff", "HEAD", "--"), cwd
-        )
-        if any(
-            result.returncode != 0 for result in (tracked, untracked, diff)
-        ):
+        tracked = self.git_runner(("git", "diff", "HEAD", "--name-only", "--"), cwd)
+        untracked = self.git_runner(("git", "ls-files", "--others", "--exclude-standard"), cwd)
+        diff = self.git_runner(("git", "diff", "--no-ext-diff", "HEAD", "--"), cwd)
+        if any(result.returncode != 0 for result in (tracked, untracked, diff)):
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
                 "cannot inspect Claude Code git changes",
@@ -478,9 +446,7 @@ def render_worker_prompt(request: WorkerRequest) -> str:
     if request.repository:
         sections.append("Repository context:\n" + request.repository)
     if request.skills:
-        sections.append(
-            "Selected skills/policy:\n" + "\n\n".join(request.skills)
-        )
+        sections.append("Selected skills/policy:\n" + "\n\n".join(request.skills))
     sections.append(
         "Rules:\n"
         "- Work only inside the supplied working directory.\n"
@@ -507,22 +473,12 @@ def usage_from_payload(payload: Mapping[str, Any]) -> Usage:
     return Usage(
         input_tokens=count(usage.get("input_tokens")),
         output_tokens=count(usage.get("output_tokens")),
-        reference=(
-            reference
-            if isinstance(reference, str) and reference
-            else None
-        ),
+        reference=(reference if isinstance(reference, str) and reference else None),
     )
 
 
 def count(value: object) -> int | None:
-    return (
-        value
-        if isinstance(value, int)
-        and not isinstance(value, bool)
-        and value >= 0
-        else None
-    )
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def first_line(text: str) -> str:
