@@ -71,6 +71,8 @@ routing:
 
 `workers.max_concurrency` is a ceiling, not a target: the orchestrator should launch only as many independent workers as useful, up to the configured limit. V1 accepts 1–16 workers, defaults to 3, and recommends 2–4 for normal local use.
 
+Relative `skills.paths` entries resolve against the repository root (the working directory outside a repository); `~` expands to the home directory. A configured path that does not exist is an error. `skills.context_budget_tokens` budgets skill text only, not the worker's whole context window.
+
 `review.max_rounds`, `workers.max_concurrency`, and `skills.context_budget_tokens` are initial values. Built-in skills and routing ship with the CLI; user/project config overrides them without modifying built-in files.
 
 ## Credentials

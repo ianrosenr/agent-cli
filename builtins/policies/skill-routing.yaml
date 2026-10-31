@@ -1,12 +1,38 @@
-version: 2
+# Machine-readable skill-routing policy. Parsed and validated by agent_cli.skills.policy;
+# never injected into worker prompts. See docs/SKILL_ROUTING.md.
+version: 3
 
-selection_inputs:
-  - role
-  - task
-  - approved_spec
-  - affected_repository_surfaces
+# Allow rerouting when a worker discovers work in an uncovered policy domain.
+# Adding a skill never expands the worker's role authority.
+dynamic_escalation: true
 
-# Roles define authority. These are only the baseline skills needed for each role.
+# The normalized signal vocabulary: the only signal IDs a classifier may emit or repository facts
+# may derive. Signals describe what the work involves; they are NOT prompt keywords or skill names.
+signals: [
+    acceptance_criteria, agent_instruction_change, ambiguity, artifact_review, async_work,
+    auth_change, authentication, authorization, backfill, background_job, behavior_change,
+    benchmark, benchmark_research, bugfix, capability_added, capability_changed,
+    capability_removed, ci_cd, cli_interface, code_review, component_boundary, concurrency,
+    concurrency_architecture, concurrency_change, context_policy, credential, critical_outcome,
+    cryptography, data_architecture, database, database_query, dependency, dependency_change,
+    deployment, deployment_topology, deserialization, directory_reorganization,
+    distributed_operation, documentation_change, environment_config, environment_setup,
+    error_handling, evaluation_change, event_schema, external_event, external_input,
+    external_research, external_service, failure_path, feature_flag, filesystem, future_work,
+    golden_dataset_change, health_check, http_api, index, interface_change,
+    irreversible_decision, latency, latency_budget, lockfile, long_running_operation, mcp,
+    migration, model_selection_policy_change, multi_subsystem_feature, network, network_call,
+    new_package, new_service, new_skill, new_subsystem, package_management,
+    performance_requirement, persistence, persistence_change, privilege, public_config,
+    public_interface, public_protocol, queue, release, request_path, requirement_change,
+    resource_optimization, resource_pool, retry, rollout, routing_policy_change,
+    runtime_version, schema, sdk, secret, serialization, shell_execution, skill_change,
+    skill_metadata, skill_structure, spec_review, specification, state_transition,
+    system_prompt_change, technical_research, technology_evaluation, throughput,
+    throughput_target, timeout, tool_contract_change, transaction, trust_boundary
+]
+
+# Roles define authority. These are the required baseline skills for each role.
 # No skill is global to every worker.
 role_defaults:
   orchestrator: []
@@ -20,24 +46,30 @@ role_defaults:
   skill_author: [creating-a-new-skill]
   skill_evaluator: [skill-evaluation]
 
-# Persist routing decisions so skill selection can be inspected, debugged, and evaluated.
-audit:
-  # Record the final set of skills supplied to each worker.
-  record_selected_skills: true
-  # Record why each skill beyond the role default was selected.
-  record_selection_reasons: true
-  # Record skills requested after work begins and why they were added.
-  record_escalations: true
+# Deterministic signals derived from V1-05 RepositoryFacts, without a model.
+# `categories` match path categories; `facts` match repository signal facts (from imports).
+# Strong evidence outranks classifier signals when the context budget forces a choice; weak
+# evidence ranks below them.
+repository_signals:
+  categories:
+    migration: {signals: [migration, schema], strength: strong}
+    ci: {signals: [ci_cd], strength: strong}
+    deployment: {signals: [deployment], strength: strong}
+    dependency_manifest: {signals: [dependency_change], strength: strong}
+    documentation: {signals: [documentation_change], strength: weak}
+  facts:
+    http_api: {signals: [http_api, request_path], strength: strong}
+    migration: {signals: [migration], strength: strong}
+    authentication: {signals: [authentication], strength: strong}
+    database: {signals: [database], strength: weak}
+    cache_store: {signals: [external_service], strength: weak}
+    http_client: {signals: [network_call], strength: weak}
+    retries: {signals: [retry], strength: weak}
+    process_execution: {signals: [shell_execution], strength: weak}
+    concurrency: {signals: [concurrency], strength: weak}
 
-# Allow workers to request missing policy when newly discovered work crosses a skill domain.
-# Adding a skill never expands the worker's role authority.
-dynamic_escalation: true
-
-# Signals are normalized semantic tags derived from the selection inputs above.
-# They describe what the work involves; they are NOT literal prompt keywords.
-# A non-default skill becomes eligible when at least one of its signals is detected.
-# Detected signals are recorded as selection reasons for auditability.
-# Signal matching never changes role authority; it only adds relevant policy context.
+# A non-default skill becomes eligible when at least one of its signals is detected. The order of
+# this mapping is the tie-breaker when two matches have the same evidence strength.
 skills:
   specification:
     signals: [specification, requirement_change, acceptance_criteria, ambiguity]

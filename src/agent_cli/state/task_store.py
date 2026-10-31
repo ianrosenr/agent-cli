@@ -16,7 +16,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import fields
+from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -38,7 +38,10 @@ from agent_cli.state.models import (
     RequirementSource,
     Review,
     ReviewKind,
+    RoutedSignal,
+    RoutedSkill,
     Session,
+    SkillRouting,
     SpecVersion,
     Task,
     TaskStatus,
@@ -751,6 +754,111 @@ class TaskStore:
         rows = self._read("SELECT * FROM artifacts WHERE task_id = ? ORDER BY rowid", task_id)
         return [to_artifact(row) for row in rows]
 
+    # -- Skill routing -------------------------------------------------------------------------
+
+    def record_skill_routing(self, routing: SkillRouting) -> SkillRouting:
+        """Append one routing decision; see ``record_skill_routings``."""
+        return self.record_skill_routings([routing])[0]
+
+    def record_skill_routings(self, routings: Sequence[SkillRouting]) -> list[SkillRouting]:
+        """Append routing decisions in one transaction: all are recorded, or none are.
+
+        The store assigns ``id`` and ``created_at``. Routing never changes a task's role: a
+        decision for a role other than the task's assigned role, or the role it was first routed
+        as, is refused. An escalation must link to an earlier decision for the same task; an
+        initial decision must not link to one.
+        """
+        stamped = [
+            replace(routing, id=new_id("routing"), created_at=self._clock()) for routing in routings
+        ]
+        with self._write() as db:
+            for routing in stamped:
+                session_id = self._session_of(db, routing.task_id)
+                self._check_routing(db, routing)
+                db.execute(
+                    "INSERT INTO skill_routings (id, task_id, kind, role, policy_version, "
+                    "classifier, classifier_mode, classifier_input_version, estimator, "
+                    "budget_tokens, total_tokens, signals, selected, dropped, rejected_signals, "
+                    "reason, previous_id, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        routing.id,
+                        routing.task_id,
+                        routing.kind,
+                        routing.role,
+                        routing.policy_version,
+                        routing.classifier,
+                        routing.classifier_mode,
+                        routing.classifier_input_version,
+                        routing.estimator,
+                        routing.budget_tokens,
+                        routing.total_tokens,
+                        json.dumps([asdict(item) for item in routing.signals]),
+                        json.dumps([asdict(item) for item in routing.selected]),
+                        json.dumps([asdict(item) for item in routing.dropped]),
+                        json.dumps(list(routing.rejected_signals)),
+                        routing.reason,
+                        routing.previous_id,
+                        routing.created_at,
+                    ),
+                )
+                self._event(
+                    db,
+                    session_id,
+                    routing.task_id,
+                    "skills_routed",
+                    routing.id,
+                    kind=routing.kind,
+                    skills=",".join(item.name for item in routing.selected),
+                )
+        return stamped
+
+    @staticmethod
+    def _check_routing(db: sqlite3.Connection, routing: SkillRouting) -> None:
+        task = routing.task_id
+        assigned = db.execute("SELECT role FROM tasks WHERE id = ?", (task,)).fetchone()[0]
+        first = db.execute(
+            "SELECT role FROM skill_routings WHERE task_id = ? ORDER BY rowid LIMIT 1", (task,)
+        ).fetchone()
+        for role in (assigned, None if first is None else first[0]):
+            if role is not None and role != routing.role:
+                raise TaskStateError(
+                    f"task {task} has role {role}; cannot route it as {routing.role}"
+                )
+        if (routing.kind == "escalation") != (routing.previous_id is not None):
+            raise TaskStateError(
+                "an escalation must link to the decision it extends, and only an escalation may"
+            )
+        if routing.previous_id is not None:
+            previous = db.execute(
+                "SELECT task_id FROM skill_routings WHERE id = ?", (routing.previous_id,)
+            ).fetchone()
+            if previous is None or previous[0] != task:
+                raise TaskStateError(f"routing {routing.previous_id} is not a decision for {task}")
+
+    def skill_routings(self, task_id: str) -> list[SkillRouting]:
+        """Every routing decision for the task, oldest first."""
+        rows = self._read("SELECT * FROM skill_routings WHERE task_id = ? ORDER BY rowid", task_id)
+        return [to_skill_routing(row) for row in rows]
+
+    def latest_skill_routing(self, task_id: str) -> SkillRouting | None:
+        rows = self._read(
+            "SELECT * FROM skill_routings WHERE task_id = ? ORDER BY rowid DESC LIMIT 1", task_id
+        )
+        return to_skill_routing(rows[0]) if rows else None
+
+    def latest_skill_routings(self, session_id: str) -> dict[str, SkillRouting]:
+        """Each routed task's latest decision in the session, in task creation order."""
+        rows = self._read(
+            "SELECT skill_routings.* FROM skill_routings "
+            "JOIN tasks ON tasks.id = skill_routings.task_id "
+            "WHERE tasks.session_id = ? AND skill_routings.rowid IN "
+            "(SELECT MAX(rowid) FROM skill_routings GROUP BY task_id) "
+            "ORDER BY tasks.rowid",
+            session_id,
+        )
+        return {row["task_id"]: to_skill_routing(row) for row in rows}
+
     # -- Events --------------------------------------------------------------------------------
 
     def events(self, session_id: str, task_id: str | None = None) -> list[Event]:
@@ -866,3 +974,21 @@ def to_artifact(row: sqlite3.Row) -> Artifact:
 
 def to_event(row: sqlite3.Row) -> Event:
     return record(Event, row, detail=json.loads(row["detail"]))
+
+
+def to_skill_routing(row: sqlite3.Row) -> SkillRouting:
+    def skills(column: str) -> tuple[RoutedSkill, ...]:
+        return tuple(RoutedSkill(**item) for item in json.loads(row[column]))
+
+    signals = tuple(
+        RoutedSignal(**{**item, "evidence": tuple(item["evidence"])})
+        for item in json.loads(row["signals"])
+    )
+    return record(
+        SkillRouting,
+        row,
+        signals=signals,
+        selected=skills("selected"),
+        dropped=skills("dropped"),
+        rejected_signals=tuple(json.loads(row["rejected_signals"])),
+    )

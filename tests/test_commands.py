@@ -14,6 +14,8 @@ from agent_cli.commands import (
 )
 from agent_cli.commands.builtin import help_command
 from agent_cli.commands.registry import parse_command
+from agent_cli.config import ConfigPaths, ConfigService, Layer
+from agent_cli.skills import Discovery, RoutingRequest, SkillRouter
 from agent_cli.state import TaskStatus, TaskStore
 
 REQUIRED_COMMANDS = {
@@ -95,7 +97,7 @@ def test_dispatch_calls_handler_with_args() -> None:
     assert calls == ["hello world"]
 
 
-IMPLEMENTED_COMMANDS = {"help", "exit", "startup", "providers", "status"}
+IMPLEMENTED_COMMANDS = {"help", "exit", "startup", "providers", "status", "skills"}
 
 
 @pytest.mark.parametrize("name", sorted(REQUIRED_COMMANDS - IMPLEMENTED_COMMANDS))
@@ -168,6 +170,73 @@ def test_status_reports_unreadable_task_state(context: CommandContext, tmp_path:
     output = broken.registry.dispatch("/status", broken)
     assert output.startswith("Cannot read task state:")
     assert path.read_bytes() == b"garbage" * 100
+
+
+def test_skills_lists_the_catalog_without_task_state(context: CommandContext) -> None:
+    lines = context.registry.dispatch("/skills", context).splitlines()
+    assert lines[0].startswith("Skills: ")
+    assert "budget 8000 tokens" in lines[0] and "estimator utf8-bytes-div3@1" in lines[0]
+    assert lines[2].split() == ["Skill", "Source", "Version", "Activation", "Tokens"]
+    row = next(line for line in lines if line.split()[:1] == ["security"])
+    assert row.split()[1:4] == ["builtin", "1.0.0", "auto"]
+    assert "Routing:" not in lines
+    assert not any("trust boundar" in line.lower() for line in lines[3:])  # no skill bodies
+
+
+def test_skills_shows_effective_source_activation_and_routing(
+    context: CommandContext, paths: ConfigPaths, tmp_path: Path
+) -> None:
+    config = ConfigService(paths)
+    config.save(Layer.PROJECT, {"skills": {"activation": {"data": "explicit"}}})
+    assert paths.project_root is not None
+    override = paths.project_root / ".agent-cli" / "skills" / "testing" / "SKILL.md"
+    override.parent.mkdir(parents=True)
+    override.write_text("---\nname: testing\ndescription: Ours.\nversion: 3.1.0\n---\nBody\n")
+    store = TaskStore(tmp_path / "tasks.sqlite")
+    session = store.start_session()
+    task = store.create_task(session.id, "Add refresh endpoint", role="implementer")
+    router = SkillRouter.from_config(config, store=store)
+    first = router.route([RoutingRequest(task.id, "implementer", requested=("research",))])[0]
+    router.escalate(
+        first,
+        RoutingRequest(task.id, "implementer", requested=("research",)),
+        Discovery("Touches the session table.", signals=("schema",)),
+    )
+
+    with_state = replace(context, config=config, tasks=TaskStore(store.path))
+    lines = with_state.registry.dispatch("/skills", with_state).splitlines()
+    assert next(line for line in lines if line.split()[:1] == ["testing"]).split()[1:4] == [
+        "project",
+        "3.1.0",
+        "auto",
+    ]
+    assert next(line for line in lines if line.split()[:1] == ["data"]).split()[3] == "explicit"
+    routing = lines[lines.index("Routing:") + 1 :]
+    assert routing[0].startswith(f"  Add refresh endpoint ({task.id}) · role: implementer")
+    assert " · escalation · " in routing[0] and "no classifier" in routing[0]
+    assert routing[1] == "    escalated: Touches the session table."
+    assert "    + software-engineering — role default for implementer" in routing
+    assert "    + research — explicitly requested" in routing
+    assert "    - data — activation: explicit" in routing
+    assert routing[-1] == "    signals — escalation: schema"
+
+
+def test_skills_warns_about_unknown_activation_names(
+    context: CommandContext, paths: ConfigPaths
+) -> None:
+    config = ConfigService(paths)
+    config.save(Layer.PROJECT, {"skills": {"activation": {"securty": "always"}}})
+    with_config = replace(context, config=config)
+    output = with_config.registry.dispatch("/skills", with_config)
+    assert "Ignored skills.activation entries (no such skill): securty" in output
+
+
+def test_skills_reports_invalid_skill_packages(context: CommandContext, tmp_path: Path) -> None:
+    bad = Path.home() / ".agent-cli" / "skills" / "bad" / "SKILL.md"
+    bad.parent.mkdir(parents=True)
+    bad.write_text("no front matter")
+    output = context.registry.dispatch("/skills", context)
+    assert output.startswith("Cannot load skills:") and "missing metadata" in output
 
 
 def test_exit_command_signals_shell_exit(context: CommandContext) -> None:

@@ -88,6 +88,10 @@ Configuration may set a skill to:
 
 `always` is a user-configurable override, not a built-in assumption.
 
+Activation comes from the layered `skills.activation` config. `explicit` gates only signal routing: a role's required defaults still load. Disabling a role's required default is an error rather than a silent weakening of that role's policy.
+
+`/skills` shows the effective catalog (source, version, activation, estimated tokens) and, when task state exists, each task's latest selection with reasons, dropped skills, and signals. It never prints skill bodies.
+
 ## Audit
 
 Routing records:

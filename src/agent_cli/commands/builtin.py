@@ -1,8 +1,8 @@
 """Built-in slash commands.
 
-Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, and ``/status``, these are
-placeholders that establish the user-facing shell contract. Each names the roadmap issue that will
-implement it (see docs/BUILD_GUIDE.md, Build Order).
+Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, and ``/skills``, these
+are placeholders that establish the user-facing shell contract. Each names the roadmap issue that
+will implement it (see docs/BUILD_GUIDE.md, Build Order).
 """
 
 from __future__ import annotations
@@ -93,6 +93,13 @@ def status_command(context: CommandContext, args: str) -> str:
         return f"Cannot read task state: {error}"
 
 
+def skills_command(context: CommandContext, args: str) -> str:
+    # Imported on use: skill routing (and the repository layer it reads) stays out of startup.
+    from agent_cli.skills import skills_lines
+
+    return "\n".join(skills_lines(context.config, context.tasks))
+
+
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
     """A placeholder command for a capability that a later roadmap issue implements."""
 
@@ -110,7 +117,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
         "providers", "Show configured and detected harnesses and providers.", providers_command
     ),
     Command("status", "Show current task state.", status_command),
-    planned("skills", "Show available skills and routing.", "skill discovery and routing", "V1-06"),
+    Command("skills", "Show available skills and routing.", skills_command),
     planned(
         "models", "Show the model registry and role thresholds.", "the model registry", "V1-07"
     ),
