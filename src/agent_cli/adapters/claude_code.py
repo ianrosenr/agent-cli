@@ -404,9 +404,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
     def git_changes(self, cwd: Path) -> Changes:
         try:
             tracked = self.git_runner(("git", "diff", "HEAD", "--name-only", "--"), cwd)
-            untracked = self.git_runner(
-                ("git", "ls-files", "--others", "--exclude-standard"), cwd
-            )
+            untracked = self.git_runner(("git", "ls-files", "--others", "--exclude-standard"), cwd)
             diff = self.git_runner(("git", "diff", "--no-ext-diff", "HEAD", "--"), cwd)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise AdapterError(
