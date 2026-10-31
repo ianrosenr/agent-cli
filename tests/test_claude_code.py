@@ -170,12 +170,7 @@ def adapter(
         commands or FakeCommands(),
         launcher or FakeLauncher(),
         git or FakeGit(),
-        {
-            "PATH": "/usr/bin",
-            "ANTHROPIC_API_KEY": "must-not-reach-child",
-            "ANTHROPIC_BASE_URL": "https://example.invalid",
-            "CLAUDE_CODE_USE_BEDROCK": "1",
-        },
+        {"PATH": "/usr/bin"},
     )
 
 
@@ -184,7 +179,7 @@ def test_missing_executable_is_not_detected() -> None:
     assert readiness.state is ReadinessState.NOT_DETECTED
 
 
-def test_subscription_login_is_ready_and_billing_overrides_are_scrubbed() -> None:
+def test_subscription_login_is_ready() -> None:
     commands = FakeCommands()
     harness = adapter(commands=commands)
 
@@ -194,8 +189,24 @@ def test_subscription_login_is_ready_and_billing_overrides_are_scrubbed() -> Non
     assert "subscription auth (Max)" in readiness.reason
     assert harness.identity().version == "2.1.307 (Claude Code)"
     assert len(commands.calls) == 2
-    for _, env, _ in commands.calls:
-        assert BILLING_OVERRIDE_ENV.isdisjoint(env)
+
+
+@pytest.mark.parametrize("name", sorted(BILLING_OVERRIDE_ENV))
+def test_billing_override_fails_closed_before_running_claude(name: str) -> None:
+    commands = FakeCommands()
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(),
+        commands,
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin", name: "configured"},
+    )
+
+    readiness = harness.readiness()
+
+    assert readiness.state is ReadinessState.MISCONFIGURED
+    assert f"unset {name}" in readiness.reason
+    assert commands.calls == []
 
 
 @pytest.mark.parametrize(
@@ -241,8 +252,8 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
         "claude-sonnet-5-5",
     )
     permission_index = call["argv"].index("--permission-mode")
-    assert call["argv"][permission_index + 1] == "auto"
-    assert BILLING_OVERRIDE_ENV.isdisjoint(call["env"])
+    assert call["argv"][permission_index + 1] == "acceptEdits"
+    assert call["env"] == {"PATH": "/usr/bin"}
 
     assert harness.status(handle) is WorkerStatus.COMPLETED
     result = harness.result(handle)
