@@ -1,7 +1,7 @@
 """Claude Code harness adapter using the user's existing Claude subscription login.
 
 The adapter launches the installed Claude Code CLI in bounded headless mode. It never copies
-Claude credentials and fails closed when API/cloud billing overrides are present, so this
+Claude credentials and isolates API/cloud billing overrides from its child processes, so this
 subscription route cannot silently become pay-as-you-go usage.
 """
 
@@ -45,7 +45,7 @@ INTERRUPT_TIMEOUT_S = 2.0
 MAX_TURNS = 25
 
 # Claude Code gives environment-based provider credentials precedence over a saved claude.ai
-# login. This subscription-only harness refuses to run while one is configured.
+# login. This subscription-only harness removes them from its child environment.
 BILLING_OVERRIDE_ENV = frozenset(
     {
         "ANTHROPIC_API_KEY",
