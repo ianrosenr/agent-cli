@@ -103,6 +103,7 @@ def test_model_provider_and_harness_are_separate_selections() -> None:
 def test_capability_set_is_exactly_the_contract() -> None:
     assert {c.value for c in Capability} == {
         "start_worker",
+        "login",
         "follow_up",
         "interrupt",
         "model_selection",
@@ -515,7 +516,7 @@ def test_runtime_readiness_is_not_configuration() -> None:
 
 
 def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigService) -> None:
-    answers = iter(ENTER_THROUGH)
+    answers = iter([*ENTER_THROUGH, "n"])
     output, write_line = recorder()
     context = CommandContext(
         registry=build_registry(),
@@ -530,7 +531,9 @@ def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigSer
     assert ["alpha (Alpha 2.1)", "Ready"] in rows
     assert ["beta", "Sign-in required (run beta login)"] in rows
     saved = yaml.safe_load(service.paths.global_file.read_text())
-    assert "harnesses" not in saved
+    assert set(saved["harnesses"]) == {"claude-code", "codex-cli"}
+    assert "alpha" not in saved["harnesses"]
+    assert "beta" not in saved["harnesses"]
     assert "providers" not in saved
 
 

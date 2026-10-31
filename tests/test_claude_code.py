@@ -186,7 +186,7 @@ def test_subscription_login_is_ready() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(BILLING_OVERRIDE_ENV))
-def test_billing_override_fails_closed_before_running_claude(name: str) -> None:
+def test_billing_overrides_are_isolated_from_claude_subscription(name: str) -> None:
     commands = FakeCommands()
     harness = ClaudeCodeHarnessAdapter(
         HarnessConfig(),
@@ -198,9 +198,44 @@ def test_billing_override_fails_closed_before_running_claude(name: str) -> None:
 
     readiness = harness.readiness()
 
-    assert readiness.state is ReadinessState.MISCONFIGURED
-    assert f"unset {name}" in readiness.reason
-    assert commands.calls == []
+    assert readiness.state is ReadinessState.READY
+    assert commands.calls
+    assert all(name not in env for _, env, _ in commands.calls)
+
+
+def test_login_uses_native_cli_and_rechecks_subscription_auth() -> None:
+    commands = FakeCommands(
+        auth={"loggedIn": False, "authMethod": "none"},
+        auth_returncode=1,
+    )
+    calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
+
+    def interactive(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, dict(env)))
+        commands.auth = {
+            "loggedIn": True,
+            "authMethod": "claude.ai",
+            "subscriptionType": "Max",
+        }
+        commands.auth_returncode = 0
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(),
+        commands,
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin", "ANTHROPIC_API_KEY": "ignored"},
+        interactive,
+    )
+
+    assert harness.readiness().state is ReadinessState.AUTH_REQUIRED
+    after = harness.login()
+
+    assert after.state is ReadinessState.READY
+    assert calls == [(("claude", "auth", "login"), {"PATH": "/usr/bin"})]
 
 
 @pytest.mark.parametrize(

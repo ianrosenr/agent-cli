@@ -80,6 +80,11 @@ class FakeHarnessAdapter(HarnessAdapter):
     def capabilities(self) -> HarnessCapabilities:
         return self.harness_capabilities
 
+    def login(self) -> HarnessReadiness:
+        self.require(Capability.LOGIN)
+        self.harness_readiness = HarnessReadiness(ReadinessState.READY)
+        return self.harness_readiness
+
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.require(Capability.START_WORKER)
         blocked = self.harness_readiness.blocking_error()

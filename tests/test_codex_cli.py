@@ -195,7 +195,7 @@ def test_chatgpt_login_is_ready_and_auth_route_is_forced() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(BILLING_OVERRIDE_ENV))
-def test_billing_override_fails_closed_before_running_codex(name: str) -> None:
+def test_billing_overrides_are_isolated_from_codex_subscription(name: str) -> None:
     commands = FakeCommands()
     harness = CodexCliHarnessAdapter(
         HarnessConfig(),
@@ -207,9 +207,41 @@ def test_billing_override_fails_closed_before_running_codex(name: str) -> None:
 
     readiness = harness.readiness()
 
-    assert readiness.state is ReadinessState.MISCONFIGURED
-    assert f"unset {name}" in readiness.reason
-    assert commands.calls == []
+    assert readiness.state is ReadinessState.READY
+    assert commands.calls
+    assert all(name not in env for _, env, _ in commands.calls)
+
+
+def test_login_uses_native_cli_and_rechecks_chatgpt_auth() -> None:
+    commands = FakeCommands(login_status="Not logged in\n", login_returncode=1)
+    calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
+
+    def interactive(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, dict(env)))
+        commands.login_status = "Logged in using ChatGPT\n"
+        commands.login_returncode = 0
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = CodexCliHarnessAdapter(
+        HarnessConfig(),
+        commands,
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin", "OPENAI_API_KEY": "ignored"},
+        interactive,
+    )
+
+    assert harness.readiness().state is ReadinessState.AUTH_REQUIRED
+    after = harness.login()
+
+    assert after.state is ReadinessState.READY
+    assert len(calls) == 1
+    argv, env = calls[0]
+    assert argv[-1] == "login"
+    assert 'forced_login_method="chatgpt"' in argv
+    assert env == {"PATH": "/usr/bin"}
 
 
 @pytest.mark.parametrize(

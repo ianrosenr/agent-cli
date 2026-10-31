@@ -166,6 +166,28 @@ SETTINGS: tuple[Setting, ...] = (
         example_note="uses your plans first, then local models, and never paid APIs",
     ),
     Setting(
+        "harnesses.claude-code.enabled",
+        "Use Claude Code",
+        "Enable Claude Code as a subscription-backed coding harness. Authentication is owned "
+        "and cached by the Claude CLI.",
+        YES_NO,
+        "y",
+        parse_bool,
+        format_bool,
+        yes_no=True,
+    ),
+    Setting(
+        "harnesses.codex-cli.enabled",
+        "Use Codex CLI",
+        "Enable Codex CLI as a ChatGPT-subscription coding harness. Authentication is owned "
+        "and cached by the Codex CLI.",
+        YES_NO,
+        "y",
+        parse_bool,
+        format_bool,
+        yes_no=True,
+    ),
+    Setting(
         "cost.monthly_limit_usd",
         "Monthly spending limit",
         "The most to spend on paid APIs in a month. Subscription and local use are free.",
@@ -262,18 +284,30 @@ SETTINGS: tuple[Setting, ...] = (
 )
 
 
+HARNESS_DEFAULTS: dict[str, bool] = {
+    "harnesses.claude-code.enabled": True,
+    "harnesses.codex-cli.enabled": True,
+}
+
+
 def lookup(data: Mapping[str, Any], key: str) -> Any:
     value: Any = data
-    for part in key.split("."):
-        value = value[part]
+    try:
+        for part in key.split("."):
+            value = value[part]
+    except (KeyError, TypeError):
+        if key in HARNESS_DEFAULTS:
+            return HARNESS_DEFAULTS[key]
+        raise
     return value
 
 
 def contains(data: Mapping[str, Any], key: str) -> bool:
-    try:
-        lookup(data, key)
-    except (KeyError, TypeError):
-        return False
+    value: Any = data
+    for part in key.split("."):
+        if not isinstance(value, Mapping) or part not in value:
+            return False
+        value = value[part]
     return True
 
 

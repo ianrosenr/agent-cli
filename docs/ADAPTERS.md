@@ -36,24 +36,24 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 `claude-code` (`src/agent_cli/adapters/claude_code.py`) wraps the installed Claude Code CLI and deliberately uses the user's Claude subscription login rather than the Anthropic API.
 
 - **Detection/auth.** Runtime always registers the adapter so `/startup` and `/providers` can detect `claude`. Readiness runs bounded `claude --version` and `claude auth status --json` checks. Runtime auth is never written to Agent CLI config.
-- **Subscription-only.** Readiness fails closed when Anthropic API/cloud billing override variables are set and tells the user which variable to unset. It then accepts Claude account/OAuth auth and rejects API-key or third-party auth, so this path cannot silently become pay-as-you-go.
+- **Subscription-only.** Readiness and workers run with Anthropic API/cloud billing override variables removed from the child environment. Claude account/OAuth auth is accepted and API-key or third-party auth is rejected, so this path cannot silently become pay-as-you-go.
 - **Execution.** Workers use Claude Code print mode with JSON output, no session persistence, a 25-turn cap, and the exact requested model when one is selected. Task/spec/role/skills context goes over stdin, not argv.
 - **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Claude Code's `auto` permission mode; `plan-only` uses `plan`. Checkpoint approval stays in Agent CLI orchestration, so every harness/model follows the same `/startup` implementation policy rather than inventing vendor-specific review settings.
 - **Lifecycle.** Start/status/result/interruption are normalized. Results retain a concise summary, token usage when Claude reports it, and Git changed-file/diff information. Raw stderr is never surfaced because it may contain task context.
 - **Provider pin.** This fixed access path identifies itself as `claude-subscription`. A conflicting provider pin, including the paid `anthropic` API provider, is rejected rather than substituted.
-- **Config.** No config is required for normal detection. `harnesses.claude-code.command` can override the executable path and `enabled: false` disables it.
+- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches `claude auth login` only when needed. Credentials stay owned by Claude Code. `harnesses.claude-code.command` can override the executable path.
 
 ### Codex CLI harness (V1-10.6)
 
 `codex-cli` (`src/agent_cli/adapters/codex_cli.py`) wraps the installed Codex CLI and deliberately uses the user's ChatGPT subscription login rather than OpenAI API credentials.
 
 - **Detection/auth.** Runtime always registers the adapter so `/startup` and `/providers` can detect `codex`. Readiness runs bounded `codex --version` and `codex login status` checks while forcing the built-in OpenAI provider, ChatGPT login method, and default OpenAI inference endpoint. Runtime auth is never written to Agent CLI config.
-- **Subscription-only.** Readiness fails closed when OpenAI/Codex API-key, base-URL, access-token, or workload-identity environment variables are set and tells the user which variable to unset. It requires `Logged in using ChatGPT`, so the route cannot silently become pay-as-you-go.
+- **Subscription-only.** Readiness and workers run with OpenAI/Codex API-key, base-URL, access-token, and workload-identity variables removed from the child environment. It requires `Logged in using ChatGPT`, so the route cannot silently become pay-as-you-go.
 - **Execution.** Workers use `codex exec --json --ephemeral` with `--ask-for-approval never`, the exact selected model, and the supplied cwd/worktree. Task/spec/role/skills context goes over stdin, not argv.
 - **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Codex's `workspace-write` sandbox; `plan-only` uses `read-only`. Checkpoint approval stays in Agent CLI orchestration, shared across every harness.
 - **Lifecycle.** Start/status/result/interruption are normalized. JSONL events provide the final agent message, thread reference, and token usage; Git changed-file/diff information is collected separately. Raw stderr and vendor error details are never surfaced.
 - **Provider pin.** This fixed access path identifies itself as `openai-subscription`. A conflicting provider pin is rejected rather than substituted.
-- **Config.** No config is required for normal detection. `harnesses.codex-cli.command` can override the executable path and `enabled: false` disables it.
+- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches native ChatGPT login only when needed. Credentials stay owned by Codex. `harnesses.codex-cli.command` can override the executable path.
 
 ### Anthropic provider (V1-09.5)
 
