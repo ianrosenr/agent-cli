@@ -617,7 +617,16 @@ def test_answers_can_authorize_pins(store: TaskStore, config: ConfigService) -> 
                 "Which model?",
                 questions=(ProposedQuestion("Which implementer model?", "Cost differs."),),
             ),
-            plan(one_item, pins=(pinned("Use haiku-x for the implementer", "haiku-x", "impl"),)),
+            plan(
+                    one_item,
+                    pins=(
+                        pinned(
+                            "Use haiku-x for the implementer",
+                            "haiku-x",
+                            "implementer",
+                        ),
+                    ),
+                ),
         ]
     )
     orchestrator = service(store, config, planner=planner)
