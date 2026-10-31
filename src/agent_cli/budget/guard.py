@@ -12,7 +12,7 @@ pricing.
 from __future__ import annotations
 
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from agent_cli.adapters import ProviderAdapter, ProviderRequest, ProviderResponse
 from agent_cli.budget.domain import (
@@ -27,7 +27,7 @@ from agent_cli.budget.domain import (
 )
 from agent_cli.budget.ledger import SpendLedger
 from agent_cli.budget.policy import check_estimate
-from agent_cli.budget.pricing import NO_PRICING, CostEstimator, input_bound
+from agent_cli.budget.pricing import NO_PRICING, CostEstimator
 from agent_cli.config import Config
 from agent_cli.state import TaskStateError, TaskStore
 from agent_cli.terms import AccessKind
@@ -81,17 +81,18 @@ class BudgetGuard:
             if self.tasks is None:
                 raise ValueError("task-scoped paid calls need task state to find the root task")
             root = self.tasks.root_task(task_id)
-        return PaidCall(
+        call = PaidCall(
             provider_id=identity.id,
             access=identity.access or PAID_ACCESS,
             model_id=request.model_id,
             purpose=purpose,
-            input_tokens=input_bound(request),
+            input_tokens=None,
             max_output_tokens=request.max_output_tokens,
             root_task_id=root,
             task_id=task_id,
             session_id=session_id,
         )
+        return replace(call, input_tokens=self.estimator.input_bound(call, request))
 
     def invoke(
         self,
