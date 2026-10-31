@@ -441,7 +441,8 @@ def parse_events(text: str) -> tuple[str, Usage] | Failure:
     reference: str | None = None
     input_tokens = 0
     output_tokens = 0
-    saw_usage = False
+    input_known = True
+    output_known = True
     saw_completed = False
 
     for line in text.splitlines():
@@ -466,23 +467,28 @@ def parse_events(text: str) -> tuple[str, Usage] | Failure:
         elif kind == "turn.completed":
             saw_completed = True
             raw_usage = event.get("usage")
-            if isinstance(raw_usage, dict):
-                incoming = count(raw_usage.get("input_tokens"))
-                outgoing = count(raw_usage.get("output_tokens"))
-                if incoming is not None:
-                    input_tokens += incoming
-                    saw_usage = True
-                if outgoing is not None:
-                    output_tokens += outgoing
-                    saw_usage = True
+            if not isinstance(raw_usage, dict):
+                input_known = False
+                output_known = False
+                continue
+            incoming = count(raw_usage.get("input_tokens"))
+            outgoing = count(raw_usage.get("output_tokens"))
+            if incoming is None:
+                input_known = False
+            else:
+                input_tokens += incoming
+            if outgoing is None:
+                output_known = False
+            else:
+                output_tokens += outgoing
 
     if not saw_completed:
         return Failure(ErrorKind.HARNESS_ERROR, "Codex CLI ended without a completed turn")
     return (
         summary,
         Usage(
-            input_tokens=input_tokens if saw_usage else None,
-            output_tokens=output_tokens if saw_usage else None,
+            input_tokens=input_tokens if input_known else None,
+            output_tokens=output_tokens if output_known else None,
             reference=reference,
         ),
     )
