@@ -387,6 +387,9 @@ def test_invoke_sends_exactly_one_standard_messages_request() -> None:
             "messages": [{"role": "user", "content": "plan the cache work"}],
             "system": "you are a planner",
             "max_tokens": 500,
+            "inference_geo": "global",
+            "service_tier": "standard_only",
+            "speed": "standard",
             "timeout": INVOKE_TIMEOUT_S,
         }
     ]
@@ -516,6 +519,7 @@ def test_input_bound_comes_from_the_token_count_api_for_the_exact_request() -> N
             "model": SONNET,
             "messages": [{"role": "user", "content": "plan the cache work"}],
             "system": "you are a planner",
+            "speed": "standard",
             "timeout": 15.0,
         }
     ]

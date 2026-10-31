@@ -2,7 +2,7 @@
 
 V1 supports exactly one request shape: a standard, global, uncached, non-streaming Messages API
 call with a text system prompt and one user text message. Bedrock, Vertex, Foundry, proxies,
-batch, prompt caching, fast mode, regional inference, tools, images, and streaming are out of
+batch, prompt caching, fast mode, US-only inference, tools, images, and streaming are out of
 scope and are never requested.
 
 Every Anthropic SDK exception is translated into ``AdapterError`` here. The SDK's own automatic
@@ -63,9 +63,12 @@ FAILURE_TTL_S = 5.0
 """How long an ``UNAVAILABLE`` result is reused: long enough for one screen, short enough that a
 network blip does not hide the provider for a minute."""
 
-STANDARD_GEOS = frozenset({None, "global", "not_available"})
-STANDARD_TIERS = frozenset({None, "standard"})
-STANDARD_SPEEDS = frozenset({None, "standard"})
+REQUEST_INFERENCE_GEO = "global"
+REQUEST_SERVICE_TIER = "standard_only"
+REQUEST_SPEED = "standard"
+STANDARD_GEOS = frozenset({REQUEST_INFERENCE_GEO})
+STANDARD_TIERS = frozenset({"standard"})
+STANDARD_SPEEDS = frozenset({REQUEST_SPEED})
 
 type AnthropicClient = Any
 """An ``anthropic.Anthropic`` client, or a test double with the same shape. Only
@@ -234,6 +237,9 @@ class AnthropicProviderAdapter(ProviderAdapter):
             message = self.client().messages.create(
                 **message_params(request),
                 max_tokens=request.max_output_tokens,
+                inference_geo=REQUEST_INFERENCE_GEO,
+                service_tier=REQUEST_SERVICE_TIER,
+                speed=REQUEST_SPEED,
                 timeout=INVOKE_TIMEOUT_S,
             )
         return normalize(request, message)
@@ -242,7 +248,7 @@ class AnthropicProviderAdapter(ProviderAdapter):
         """Anthropic's own input-token count for exactly this request. Raises ``AdapterError``."""
         with translated("token count"):
             counted = self.client().messages.count_tokens(
-                **message_params(request), timeout=COUNT_TIMEOUT_S
+                **message_params(request), speed=REQUEST_SPEED, timeout=COUNT_TIMEOUT_S
             )
         tokens = getattr(counted, "input_tokens", None)
         if not is_count(tokens):
@@ -251,7 +257,7 @@ class AnthropicProviderAdapter(ProviderAdapter):
 
 
 def message_params(request: ProviderRequest) -> dict[str, Any]:
-    """The request fields shared by Messages and token counting: no tools, caching, or extras."""
+    """Token-bearing fields shared by Messages and token counting: no tools or caching."""
     params: dict[str, Any] = {
         "model": request.model_id,
         "messages": [{"role": "user", "content": request.prompt}],

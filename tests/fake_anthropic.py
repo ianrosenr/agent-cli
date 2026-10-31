@@ -55,7 +55,7 @@ def message(
             cache_read_input_tokens=0,
             inference_geo="global",
             service_tier="standard",
-            speed=None,
+            speed="standard",
             **usage,
         ),
     )
