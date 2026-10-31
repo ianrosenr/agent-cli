@@ -19,7 +19,7 @@ Reference scenario:
 5. **Shared memory and repository facts.** Persist canonical task state in project-local SQLite plus a reusable, incremental repository fact index for cheap task inspection. Canonical task state is durable; repository indexes/caches are rebuildable. See [MEMORY.md](MEMORY.md) and [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 6. **Skills.** Layered skill selection under a context budget. See [SKILLS.md](SKILLS.md).
 7. **Model registry and role floors.** Capability-scored models; each canonical role has a deterministic minimum score on its primary capability. See [ROUTING.md](ROUTING.md).
-8. **Budget guardrails.** Hard limits enforced in code before each paid call. See [ROUTING.md](ROUTING.md#cost-guardrails).
+8. **Budget guardrails.** Hard paid-API limits enforced through conservative pre-call reservation and durable settlement; opaque paid harnesses require an enforceable bound. See [ROUTING.md](ROUTING.md#cost-guardrails).
 9. **Spec-driven work.** Orchestrator → spec author → spec reviewer → implementer → code reviewer. See [ORCHESTRATION.md](ORCHESTRATION.md).
 10. **Worktree isolation.** Each concurrent implementer works in its own Git worktree.
 11. **Adversarial review.** Reviewers can question spec authors and implementers. Review rounds are capped. See [REVIEW_PIPELINE.md](REVIEW_PIPELINE.md).
@@ -61,11 +61,3 @@ V1 is done when the reference scenario runs end to end (issue V1-15):
 - a mid-task requirement change is handled
 - a simulated rate limit triggers logged fallback
 - the user sees a final diff, and MR creation follows the review policy
-
-## Open decisions
-
-These are deferred to the issue named. Docs that mention them describe intent, not a final choice.
-
-| Decision | Owner issue |
-| --- | --- |
-| Spend accounting source (provider usage vs. local estimate) | V1-08 |
