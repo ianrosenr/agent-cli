@@ -123,7 +123,7 @@ class HarnessLoginService:
         result = section("Login", fields(rows, indent=1))
         return blocks(
             result,
-            warning("Some configured harnesses still need attention.") if failures else success(
-                "All configured harnesses are ready."
-            ),
+            warning("Some configured harnesses still need attention.")
+            if failures
+            else success("All configured harnesses are ready."),
         )
