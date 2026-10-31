@@ -349,6 +349,8 @@ class CodexCliHarnessAdapter(HarnessAdapter):
         return env
 
     def login(self) -> HarnessReadiness:
+        if not self.config.enabled:
+            raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
         try:
             result = self.interactive_runner(self.login_argv(), self.subscription_env())
         except FileNotFoundError:
