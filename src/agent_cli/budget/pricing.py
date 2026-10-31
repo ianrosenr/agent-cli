@@ -60,10 +60,7 @@ class Price:
     request_overhead_tokens: int | None = None
 
     def bound_input(self, request: ProviderRequest) -> int | None:
-        if (
-            self.max_input_tokens_per_utf8_byte is None
-            or self.request_overhead_tokens is None
-        ):
+        if self.max_input_tokens_per_utf8_byte is None or self.request_overhead_tokens is None:
             return None
         return input_bound(
             request,
