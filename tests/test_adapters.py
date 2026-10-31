@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,8 @@ from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigService
 from agent_cli.config.model import HarnessConfig, ProviderConfig
 from agent_cli.guided_setup import SETTINGS
+from agent_cli.ui import plain
+from rendered import recorder
 
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
 VENDORS = {"pi", "codex", "claude", "opencode", "anthropic", "openai"}
@@ -513,18 +516,19 @@ def test_runtime_readiness_is_not_configuration() -> None:
 
 def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigService) -> None:
     answers = iter(ENTER_THROUGH)
-    output: list[str] = []
+    output, write_line = recorder()
     context = CommandContext(
         registry=build_registry(),
         config=service,
         read_line=lambda prompt: next(answers),
-        write_line=output.append,
+        write_line=write_line,
         adapters=status_registry(),
     )
     context.registry.dispatch("/startup", context)
     transcript = "\n".join(output)
-    assert "  alpha (Alpha 2.1): Ready" in transcript
-    assert "  beta: Sign-in required (run beta login)" in transcript
+    rows = [re.split(r"\s{2,}", line.strip()) for line in transcript.splitlines()]
+    assert ["alpha (Alpha 2.1)", "Ready"] in rows
+    assert ["beta", "Sign-in required (run beta login)"] in rows
     saved = yaml.safe_load(service.paths.global_file.read_text())
     assert "harnesses" not in saved
     assert "providers" not in saved
@@ -532,19 +536,21 @@ def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigSer
 
 def test_providers_command_shows_adapter_status(service: ConfigService) -> None:
     context = CommandContext(registry=build_registry(), config=service, adapters=status_registry())
-    output = context.registry.dispatch("/providers", context)
-    assert output.splitlines()[:2] == ["Harnesses:", "  alpha (Alpha 2.1): Ready"]
+    lines = plain(context.registry.dispatch("/providers", context)).splitlines()
+    rows = [re.split(r"\s{2,}", line.strip()) for line in lines]
+    assert rows[:3] == [["Harnesses"], ["Name", "Status"], ["alpha (Alpha 2.1)", "Ready"]]
+    assert ["beta", "Sign-in required (run beta login)"] in rows
 
 
 def test_providers_command_without_adapters_or_config() -> None:
     context = CommandContext(registry=build_registry())
-    assert context.registry.dispatch("/providers", context) == (
-        "Harnesses: none configured or detected\nProviders: none configured or detected"
+    assert plain(context.registry.dispatch("/providers", context)) == (
+        "Harnesses  none configured or detected\n\nProviders  none configured or detected"
     )
 
 
 def test_shell_passes_its_adapters_to_commands() -> None:
-    output: list[str] = []
+    output, write_line = recorder()
     lines = iter(["/providers"])
 
     def scripted(prompt: str) -> str:
@@ -553,8 +559,8 @@ def test_shell_passes_its_adapters_to_commands() -> None:
             raise EOFError
         return line
 
-    cli.run_shell(build_registry(), scripted, output.append, "", adapters=status_registry())
-    assert "  alpha (Alpha 2.1): Ready" in output[1]
+    cli.run_shell(build_registry(), scripted, write_line, "", adapters=status_registry())
+    assert "  alpha (Alpha 2.1)  Ready" in output[1]
 
 
 def test_default_adapters_registers_no_real_adapters_yet() -> None:

@@ -51,7 +51,7 @@ from agent_cli.models.eligibility import (
 )
 from agent_cli.models.provider_classifier import ProviderSignalClassifier
 from agent_cli.models.registry import load_registry, parse_registry
-from agent_cli.models.status import models_lines
+from agent_cli.models.status import models_view
 
 __all__ = [
     "CLASSIFIER_MINIMUM",
@@ -83,7 +83,7 @@ __all__ = [
     "choose_path",
     "eligible_models",
     "load_registry",
-    "models_lines",
+    "models_view",
     "parse_registry",
     "pinned_paths",
     "ranked_model_candidates",

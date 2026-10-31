@@ -44,7 +44,7 @@ from agent_cli.budget.routing import (
     quote_path,
     rank_quotes,
 )
-from agent_cli.budget.status import budget_lines
+from agent_cli.budget.status import budget_view
 
 __all__ = [
     "MICROS_PER_USD",
@@ -73,8 +73,8 @@ __all__ = [
     "SpendUsage",
     "Totals",
     "budget_candidates",
-    "budget_lines",
     "budget_pinned",
+    "budget_view",
     "check_estimate",
     "check_limits",
     "format_usd",

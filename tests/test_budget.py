@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 from collections.abc import Sequence
@@ -41,8 +42,8 @@ from agent_cli.budget import (
     SpendUsage,
     Totals,
     budget_candidates,
-    budget_lines,
     budget_pinned,
+    budget_view,
     check_limits,
     format_usd,
     input_bound,
@@ -69,6 +70,7 @@ from agent_cli.skills import ClassificationInput, ClassifierMode, load_policy
 from agent_cli.skills.classifier import classify
 from agent_cli.state import TaskStateError, TaskStatus, TaskStore
 from agent_cli.terms import AccessKind
+from agent_cli.ui import plain
 from test_models import model, registry
 
 # Fixture prices: deterministic test data, not real provider pricing.
@@ -86,6 +88,19 @@ PRICES = PriceTable.of(
         ("pricey", "best", Price(200 * USD, 200 * USD, 1, 256)),
     ],
 )
+
+
+def budget_lines(
+    config: ConfigService | None, tasks: TaskStore | None, ledger: SpendLedger
+) -> list[str]:
+    """``/budget`` as rendered plain-text lines."""
+    return plain(budget_view(config, tasks, ledger)).splitlines()
+
+
+def row(lines: list[str], label: str) -> list[str]:
+    """The cells of the budget table row labelled ``label``."""
+    line = next(line for line in lines if line.strip().startswith(label))
+    return re.split(r"\s{2,}", line.strip())
 
 
 @dataclass
@@ -767,7 +782,7 @@ def test_budget_shows_the_root_task_ceiling(ledger: SpendLedger, tasks: TaskStor
 
     lines = budget_lines(None, tasks, ledger)
 
-    assert f"Task {root.id}: spent $0.00 · reserved $0.10 · limit $0.25 · remaining $0.15" in lines
+    assert row(lines, f"Task {root.id}") == [f"Task {root.id}", "$0.00", "$0.10", "$0.25", "$0.15"]
 
 
 @pytest.mark.parametrize("access", ["subscription", "local"])
@@ -966,13 +981,12 @@ def test_opaque_paid_harness_needs_an_enforceable_bound() -> None:
 def test_budget_shows_defaults_with_no_spend(ledger: SpendLedger) -> None:
     lines = budget_lines(None, None, ledger)
 
-    assert lines[:4] == [
-        "Paid API budget",
-        "Month (UTC): spent $0.00 · reserved $0.00 · limit $20.00 · remaining $20.00",
-        "Day (UTC):   spent $0.00 · reserved $0.00 · limit none",
-        "Per call:    limit $0.30",
-    ]
-    assert "Active reservations: 0" in lines
+    assert lines[0] == "Paid API budget"
+    assert row(lines, "Month (UTC)") == ["Month (UTC)", "$0.00", "$0.00", "$20.00", "$20.00"]
+    assert row(lines, "Day (UTC)") == ["Day (UTC)", "$0.00", "$0.00", "none", "—"]
+    assert row(lines, "Per task") == ["Per task", "—", "—", "$1.00", "no active task"]
+    assert row(lines, "Per call") == ["Per call", "—", "—", "$0.30"]
+    assert row(lines, "Active reservations") == ["Active reservations", "0"]
     assert not ledger.path.exists()
 
 
@@ -989,12 +1003,10 @@ def test_budget_shows_spent_reserved_and_headroom(
 
     lines = budget_lines(service, None, ledger)
 
-    assert lines[1] == (
-        "Month (UTC): spent $0.25 · reserved $0.15 · limit $20.00 · remaining $19.60"
-    )
-    assert lines[2] == "Day (UTC):   spent $0.25 · reserved $0.15 · limit $1.00 · remaining $0.60"
-    assert "Active reservations: 2" in lines
-    assert any(line.startswith("Unresolved dispatched calls: 1") for line in lines)
+    assert row(lines, "Month (UTC)") == ["Month (UTC)", "$0.25", "$0.15", "$20.00", "$19.60"]
+    assert row(lines, "Day (UTC)") == ["Day (UTC)", "$0.25", "$0.15", "$1.00", "$0.60"]
+    assert row(lines, "Active reservations") == ["Active reservations", "2"]
+    assert any(line.startswith("Warning  Unresolved dispatched calls: 1.") for line in lines)
 
 
 def test_budget_shows_the_active_root_task(ledger: SpendLedger, tasks: TaskStore) -> None:
@@ -1006,7 +1018,7 @@ def test_budget_shows_the_active_root_task(ledger: SpendLedger, tasks: TaskStore
 
     lines = budget_lines(None, tasks, ledger)
 
-    assert f"Task {root.id}: spent $0.00 · reserved $0.40 · limit $1.00 · remaining $0.60" in lines
+    assert row(lines, f"Task {root.id}") == [f"Task {root.id}", "$0.00", "$0.40", "$1.00", "$0.60"]
 
 
 def test_budget_reports_an_unusable_ledger(ledger: SpendLedger) -> None:
@@ -1015,11 +1027,12 @@ def test_budget_reports_an_unusable_ledger(ledger: SpendLedger) -> None:
 
     lines = budget_lines(None, None, ledger)
 
-    assert lines[0].startswith("Cannot read spend ledger:")
-    assert lines[1] == "No paid API calls will be admitted."
+    assert lines[0] == "Error  Cannot read spend ledger."
+    assert lines[-1].strip() == "No paid API calls will be admitted."
 
 
 def test_budget_command_is_implemented(paths: ConfigPaths) -> None:
     context = CommandContext(registry=build_registry(), config=ConfigService(paths))
-    output = context.registry.dispatch("/budget", context)
-    assert output.startswith("Paid API budget\nMonth (UTC):")
+    output = plain(context.registry.dispatch("/budget", context))
+    assert output.startswith("Paid API budget\n\n  Scope")
+    assert "Month (UTC)" in output

@@ -35,7 +35,7 @@ def test_for_repository_uses_the_project_state_directory(tmp_path: Path) -> None
 
 def test_checking_for_state_does_not_create_the_database(store: TaskStore) -> None:
     assert not store.exists()
-    assert status_lines(store) == ["No active task."]
+    assert [line.plain for line in status_lines(store)] == ["No active task."]
     assert not store.path.exists()
 
 

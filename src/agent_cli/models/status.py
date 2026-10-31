@@ -5,9 +5,11 @@ Shows scores and categories only; evidence prose stays in the registry file.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import fields
 from pathlib import Path
+
+from rich.console import Group, RenderableType
+from rich.text import Text
 
 from agent_cli.adapters import AdapterRegistry
 from agent_cli.config import Config, ConfigError, ConfigService
@@ -21,8 +23,8 @@ from agent_cli.models.classifier_selection import (
 from agent_cli.models.domain import ModelCapability, ModelRegistry, RegistryError
 from agent_cli.models.eligibility import requirement
 from agent_cli.models.registry import load_registry
+from agent_cli.ui import blocks, error, indented, muted, section, table, warning
 
-INDENT = "  "
 SCORE_HEADERS = {
     ModelCapability.REASONING: "Reas",
     ModelCapability.CODING: "Code",
@@ -33,6 +35,7 @@ SCORE_HEADERS = {
     ModelCapability.SECURITY_REASONING: "Sec",
 }
 MODEL_HEADERS = ("Model", "Name", "Status", *SCORE_HEADERS.values(), "Latency", "Cost", "Conf")
+STATUS_STYLES = {"active": "success"}
 FLOOR_HEADERS = ("Role", "Capability", "Floor")
 EMPTY_REGISTRY = (
     "No scored models yet. Automatic routing has nothing to choose from;",
@@ -40,47 +43,51 @@ EMPTY_REGISTRY = (
 )
 
 
-def models_lines(
+def models_view(
     config: ConfigService | None,
     adapters: AdapterRegistry | None,
     registry_path: Path | None = None,
-) -> list[str]:
+) -> RenderableType:
     try:
         settings = Config() if config is None else config.resolve()
-    except ConfigError as error:
-        return [f"Cannot read configuration: {error}"]
+    except ConfigError as problem:
+        return error("Cannot read configuration.", str(problem))
     try:
         registry = load_registry(registry_path)
-    except RegistryError as error:
-        return [f"Cannot load model registry: {error}"]
+    except RegistryError as problem:
+        return error("Cannot load model registry.", str(problem))
     runtime = runtime_paths(adapters or AdapterRegistry(), settings)
     choice = select_classifier(
         settings.routing.classifier, registry, runtime, settings.access.preference
     )
-    return [
-        *registry_lines(registry),
-        *unscored_lines(registry, runtime),
-        "",
-        "Role floors (advanced: routing.role_floors):",
-        *floor_lines(settings.routing.role_floors),
-        "",
-        *classifier_lines(choice, settings, runtime),
-    ]
+    return blocks(
+        registry_view(registry),
+        unscored_view(registry, runtime),
+        section(
+            "Role floors",
+            floor_table(settings.routing.role_floors),
+            note="advanced: routing.role_floors",
+        ),
+        classifier_view(choice, settings, runtime),
+    )
 
 
-def registry_lines(registry: ModelRegistry) -> list[str]:
+def registry_view(registry: ModelRegistry) -> RenderableType:
     active = len(registry.active())
-    header = (
-        f"Model registry v{registry.version}: {len(registry)} models "
-        f"({active} active, {len(registry) - active} candidate)"
+    header = Text.assemble(
+        ("Model registry", "heading"),
+        f" v{registry.version}: {len(registry)} models ",
+        (f"({active} active, {len(registry) - active} candidate)", "muted"),
     )
     if not len(registry):
-        return [header, *(INDENT + line for line in EMPTY_REGISTRY)]
+        return Group(header, indented(muted("\n".join(EMPTY_REGISTRY))))
     rows = [
         (
             entry.id,
             entry.display_name,
-            entry.status.value,
+            Text(
+                entry.status.value, style="success" if entry.status.value == "active" else "muted"
+            ),
             *(str(entry.scores[capability]) for capability in SCORE_HEADERS),
             entry.latency.value,
             entry.cost.value,
@@ -88,63 +95,67 @@ def registry_lines(registry: ModelRegistry) -> list[str]:
         )
         for entry in registry
     ]
-    return [header, "", *table(MODEL_HEADERS, rows)]
+    scores = range(3, 3 + len(SCORE_HEADERS))
+    return Group(header, Text(""), table(MODEL_HEADERS, rows, styles=("model",), right=scores))
 
 
-def unscored_lines(registry: ModelRegistry, runtime: RuntimePaths) -> list[str]:
+def unscored_view(registry: ModelRegistry, runtime: RuntimePaths) -> RenderableType | None:
     """Models providers report that the registry does not know: pinnable, never automatic."""
     unscored = [path for path in runtime.paths if registry.get(path.model_id) is None]
     if not unscored:
-        return []
-    return [
-        "",
-        "Reachable but unscored (used only when you name them):",
-        *(f"{INDENT}{path.model_id} via {path.describe()}" for path in unscored),
-    ]
+        return None
+    models = Group(
+        *(Text.assemble((path.model_id, "model"), f" via {path.describe()}") for path in unscored)
+    )
+    return section("Reachable but unscored", indented(models), note="used only when you name them")
 
 
-def floor_lines(floors: RoleFloors) -> list[str]:
+def floor_table(floors: RoleFloors) -> RenderableType:
     """Every role's effective floor, marking those that differ from the built-in default."""
     defaults = RoleFloors()
     rows = []
     for f in fields(floors):
         need = requirement(f.name, floors)
-        floor = f"{need.floor} (>= {need.minimum})"
+        floor = Text(f"{need.floor} (>= {need.minimum})")
         default = getattr(defaults, f.name)
         if need.floor != default:
-            floor += f" · default {default}"
+            floor.append(f" · default {default}", style="warning")
         rows.append((need.role, need.primary.value, floor))
-    return table(FLOOR_HEADERS, rows)
+    return table(FLOOR_HEADERS, rows, styles=("role",))
 
 
-def classifier_lines(
+def classifier_view(
     choice: ClassifierChoice, settings: Config, runtime: RuntimePaths
-) -> list[str]:
+) -> RenderableType:
     mode = f"Mode: {choice.mode}"
     selected = settings.routing.classifier.selected_model
     if selected and choice.mode == "selected":
         mode += f" · selected model: {selected}"
     if choice.path is not None:
-        return [
-            f"Skill classifier: {choice.model_id} via {choice.path.describe()}",
-            f"{INDENT}{mode}",
-        ]
-    lines = ["Skill classifier: deterministic only", f"{INDENT}{mode}"]
+        return Group(
+            Text.assemble(
+                ("Skill classifier", "heading"),
+                "  ",
+                (choice.model_id or "", "model"),
+                f" via {choice.path.describe()}",
+            ),
+            indented(muted(mode)),
+        )
+    summary: list[RenderableType] = [
+        Text.assemble(("Skill classifier", "heading"), "  deterministic only"),
+        indented(muted(mode)),
+    ]
+    if not choice.recommend_low_cost:
+        summary.append(indented(Text(choice.reason)))
+    parts: list[RenderableType | None] = [Group(*summary)]
     if choice.recommend_low_cost:
-        lines += ["", *LOW_COST_RECOMMENDATION]
-    else:
-        lines.append(f"{INDENT}{choice.reason}")
+        first, *rest = LOW_COST_RECOMMENDATION
+        parts.append(warning(first, *rest))
     if runtime.problems:
-        lines += ["", "Providers without usable models:"]
-        lines += [f"{INDENT}{problem}" for problem in runtime.problems]
-    return lines
-
-
-def table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
-    widths = [max(len(row[i]) for row in [headers, *rows]) for i in range(len(headers))]
-
-    def line(row: Sequence[str]) -> str:
-        cells = [cell.ljust(width) for cell, width in zip(row, widths, strict=True)]
-        return (INDENT + "  ".join(cells)).rstrip()
-
-    return [line(headers), *(line(row) for row in rows)]
+        parts.append(
+            section(
+                "Providers without usable models",
+                indented(Group(*(Text(problem) for problem in runtime.problems))),
+            )
+        )
+    return blocks(*parts)

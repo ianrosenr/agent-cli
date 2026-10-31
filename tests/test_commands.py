@@ -17,6 +17,7 @@ from agent_cli.commands.registry import parse_command
 from agent_cli.config import ConfigPaths, ConfigService, Layer
 from agent_cli.skills import Discovery, RoutingRequest, SkillRouter
 from agent_cli.state import TaskStatus, TaskStore
+from agent_cli.ui import plain
 
 REQUIRED_COMMANDS = {
     "help",
@@ -39,12 +40,17 @@ def context() -> CommandContext:
     return CommandContext(registry=build_registry())
 
 
+def run(context: CommandContext, line: str, width: int = 200) -> str:
+    """Dispatch ``line`` and render the response as plain text."""
+    return plain(context.registry.dispatch(line, context), width)
+
+
 def test_registry_contains_every_required_command() -> None:
     assert {command.name for command in build_registry()} == REQUIRED_COMMANDS
 
 
 def test_help_lists_every_registered_command_and_description(context: CommandContext) -> None:
-    output = context.registry.dispatch("/help", context)
+    output = run(context, "/help")
     for command in context.registry:
         line = next(line for line in output.splitlines() if line.startswith(f"  /{command.name} "))
         assert command.description in line
@@ -53,14 +59,14 @@ def test_help_lists_every_registered_command_and_description(context: CommandCon
 def test_help_explains_how_to_use_the_cli_before_listing_commands(
     context: CommandContext,
 ) -> None:
-    output = context.registry.dispatch("/help", context)
+    output = run(context, "/help")
     assert output.startswith("Agent CLI help")
-    assert output.index("> prompt") < output.index("Commands:")
+    assert output.index("> prompt") < output.index("\nCommands\n")
 
 
 def test_help_separates_working_commands_from_planned_ones(context: CommandContext) -> None:
-    output = context.registry.dispatch("/help", context)
-    available, planned = output.split("Coming in later issues:")
+    output = run(context, "/help")
+    available, planned = output.split("Coming in later issues")
     assert "/help" in available and "/exit" in available
     for command in context.registry:
         if command.planned_in is not None:
@@ -75,12 +81,12 @@ def test_help_omits_planned_section_when_nothing_is_planned() -> None:
     registry = CommandRegistry()
     registry.register(Command("help", "Help.", help_command))
     context = CommandContext(registry=registry)
-    assert "Coming in later issues" not in registry.dispatch("/help", context)
+    assert "Coming in later issues" not in plain(registry.dispatch("/help", context))
 
 
 def test_help_reflects_newly_registered_commands(context: CommandContext) -> None:
     context.registry.register(Command("extra", "An extra command.", lambda ctx, args: ""))
-    assert "/extra" in context.registry.dispatch("/help", context)
+    assert "/extra" in run(context, "/help")
 
 
 def test_dispatch_calls_handler_with_args() -> None:
@@ -116,15 +122,15 @@ IMPLEMENTED_COMMANDS = {
 def test_placeholder_commands_say_not_implemented(context: CommandContext, name: str) -> None:
     command = context.registry.get(name)
     assert command is not None and command.planned_in is not None
-    output = context.registry.dispatch(f"/{name}", context)
+    output = run(context, f"/{name}")
     assert output.startswith("Not implemented yet:")
     assert output.endswith(f"arrives in {command.planned_in}.")
 
 
 @pytest.mark.parametrize("line", ["/nope", "/", "/HELP"])
 def test_unknown_command_is_reported(context: CommandContext, line: str) -> None:
-    output = context.registry.dispatch(line, context)
-    assert output.startswith(f"Unknown command: {line}.")
+    output = run(context, line)
+    assert output.startswith(f"Error  Unknown command: {line}.")
     assert "/help" in output
 
 
@@ -135,17 +141,17 @@ def test_implemented_commands_are_not_placeholders(context: CommandContext, name
 
 
 def test_startup_is_listed_as_available_in_help(context: CommandContext) -> None:
-    available = context.registry.dispatch("/help", context).split("Coming in later issues:")[0]
+    available = run(context, "/help").split("Coming in later issues")[0]
     assert "/startup" in available
 
 
 def test_status_without_task_state_reports_no_active_task(
     context: CommandContext, tmp_path: Path
 ) -> None:
-    assert context.registry.dispatch("/status", context) == "No active task."
+    assert run(context, "/status") == "No active task."
     store = TaskStore(tmp_path / "tasks.sqlite")
     with_store = replace(context, tasks=store)
-    assert with_store.registry.dispatch("/status", with_store) == "No active task."
+    assert run(with_store, "/status") == "No active task."
     assert not store.exists()
 
 
@@ -164,7 +170,7 @@ def test_status_shows_the_persisted_task_tree_pins_and_blockers(
     store.close()
 
     restarted = replace(context, tasks=TaskStore(tmp_path / "tasks.sqlite"))
-    lines = restarted.registry.dispatch("/status", restarted).splitlines()
+    lines = run(restarted, "/status").splitlines()
     assert lines[0].startswith(f"Session {session.id}: cache expiration (open")
     assert f"  [in_progress] Add expiration support ({parent.id}) · role: orchestrator" in lines
     assert (
@@ -179,21 +185,21 @@ def test_status_reports_unreadable_task_state(context: CommandContext, tmp_path:
     path = tmp_path / "tasks.sqlite"
     path.write_bytes(b"garbage" * 100)
     broken = replace(context, tasks=TaskStore(path))
-    output = broken.registry.dispatch("/status", broken)
-    assert output.startswith("Cannot read task state:")
+    output = run(broken, "/status")
+    assert output.startswith("Error  Cannot read task state.")
     assert path.read_bytes() == b"garbage" * 100
 
 
 def test_skills_lists_the_catalog_without_task_state(context: CommandContext) -> None:
-    lines = context.registry.dispatch("/skills", context).splitlines()
-    assert lines[0].startswith("Skills: ")
+    lines = run(context, "/skills").splitlines()
+    assert lines[0].startswith("Skills  18 available")
     assert "budget 8000 tokens" in lines[0] and "estimator utf8-bytes-div3@1" in lines[0]
     assert lines[2].split() == ["Skill", "Source", "Version", "Activation", "Tokens"]
     row = next(line for line in lines if line.split()[:1] == ["security"])
     cells = row.split()
     assert cells[1].startswith("builtin:")
     assert cells[2:4] == ["1.0.0", "auto"]
-    assert "Routing:" not in lines
+    assert "Routing" not in lines
     assert not any("trust boundar" in line.lower() for line in lines[3:])  # no skill bodies
 
 
@@ -218,12 +224,12 @@ def test_skills_shows_effective_source_activation_and_routing(
     )
 
     with_state = replace(context, config=config, tasks=TaskStore(store.path))
-    lines = with_state.registry.dispatch("/skills", with_state).splitlines()
+    lines = run(with_state, "/skills", width=400).splitlines()  # long temporary paths
     testing = next(line for line in lines if line.split()[:1] == ["testing"]).split()
     assert testing[1] == f"project:{override.parent.parent.resolve()}"
     assert testing[2:4] == ["3.1.0", "auto"]
     assert next(line for line in lines if line.split()[:1] == ["data"]).split()[3] == "explicit"
-    routing = lines[lines.index("Routing:") + 1 :]
+    routing = lines[lines.index("Routing") + 1 :]
     assert routing[0].startswith(f"  Add refresh endpoint ({task.id}) · role: implementer")
     assert " · escalation · " in routing[0] and "no classifier" in routing[0]
     assert routing[1] == "    escalated: Touches the session table."
@@ -239,21 +245,22 @@ def test_skills_warns_about_unknown_activation_names(
     config = ConfigService(paths)
     config.save(Layer.PROJECT, {"skills": {"activation": {"securty": "always"}}})
     with_config = replace(context, config=config)
-    output = with_config.registry.dispatch("/skills", with_config)
-    assert "Ignored skills.activation entries (no such skill): securty" in output
+    output = run(with_config, "/skills")
+    assert "Warning  Ignored skills.activation entries (no such skill).\n" in output
+    assert "securty" in output
 
 
 def test_skills_reports_invalid_skill_packages(context: CommandContext, tmp_path: Path) -> None:
     bad = Path.home() / ".agent-cli" / "skills" / "bad" / "SKILL.md"
     bad.parent.mkdir(parents=True)
     bad.write_text("no front matter")
-    output = context.registry.dispatch("/skills", context)
-    assert output.startswith("Cannot load skills:") and "missing metadata" in output
+    output = run(context, "/skills")
+    assert output.startswith("Error  Cannot load skills.") and "missing metadata" in output
 
 
 def test_exit_command_signals_shell_exit(context: CommandContext) -> None:
     with pytest.raises(ExitShell):
-        context.registry.dispatch("/exit", context)
+        run(context, "/exit")
 
 
 def test_duplicate_registration_is_rejected() -> None:

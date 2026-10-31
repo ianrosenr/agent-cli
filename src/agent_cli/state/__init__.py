@@ -34,7 +34,7 @@ from agent_cli.state.models import (
     TaskStatus,
     Worker,
 )
-from agent_cli.state.status import status_lines
+from agent_cli.state.status import status_lines, status_view
 from agent_cli.state.task_store import TaskStateError, TaskStore
 
 __all__ = [
@@ -69,4 +69,5 @@ __all__ = [
     "TaskStore",
     "Worker",
     "status_lines",
+    "status_view",
 ]

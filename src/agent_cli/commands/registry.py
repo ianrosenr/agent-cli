@@ -10,6 +10,10 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rich.console import RenderableType
+
+from agent_cli.ui import error
+
 if TYPE_CHECKING:
     from agent_cli.adapters import AdapterRegistry
     from agent_cli.config import ConfigService
@@ -17,8 +21,9 @@ if TYPE_CHECKING:
 
 SLASH = "/"
 
-type CommandHandler = Callable[[CommandContext, str], str]
-"""Handler signature: receives the context and the raw argument text, returns output."""
+type CommandHandler = Callable[[CommandContext, str], RenderableType]
+"""Handler signature: receives the context and the raw argument text, returns output: plain
+text, or a renderable built with :mod:`agent_cli.ui`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +50,13 @@ class CommandContext:
     """Configuration service; ``None`` when the shell runs without configuration."""
     read_line: Callable[[str], str] = input
     """Prompts for a line of input, for commands that ask follow-up questions."""
-    write_line: Callable[[str], None] = print
+    write_line: Callable[[RenderableType], None] = print
     """Shows a line of output before the command returns its final response."""
     adapters: AdapterRegistry | None = None
     """Harness and provider adapters; ``None`` when none are available in this session."""
     tasks: TaskStore | None = None
     """Canonical task state; ``None`` outside a repository, where no task state exists."""
-    orchestrate: Callable[[str], str] | None = None
+    orchestrate: Callable[[str], RenderableType] | None = None
     """Plans one line of ordinary input; ``None`` where orchestration cannot run."""
 
 
@@ -85,13 +90,14 @@ class CommandRegistry:
     def __len__(self) -> int:
         return len(self._commands)
 
-    def dispatch(self, line: str, context: CommandContext) -> str:
+    def dispatch(self, line: str, context: CommandContext) -> RenderableType:
         """Run the command named in ``line``, which must be slash-command input."""
         parsed = parse_command(line)
         command = self.get(parsed.name)
         if command is None:
-            return (
-                f"Unknown command: {SLASH}{parsed.name}. Type {SLASH}help for available commands."
+            return error(
+                f"Unknown command: {SLASH}{parsed.name}.",
+                f"Type {SLASH}help for available commands.",
             )
         return command.handler(context, parsed.args)
 

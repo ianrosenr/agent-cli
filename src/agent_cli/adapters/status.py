@@ -9,62 +9,112 @@ equals the adapter's ``identity().id``.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
-from agent_cli.adapters.domain import HarnessIdentity
+from rich.console import RenderableType
+from rich.text import Text
+
+from agent_cli.adapters.domain import HarnessIdentity, ReadinessState
 from agent_cli.adapters.harness import HarnessAdapter
 from agent_cli.adapters.provider import ProviderAdapter
 from agent_cli.adapters.registry import AdapterRegistry
 from agent_cli.config import Config
+from agent_cli.ui import blocks, section, table
 
 NO_ADAPTER = "configured; no adapter available yet"
 DISABLED = "disabled in config"
+NONE_FOUND = "none configured or detected"
 
 type Adapter = HarnessAdapter | ProviderAdapter
 
 
-def describe(name: str, adapter: Adapter) -> str:
-    """``name (Display name version): readiness``. A misbehaving adapter is reported, not
-    allowed to break the screen."""
+@dataclass(frozen=True, slots=True)
+class AdapterRow:
+    """One configured or detected harness or provider, as shown to the user."""
+
+    name: str
+    label: str
+    """``name`` with the adapter's display name and version, when it reports them."""
+    state: str
+    ready: bool
+
+
+def describe(name: str, adapter: Adapter) -> AdapterRow:
+    """The adapter's identity and readiness. A misbehaving adapter is reported, not allowed to
+    break the screen."""
     try:
         identity = adapter.identity()
         version = identity.version if isinstance(identity, HarnessIdentity) else None
         title = " ".join(part for part in (identity.display_name, version) if part)
         label = f"{name} ({title})" if title and title != name else name
     except Exception as error:
-        return f"{name}: Unavailable (adapter error: {error})"
+        return AdapterRow(name, name, f"Unavailable (adapter error: {error})", False)
     try:
-        return f"{label}: {adapter.readiness().describe()}"
+        readiness = adapter.readiness()
+        return AdapterRow(
+            name, label, readiness.describe(), readiness.state is ReadinessState.READY
+        )
     except Exception as error:
-        return f"{label}: Unavailable (adapter error: {error})"
+        return AdapterRow(name, label, f"Unavailable (adapter error: {error})", False)
 
 
-def section(title: str, enabled: Mapping[str, bool], adapters: Mapping[str, Adapter]) -> list[str]:
+def rows(enabled: Mapping[str, bool], adapters: Mapping[str, Adapter]) -> list[AdapterRow]:
     """``enabled`` maps configured IDs to whether they are enabled."""
-    names = sorted(enabled.keys() | adapters.keys())
-    if not names:
-        return [f"{title}: none configured or detected"]
-    lines = [f"{title}:"]
-    for name in names:
+    result = []
+    for name in sorted(enabled.keys() | adapters.keys()):
         if enabled.get(name) is False:
-            lines.append(f"  {name}: {DISABLED}")
+            result.append(AdapterRow(name, name, DISABLED, False))
         elif name in adapters:
-            lines.append(f"  {describe(name, adapters[name])}")
+            result.append(describe(name, adapters[name]))
         else:
-            lines.append(f"  {name}: {NO_ADAPTER}")
-    return lines
+            result.append(AdapterRow(name, name, NO_ADAPTER, False))
+    return result
+
+
+def sections(registry: AdapterRegistry, config: Config) -> list[tuple[str, list[AdapterRow]]]:
+    return [
+        (
+            "Harnesses",
+            rows(
+                {name: entry.enabled for name, entry in config.harnesses.items()},
+                registry.harnesses(),
+            ),
+        ),
+        (
+            "Providers",
+            rows(
+                {name: entry.enabled for name, entry in config.providers.items()},
+                registry.providers(),
+            ),
+        ),
+    ]
 
 
 def adapter_status(registry: AdapterRegistry, config: Config) -> list[str]:
-    """Lines describing every configured or registered harness and provider."""
-    return [
-        *section(
-            "Harnesses",
-            {name: entry.enabled for name, entry in config.harnesses.items()},
-            registry.harnesses(),
-        ),
-        *section(
-            "Providers",
-            {name: entry.enabled for name, entry in config.providers.items()},
-            registry.providers(),
-        ),
-    ]
+    """Plain lines describing every configured or registered harness and provider."""
+    lines = []
+    for title, found in sections(registry, config):
+        if not found:
+            lines.append(f"{title}: {NONE_FOUND}")
+            continue
+        lines.append(f"{title}:")
+        lines += [f"  {row.label}: {row.state}" for row in found]
+    return lines
+
+
+def providers_view(registry: AdapterRegistry, config: Config) -> RenderableType:
+    """``/providers``: a table per kind, readiness named in words and colored by state."""
+    parts: list[RenderableType] = []
+    for title, found in sections(registry, config):
+        if not found:
+            parts.append(Text.assemble((title, "heading"), ("  " + NONE_FOUND, "muted")))
+            continue
+        cells = [(Text(row.label), Text(row.state, style=state_style(row))) for row in found]
+        parts.append(section(title, table(("Name", "Status"), cells, styles=("provider",))))
+    return blocks(*parts)
+
+
+def state_style(row: AdapterRow) -> str:
+    if row.ready:
+        return "success"
+    return "muted" if row.state == DISABLED else "warning"

@@ -36,7 +36,7 @@ from agent_cli.models import (
     build_classifier,
     eligible_models,
     load_registry,
-    models_lines,
+    models_view,
     parse_registry,
     ranked_model_candidates,
     requirement,
@@ -49,9 +49,17 @@ from agent_cli.models.provider_classifier import ClassifierOutputError, parse_re
 from agent_cli.skills import ClassificationInput, ClassifierMode, load_policy
 from agent_cli.skills.classifier import classify
 from agent_cli.terms import CANONICAL_ROLES, AccessKind
+from agent_cli.ui import plain
 
 # Fixture models: deterministic test data, not claims about real models.
 PREFERENCE: tuple[AccessKind, ...] = ("subscription", "local", "api")
+
+
+def models_lines(
+    config: ConfigService | None, adapters: AdapterRegistry | None, path: Path | None = None
+) -> list[str]:
+    """``/models`` as rendered plain-text lines."""
+    return plain(models_view(config, adapters, path)).splitlines()
 
 
 def model(id: str, **overrides: Any) -> dict[str, Any]:
@@ -740,7 +748,7 @@ def test_models_command_is_implemented() -> None:
     registry_ = build_registry()
     command = registry_.get("models")
     assert command is not None and command.planned_in is None
-    output = registry_.dispatch("/models", CommandContext(registry=registry_))
+    output = plain(registry_.dispatch("/models", CommandContext(registry=registry_)))
     assert not output.startswith("Not implemented yet")
     assert "Model registry v" in output and "Role floors" in output
 
@@ -762,7 +770,7 @@ def test_models_shows_registry_floors_and_effective_classifier(tmp_path: Path) -
         assert any(line.strip().startswith(role + " ") for line in lines)
     floor = next(line for line in lines if line.strip().startswith("security_investigator"))
     assert floor.split() == ["security_investigator", "security_reasoning", "high", "(>=", "4)"]
-    assert "Skill classifier: tiny via acme (local)" in output
+    assert "Skill classifier  tiny via acme (local)" in output
     assert "Mode: auto" in output and "No low-cost routing model" not in output
 
 
@@ -770,7 +778,7 @@ def test_models_lists_reachable_unscored_models(tmp_path: Path) -> None:
     path = write_registry(tmp_path, model("known", aliases=["known-2"]))
     adapters = AdapterRegistry(providers=[provider("acme", "local", "known-2", "homebrew-7b")])
     lines = models_lines(None, adapters, path)
-    start = lines.index("Reachable but unscored (used only when you name them):")
+    start = lines.index("Reachable but unscored  used only when you name them")
     assert lines[start + 1 : start + 2] == ["  homebrew-7b via acme (local)"]
     assert not any("known-2 via" in line for line in lines)
     no_unscored = models_lines(
@@ -783,7 +791,7 @@ def test_models_recommends_a_low_cost_classifier_without_requiring_one(tmp_path:
     path = write_registry(tmp_path, model("expensive", cost="high"))
     adapters = AdapterRegistry(providers=[provider("acme", "api", "expensive")])
     output = "\n".join(models_lines(None, adapters, path))
-    assert "Skill classifier: deterministic only" in output
+    assert "Skill classifier  deterministic only" in output
     assert "No low-cost routing model is configured." in output
     assert "explicitly select one of your existing models for classification." in output
 
@@ -807,7 +815,7 @@ def test_models_reports_an_empty_registry_and_invalid_registry(tmp_path: Path) -
     output = "\n".join(models_lines(None, None, write_registry(tmp_path)))
     assert "0 models" in output and "No scored models yet" in output
     bad = write_registry(tmp_path, model("a", scores={"coding": 0}))
-    assert models_lines(None, None, bad)[0].startswith("Cannot load model registry:")
+    assert models_lines(None, None, bad)[0] == "Error  Cannot load model registry."
 
 
 def test_models_shows_configured_floor_overrides(tmp_path: Path, isolated_home: Path) -> None:

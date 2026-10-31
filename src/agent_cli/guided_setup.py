@@ -8,31 +8,49 @@ nothing until the user confirms the summary.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_cli.adapters import AdapterRegistry, adapter_status
+from rich.console import Group, RenderableType
+from rich.text import Text
+
+from agent_cli.adapters import AdapterRegistry, providers_view
 from agent_cli.config import Config, ConfigError, ConfigService, Layer, RawConfig
 from agent_cli.config.model import MAX_WORKER_CONCURRENCY
 from agent_cli.config.schema import merge, to_raw
 from agent_cli.config.service import CostLimitError, CostOrderError
 from agent_cli.terms import ACCESS_KINDS, IMPLEMENTATION_MODES
+from agent_cli.ui import (
+    blocks,
+    bullets,
+    error,
+    fields,
+    indented,
+    info,
+    muted,
+    section,
+    styled,
+    success,
+    table,
+    warning,
+)
 
 type ReadLine = Callable[[str], str]
-type WriteLine = Callable[[str], None]
-type HarnessProviderStatus = Callable[[Config], Sequence[str]]
-"""Lines describing configured and detected harnesses and providers for the setup screen."""
+type WriteLine = Callable[[RenderableType], None]
+type HarnessProviderStatus = Callable[[Config], RenderableType]
+"""Configured and detected harnesses and providers, for the setup screen."""
 
-INTRO = """\
-Agent CLI setup
-
-How this works:
-  - Each step explains one setting and shows exactly what to type.
-  - The current value is shown in [brackets]. Press Enter to keep it.
-  - Press Ctrl-C at any time to cancel. Nothing is saved until you confirm at the end."""
+TITLE = "Agent CLI setup"
+HOW_IT_WORKS = (
+    "Each step explains one setting and shows exactly what to type.",
+    "Each step shows its default: the value you have now. Press Enter to keep it.",
+    "Press Ctrl-C at any time to cancel. Nothing is saved until you confirm at the end.",
+)
 CANCELED = "Setup canceled. Nothing was written."
 FORMAT_NOT_FOLLOWED = "Format not followed, please try again."
+TRY_AGAIN = "Please try again."
+TARGET_HOW = "Type y for global or n for this project."
 YES = ("y", "yes")
 NO = ("n", "no")
 NONE = "none"
@@ -270,9 +288,41 @@ def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
     return layer_data
 
 
-def default_status(config: Config) -> list[str]:
+def default_status(config: Config) -> RenderableType:
     """Configured harnesses and providers, with no adapters to report runtime readiness."""
-    return adapter_status(AdapterRegistry(), config)
+    return providers_view(AdapterRegistry(), config)
+
+
+KEEP_DEFAULT = "press Enter to keep it"
+
+
+def answer_hint(how: str, example: str, note: str = "", default: str = "") -> RenderableType:
+    """The aligned ``How to answer``, ``Example``, and ``Default`` rows shown with a step or a
+    retry. The default is what an empty answer (Enter) keeps."""
+    shown = styled(example, "accent")
+    if note:
+        shown.append(f"  ({note})", style="muted")
+    rows: list[tuple[str, RenderableType]] = [("How to answer", how), ("Example", shown)]
+    if default:
+        rows.append(("Default", Text.assemble((default, "value"), (f"  {KEEP_DEFAULT}", "muted"))))
+    return fields(rows, indent=1)
+
+
+def step_header(number: int, setting: Setting) -> Text:
+    return Text.assemble(
+        (f"Step {number} of {len(SETTINGS)}", "step"), "  ", (setting.label, "heading")
+    )
+
+
+def step_body(setting: Setting, default: str) -> RenderableType:
+    """What the setting does, then how to answer it and the default Enter keeps."""
+    first, *rest = setting.what.splitlines()
+    what = "\n".join([first, *(line.removeprefix("  ") for line in rest)])
+    return Group(
+        indented(Text(what)),
+        Text(""),
+        answer_hint(setting.how, setting.example, setting.example_note, default),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,41 +341,44 @@ class GuidedSetup:
     files: dict[Layer, RawConfig] = field(default_factory=dict)
     """Global and project config as read once at the start, so every step checks the same data."""
 
-    def run(self) -> str:
+    def run(self) -> RenderableType:
         """Run the whole flow and return the closing message. Never writes unless confirmed."""
         try:
             return self.converse()
         except (KeyboardInterrupt, EOFError):
-            return CANCELED
+            return info(CANCELED)
 
-    def converse(self) -> str:
+    def converse(self) -> RenderableType:
         try:
             self.files = {
                 layer: self.service.read(layer) for layer in (Layer.GLOBAL, Layer.PROJECT)
             }
             self.resolve(Layer.PROJECT)
-        except ConfigError as error:
-            return f"Cannot run setup: {error}\nFix or remove that file, then run /startup again."
+        except ConfigError as unreadable:
+            return error(
+                "Cannot run setup.",
+                str(unreadable),
+                "Fix or remove that file, then run /startup again.",
+            )
 
-        self.write_line(INTRO)
+        self.write_line(Group(styled(TITLE, "title"), Text(""), muted("How this works:")))
+        self.write_line(indented(bullets(HOW_IT_WORKS)))
         target = self.ask_target()
         current = to_raw(self.resolve(target))
         inherited = to_raw(self.resolve(Layer.GLOBAL)) if target is Layer.PROJECT else current
         layer_data = self.files[target]
 
         self.write_line("")
-        self.write_line("\n".join(self.harness_provider_status(self.resolve(Layer.PROJECT))))
+        self.write_line(self.harness_provider_status(self.resolve(Layer.PROJECT)))
 
         answers: RawConfig = {}
         index = 0
         while index < len(SETTINGS):
             setting = SETTINGS[index]
             self.write_line("")
-            self.write_line(f"Step {index + 1} of {len(SETTINGS)}: {setting.label}")
-            self.write_line(f"  {setting.what}")
-            self.write_line(f"  How to answer: {setting.how}")
-            self.write_line(f"  {setting.example_line}")
+            self.write_line(step_header(index + 1, setting))
             default = answers.get(setting.key, lookup(current, setting.key))
+            self.write_line(step_body(setting, setting.format(default)))
             answers[setting.key] = self.ask(setting, default, target, layer_data, answers)
             index += 1
             if setting.key == BUDGET_KEYS[-1]:
@@ -334,22 +387,29 @@ class GuidedSetup:
                 problem = self.check(target, propose(layer_data, answers), key=None)
                 if problem is not None:
                     self.write_line(
-                        f"  Not allowed: {problem.message}. Please enter the spending limits again."
+                        indented(
+                            warning(
+                                f"Not allowed: {problem.message}.",
+                                "Please enter the spending limits again.",
+                            )
+                        )
                     )
                     index = [s.key for s in SETTINGS].index(BUDGET_KEYS[0])
 
         changes, removals = self.plan(target, inherited, layer_data, answers)
         self.write_line("")
         self.write_line(self.summary(target, current, inherited, answers, changes, removals))
-        self.write_line("How to answer: type y to save these settings or n to cancel.")
-        self.write_line("Example: y")
+        self.write_line("")
+        self.write_line(
+            answer_hint("Type y to save these settings or n to cancel.", "y", default="yes")
+        )
         if not self.confirm("Save these settings?"):
-            return CANCELED
+            return info(CANCELED)
         try:
             path = self.service.save(target, changes, removals)
-        except ConfigError as error:
-            return f"Could not save settings: {error}"
-        return f"Settings saved to {path}."
+        except ConfigError as problem:
+            return error("Could not save settings.", str(problem))
+        return success(f"Settings saved to {path}.")
 
     def resolve(self, through: Layer, proposal: tuple[Layer, RawConfig] | None = None) -> Config:
         """Resolve from the files read at the start, optionally with one layer replaced."""
@@ -361,23 +421,38 @@ class GuidedSetup:
     def ask_target(self) -> Layer:
         project = self.service.paths.project_file
         if project is None:
+            self.write_line("")
             self.write_line(
-                f"\nNot inside a Git repository; settings go to {self.service.paths.global_file}."
+                info(
+                    "Not inside a Git repository.",
+                    f"Settings go to {self.service.paths.global_file}.",
+                )
             )
             return Layer.GLOBAL
-        self.write_line(
-            "\nWhere to save\n"
-            f"  global   {self.service.paths.global_file}  (all projects)\n"
-            f"  project  {project}  (this repository only; spending limits may only be lower)\n"
-            "  How to answer: type y for global or n for this project. Press Enter for global.\n"
-            "  Example: y"
-        )
+        targets = [
+            (
+                "global",
+                Text.assemble(
+                    (str(self.service.paths.global_file), "path"), ("  all projects", "muted")
+                ),
+            ),
+            (
+                "project",
+                Text.assemble(
+                    (str(project), "path"),
+                    ("  this repository only; spending limits may only be lower", "muted"),
+                ),
+            ),
+        ]
+        self.write_line("")
+        self.write_line(section("Where to save", fields(targets, indent=1, label_style="value")))
+        self.write_line(answer_hint(TARGET_HOW, "y", default="global"))
         while True:
-            answer = self.read_line("Save to [global] (y/n): ").strip()
+            answer = self.read_line("Save to (y/n): ").strip()
             try:
                 return Layer.GLOBAL if not answer or parse_bool(answer) else Layer.PROJECT
             except InvalidAnswer:
-                self.format_not_followed("Type y for global or n for this project.", "Example: y")
+                self.format_not_followed(TARGET_HOW, "y", default="global")
 
     def ask(
         self,
@@ -389,12 +464,12 @@ class GuidedSetup:
     ) -> Any:
         choices = " (y/n)" if setting.yes_no else ""
         while True:
-            prompt = f"{setting.label} [{setting.format(default)}]{choices}: "
-            answer = self.read_line(prompt).strip()
+            answer = self.read_line(f"{setting.label}{choices}: ").strip()
+            shown = setting.format(default)
             try:
                 value = setting.parse(answer) if answer else default
             except InvalidAnswer:
-                self.format_not_followed(setting.how, setting.example_line)
+                self.format_not_followed(setting.how, setting.example, setting.example_note, shown)
                 continue
             proposed = propose(layer_data, {**answers, setting.key: value})
             problem = self.check(
@@ -403,14 +478,22 @@ class GuidedSetup:
             if problem is None:
                 return value
             if problem.format:
-                self.format_not_followed(setting.how, setting.example_line)
+                self.format_not_followed(setting.how, setting.example, setting.example_note, shown)
             else:
-                self.write_line(f"  Not allowed: {problem.message}. Please try again.")
+                self.write_line(
+                    indented(
+                        warning(
+                            f"Not allowed: {problem.message}.",
+                            f"{TRY_AGAIN} The default is {shown}; {KEEP_DEFAULT}.",
+                        )
+                    )
+                )
 
-    def format_not_followed(self, how: str, example_line: str) -> None:
-        self.write_line(f"  {FORMAT_NOT_FOLLOWED}")
-        self.write_line(f"  How to answer: {how}")
-        self.write_line(f"  {example_line}")
+    def format_not_followed(
+        self, how: str, example: str, note: str = "", default: str = ""
+    ) -> None:
+        self.write_line(indented(warning(FORMAT_NOT_FOLLOWED)))
+        self.write_line(answer_hint(how, example, note, default))
 
     def check(
         self,
@@ -469,40 +552,38 @@ class GuidedSetup:
         answers: RawConfig,
         changes: RawConfig,
         removals: tuple[str, ...],
-    ) -> str:
+    ) -> RenderableType:
         overridden = self.files[Layer.PROJECT] if target is Layer.GLOBAL else {}
         rows = []
         for setting in SETTINGS:
             value = answers[setting.key]
+            note = Text()
             if contains(changes, setting.key):
-                note = f"→ {target.value}"
+                note.append(f"→ {target.value}", style="accent")
             elif setting.key in removals:
-                note = "inherited from global (project override removed)"
+                note.append("inherited from global (project override removed)", style="muted")
             else:
-                note = "inherited from global"
+                note.append("inherited from global", style="muted")
             if value != lookup(current, setting.key):
-                note += f" (was {setting.format(lookup(current, setting.key))})"
+                note.append(f" (was {setting.format(lookup(current, setting.key))})", "warning")
             if contains(overridden, setting.key):
-                note += " (overridden by project config)"
-            rows.append((setting.label, setting.format(value), note))
+                note.append(" (overridden by project config)", style="warning")
+            rows.append((setting.label, Text(setting.format(value), style="value"), note))
 
-        label_width = max(len(label) for label, _, _ in rows)
-        value_width = max(len(value) for _, value, _ in rows)
-        lines = [f"Summary: changes are written to {self.service.source(target)}.", ""]
-        lines += [
-            f"  {label:<{label_width}}  {value:<{value_width}}  {note}"
-            for label, value, note in rows
-        ]
-        if target is Layer.PROJECT:
-            lines += ["", "Project runtime directories (state, worktrees) will be git-ignored."]
-        return "\n".join(lines)
+        heading = section("Summary", note=f"changes are written to {self.service.source(target)}")
+        gitignore = (
+            muted("Project runtime directories (state, worktrees) will be git-ignored.")
+            if target is Layer.PROJECT
+            else None
+        )
+        return blocks(heading, table(("", "", ""), rows, header=False), gitignore)
 
     def confirm(self, question: str) -> bool:
         while True:
-            answer = self.read_line(f"{question} [yes] (y/n): ").strip()
+            answer = self.read_line(f"{question} (y/n): ").strip()
             if not answer:
                 return True
             try:
                 return parse_bool(answer)
             except InvalidAnswer:
-                self.format_not_followed(YES_NO + " Press Enter for yes.", "Example: y")
+                self.format_not_followed(YES_NO, "y", default="yes")
