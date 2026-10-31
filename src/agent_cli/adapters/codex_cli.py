@@ -49,6 +49,7 @@ BILLING_OVERRIDE_ENV = frozenset(
     {
         "CODEX_API_KEY",
         "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
         "CODEX_ACCESS_TOKEN",
         "OPENAI_FEDERATION_RULE_ID",
         "OPENAI_IDENTITY_TOKEN_FILE",
@@ -350,6 +351,8 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             'forced_login_method="chatgpt"',
             "-c",
             'model_provider="openai"',
+            "-c",
+            'openai_base_url=""',
             "login",
             "status",
         )
@@ -362,6 +365,8 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             'forced_login_method="chatgpt"',
             "-c",
             'model_provider="openai"',
+            "-c",
+            'openai_base_url=""',
             "exec",
             "--json",
             "--ephemeral",
