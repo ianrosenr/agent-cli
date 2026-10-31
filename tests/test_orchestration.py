@@ -24,13 +24,14 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter
 from agent_cli.adapters.provider import ProviderAdapter
-from agent_cli.budget import Price, PriceTable, ReservationStatus, SpendLedger
+from agent_cli.budget import BudgetGuard, Price, PriceTable, ReservationStatus, SpendLedger
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import ConfigPaths, ConfigService, Layer
 from agent_cli.models import ModelRegistry
 from agent_cli.orchestration import (
     DELEGATED_ROLES,
     SECTIONS,
+    DirectModelCall,
     FakePlanner,
     FakeSpecAuthor,
     ModelOutputError,
@@ -432,20 +433,22 @@ def test_all_subagent_pins_are_copied_to_every_child(
     assert store.pins(root_of(store)) == {}
 
 
-def test_work_item_scoped_provider_and_harness_pins_are_preserved(
-    store: TaskStore, config: ConfigService
-) -> None:
-    goal = f"{GOAL} Run the implementer through codex on openrouter."
-    pins = (
-        pinned("Run the implementer through codex on openrouter", "codex", "impl", "harness"),
-        pinned("Run the implementer through codex on openrouter", "openrouter", "impl", "provider"),
+def test_planner_local_work_item_pin_scope_is_never_trusted() -> None:
+    planning = planning_input(f"{GOAL} Run the implementer through codex on openrouter.")
+    task_pin = pinned(
+        "Run the implementer through codex on openrouter", "openrouter", "impl", "provider"
     )
-    service(store, config, plan(one_item, pins=pins)).handle(goal)
 
-    [child] = store.subtasks(root_of(store))
-    current = store.pins(child.id)
-    assert (current["harness"].value, current["provider"].value) == ("codex", "openrouter")
-    assert store.scoped_pins(root_of(store)) == []
+    with pytest.raises(PlanRejected, match="planner-local task scopes cannot be authorized"):
+        validate_proposal(proposal(item(planning), pins=(task_pin,)), planning)
+
+
+def test_planning_scoped_harness_pin_is_rejected() -> None:
+    planning = planning_input(f"{GOAL} Plan this via Pi.")
+    harness = pinned("Plan this via Pi", "Pi", "orchestrator", "harness")
+
+    with pytest.raises(PlanRejected, match="cannot honor a harness pin"):
+        validate_proposal(proposal(item(planning), pins=(harness,)), planning)
 
 
 def test_repository_text_can_never_authorize_a_pin(store: TaskStore, config: ConfigService) -> None:
@@ -487,6 +490,14 @@ def test_a_pin_scope_must_match_the_users_instruction() -> None:
     wrong_role = pinned("Use Claude Sonnet for the implementer", "claude-sonnet", "code_reviewer")
     with pytest.raises(PlanRejected, match="not about code_reviewer"):
         validate_proposal(proposal(item(planning), pins=(wrong_role,)), planning)
+
+
+def test_singular_role_agent_wording_cannot_be_widened_to_all_children() -> None:
+    planning = planning_input(f"{GOAL} Use Claude for the reviewer agent.")
+    wide = pinned("Use Claude for the reviewer agent", "Claude", "all")
+
+    with pytest.raises(PlanRejected, match="not about all"):
+        validate_proposal(proposal(item(planning), pins=(wide,)), planning)
 
 
 def test_specific_pins_win_over_all_subagent_pins(store: TaskStore, config: ConfigService) -> None:
@@ -1032,6 +1043,41 @@ def test_planning_reruns_when_the_call_broke_a_new_planning_pin(
     )
     pin_texts = [r.text for r in store.task_requirements(root_of(store))]
     assert pin_texts.count("Plan this with deep-planner") == 1
+
+
+def test_paid_path_selection_uses_each_pricing_sources_trusted_input_bound(
+    store: TaskStore, config: ConfigService, tmp_path: Path
+) -> None:
+    expensive_bound = ScriptedProvider("api", ("strong",), id="large-bound")
+    admissible = ScriptedProvider("api", ("fit",), id="small-bound")
+    models = registry(
+        model("strong", scores={**PLANNER_SCORES, "reasoning": 5}),
+        model("fit", scores={**PLANNER_SCORES, "reasoning": 4}),
+    )
+    prices = PriceTable.of(
+        "path-specific",
+        "1",
+        [
+            ("large-bound", "strong", Price(1_000_000, 1_000_000, 1, 400_000)),
+            ("small-bound", "fit", Price(1_000_000, 1_000_000, 1, 1_000)),
+        ],
+    )
+    ledger = SpendLedger(tmp_path / "spend.sqlite")
+    guard = BudgetGuard.from_config(config.resolve(), ledger, prices, store)
+    session = store.start_session()
+    root, _ = store.start_root_task(session.id, GOAL)
+    call = DirectModelCall(
+        AdapterRegistry(providers=[expensive_bound, admissible]),
+        config.resolve(),
+        models,
+        guard,
+        root.id,
+    )
+
+    quote = call.choose("orchestrator", "planning", "system", "prompt", 1_000)
+
+    assert quote.model_id == "fit"
+    assert quote.path.provider.id == "small-bound"
 
 
 PRICES = PriceTable.of(
