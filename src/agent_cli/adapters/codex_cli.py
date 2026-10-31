@@ -370,6 +370,8 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             "exec",
             "--json",
             "--ephemeral",
+            "--ask-for-approval",
+            "never",
             "--sandbox",
             sandbox,
         ]
