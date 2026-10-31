@@ -215,9 +215,7 @@ def test_non_subscription_auth_is_rejected(method: str) -> None:
 
 
 def test_oauth_without_subscription_metadata_is_rejected() -> None:
-    commands = FakeCommands(
-        auth={"loggedIn": True, "authMethod": "oauth_token"}
-    )
+    commands = FakeCommands(auth={"loggedIn": True, "authMethod": "oauth_token"})
     readiness = adapter(commands=commands).readiness()
     assert readiness.state is ReadinessState.AUTH_REQUIRED
 
