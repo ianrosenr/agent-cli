@@ -49,7 +49,7 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 
 - **Detection/auth.** Runtime always registers the adapter so `/startup` and `/providers` can detect `codex`. Readiness runs bounded `codex --version` and `codex login status` checks while forcing the built-in OpenAI provider, ChatGPT login method, and default OpenAI inference endpoint. Runtime auth is never written to Agent CLI config.
 - **Subscription-only.** Readiness fails closed when OpenAI/Codex API-key, base-URL, access-token, or workload-identity environment variables are set and tells the user which variable to unset. It requires `Logged in using ChatGPT`, so the route cannot silently become pay-as-you-go.
-- **Execution.** Workers use `codex exec --json --ephemeral`, the exact selected model, and the supplied cwd/worktree. Task/spec/role/skills context goes over stdin, not argv.
+- **Execution.** Workers use `codex exec --json --ephemeral` with `--ask-for-approval never`, the exact selected model, and the supplied cwd/worktree. Task/spec/role/skills context goes over stdin, not argv.
 - **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Codex's `workspace-write` sandbox; `plan-only` uses `read-only`. Checkpoint approval stays in Agent CLI orchestration, shared across every harness.
 - **Lifecycle.** Start/status/result/interruption are normalized. JSONL events provide the final agent message, thread reference, and token usage; Git changed-file/diff information is collected separately. Raw stderr and vendor error details are never surfaced.
 - **Provider pin.** This fixed access path identifies itself as `openai-subscription`. A conflicting provider pin is rejected rather than substituted.
