@@ -54,7 +54,7 @@ def table(catalog: SkillCatalog, activation: Mapping[str, SkillActivation]) -> l
     rows = [
         (
             skill.name,
-            skill.source.kind.value,
+            f"{skill.source.kind.value}:{skill.source.root.resolve()}",
             skill.version,
             activation_of(skill.name, activation),
             str(skill.tokens),
