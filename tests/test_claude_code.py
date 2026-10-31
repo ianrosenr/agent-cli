@@ -328,6 +328,32 @@ def test_interrupt_terminates_a_running_worker(tmp_path: Path) -> None:
     assert harness.result(handle).status is WorkerStatus.CANCELED
 
 
+def test_interrupt_timeout_is_normalized(tmp_path: Path) -> None:
+    class StubbornProcess(FakeProcess):
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise subprocess.TimeoutExpired("claude", timeout or 0)
+
+    launcher = FakeLauncher(returncode=None)
+    harness = adapter(launcher=launcher)
+    handle = harness.start(request(tmp_path))
+    assert launcher.process is not None
+    stubborn = StubbornProcess(None)
+    harness._workers[handle.token].process = stubborn
+
+    with pytest.raises(AdapterError) as raised:
+        harness.interrupt(handle)
+
+    assert raised.value.kind is ErrorKind.HARNESS_ERROR
+    assert raised.value.__cause__ is None
+    assert stubborn.terminated and stubborn.killed
+
+
 def test_process_failure_does_not_leak_vendor_output(
     tmp_path: Path,
 ) -> None:
@@ -359,6 +385,26 @@ def test_diff_failure_is_normalized(tmp_path: Path) -> None:
     with pytest.raises(AdapterError) as raised:
         harness.diff(handle)
     assert raised.value.kind is ErrorKind.HARNESS_ERROR
+
+
+def test_git_timeout_is_normalized(tmp_path: Path) -> None:
+    def timeout_git(
+        argv: tuple[str, ...], cwd: Path
+    ) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(argv, 5)
+
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(),
+        FakeCommands(),
+        FakeLauncher(),
+        timeout_git,
+        {"PATH": "/usr/bin"},
+    )
+    handle = harness.start(request(tmp_path))
+    with pytest.raises(AdapterError) as raised:
+        harness.diff(handle)
+    assert raised.value.kind is ErrorKind.HARNESS_ERROR
+    assert raised.value.__cause__ is None
 
 
 def test_custom_command_is_used_for_detection_and_launch(
