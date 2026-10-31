@@ -14,7 +14,13 @@ from types import MappingProxyType
 from typing import cast
 
 from agent_cli.config.model import RoleFloors, Tier
-from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, unusable_reason, usable_paths
+from agent_cli.models.access import (
+    ModelPath,
+    RuntimePaths,
+    choose_path,
+    unusable_reason,
+    usable_paths,
+)
 from agent_cli.models.domain import (
     ModelCapability,
     ModelEntry,
@@ -223,7 +229,3 @@ def select_pinned(
             f"it for {pin.scope}",
         )
     return ModelSelection(need, SelectionKind.PINNED, entry.id, path, entry, pin, warnings)
-
-
-def problems_suffix(runtime: RuntimePaths) -> str:
-    return f" ({'; '.join(runtime.problems)})" if runtime.problems else ""
