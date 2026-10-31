@@ -272,13 +272,13 @@ def test_plan_only_uses_plan_permission_mode(tmp_path: Path) -> None:
     assert "--model" not in argv
 
 
-def test_checkpoint_mode_fails_before_launch(tmp_path: Path) -> None:
+def test_checkpoint_batch_uses_auto_after_agent_cli_approves_it(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    with pytest.raises(AdapterError) as raised:
-        harness.start(request(tmp_path, mode="checkpoint"))
-    assert raised.value.kind is ErrorKind.INCOMPATIBLE
-    assert launcher.calls == []
+    harness.start(request(tmp_path, mode="checkpoint"))
+    argv = launcher.calls[0]["argv"]
+    index = argv.index("--permission-mode")
+    assert argv[index + 1] == "auto"
 
 
 def test_wrong_provider_pin_is_never_substituted(tmp_path: Path) -> None:
