@@ -401,7 +401,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         )
 
     def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        mode = "plan" if request.mode == "plan-only" else "acceptEdits"
+        mode = "plan" if request.mode == "plan-only" else "auto"
         argv = [
             self.command(),
             "--print",
