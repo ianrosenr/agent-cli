@@ -62,6 +62,7 @@ def models_view(
     )
     return blocks(
         registry_view(registry),
+        paths_view(registry, runtime),
         unscored_view(registry, runtime),
         section(
             "Role floors",
@@ -97,6 +98,23 @@ def registry_view(registry: ModelRegistry) -> RenderableType:
     ]
     scores = range(3, 3 + len(SCORE_HEADERS))
     return Group(header, Text(""), table(MODEL_HEADERS, rows, styles=("model",), right=scores))
+
+
+def paths_view(registry: ModelRegistry, runtime: RuntimePaths) -> RenderableType | None:
+    """Where each active registry model can run right now: its READY provider paths."""
+    active = registry.active()
+    if not active:
+        return None
+    lines = []
+    for entry in active:
+        paths = runtime.serving(entry.names)
+        line = Text.assemble((entry.id, "model"), "  ")
+        if paths:
+            line.append(", ".join(path.describe() for path in paths))
+        else:
+            line.append("no ready provider", style="warning")
+        lines.append(line)
+    return section("Runtime paths", indented(Group(*lines)), note="READY providers serving it")
 
 
 def unscored_view(registry: ModelRegistry, runtime: RuntimePaths) -> RenderableType | None:

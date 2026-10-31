@@ -14,7 +14,7 @@ Implementation is staged:
 
 Do not duplicate V1-04 detection logic inside V1-03 just to make the startup screen look complete.
 
-V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`): `/startup` passes `adapter_status` over the session's `AdapterRegistry`, which shows each configured or registered harness and provider with its live readiness. Readiness is runtime state and is never written to config. No real adapters are registered yet, so V1-04 alone cannot perform concrete detection/authentication; the first real adapter will reuse this contract rather than redesign setup. See [ADAPTERS.md](ADAPTERS.md).
+V1-04 plugs in through the `harness_provider_status` hook on `GuidedSetup` (`src/agent_cli/guided_setup.py`): `/startup` passes `adapter_status` over the session's `AdapterRegistry`, which shows each configured or registered harness and provider with its live readiness. Readiness is runtime state and is never written to config. The first real adapter, `anthropic` (V1-09.5), reuses this contract: when no `providers.anthropic` exists, setup shows whether `ANTHROPIC_API_KEY` is set (never its value) and, if it is, offers to save a reference to it. An existing entry, including a custom credential reference, is left unchanged. See [ADAPTERS.md](ADAPTERS.md).
 
 ## Steps
 

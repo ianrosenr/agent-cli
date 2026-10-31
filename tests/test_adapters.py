@@ -561,9 +561,3 @@ def test_shell_passes_its_adapters_to_commands() -> None:
 
     cli.run_shell(build_registry(), scripted, write_line, "", adapters=status_registry())
     assert "  alpha (Alpha 2.1)  Ready" in output[1]
-
-
-def test_default_adapters_registers_no_real_adapters_yet() -> None:
-    registry = cli.default_adapters()
-    assert registry.harnesses() == {}
-    assert registry.providers() == {}

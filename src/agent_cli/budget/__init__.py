@@ -31,6 +31,7 @@ from agent_cli.budget.pricing import (
     CostEstimator,
     Price,
     PriceTable,
+    ProviderEstimators,
     input_bound,
 )
 from agent_cli.budget.routing import (
@@ -65,6 +66,7 @@ __all__ = [
     "PathQuote",
     "Price",
     "PriceTable",
+    "ProviderEstimators",
     "Rejection",
     "Reservation",
     "ReservationStatus",

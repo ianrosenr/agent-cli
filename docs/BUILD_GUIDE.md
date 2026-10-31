@@ -40,7 +40,7 @@ It coordinates them.
 
 Existing harnesses should own low-level agent execution: tool loops, streaming, session mechanics, file-edit tools, and harness-native terminal behavior. Agent CLI should own the decisions above that layer: decomposition, role authority, skills, context, model/provider/harness routing, budgets, memory, worktrees, review, and escalation.
 
-Pi, Codex CLI, Claude Code, and OpenCode are adapter targets. Pi is a preferred early integration candidate, but core Agent CLI must remain harness-agnostic.
+Claude Code, Pi, Codex CLI, and OpenCode are adapter targets. Claude Code is the first harness integration; Pi is the second portability test. Core Agent CLI must remain harness-agnostic.
 
 Do not build a new general-purpose coding-agent runtime unless an external harness cannot satisfy a demonstrated product requirement.
 
@@ -359,9 +359,9 @@ It should detect installed harnesses and guide provider setup.
 
 V1 adapter targets:
 
-- Pi
+- Claude Code — first integration
+- Pi — second, used to prove portability
 - Codex CLI
-- Claude Code
 - OpenCode
 
 Support custom providers through a stable provider adapter.
