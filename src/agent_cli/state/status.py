@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from agent_cli.state.models import PIN_KINDS, Task
+from agent_cli.state.models import ALL_CHILDREN, PIN_KINDS, Task
 from agent_cli.state.task_store import TaskStore
 
 NO_ACTIVE_TASK = "No active task."
@@ -12,7 +12,8 @@ INDENT = "  "
 
 
 def status_lines(store: TaskStore) -> list[str]:
-    """The latest session's task tree, roles, pins, and open blockers; never raw events.
+    """The latest session's task tree, roles, pins, role-scoped pins, and open blockers; never
+    raw events.
 
     Reading status does not create a task-state database.
     """
@@ -37,6 +38,15 @@ def status_lines(store: TaskStore) -> list[str]:
             walk(task.id, depth + 1)
 
     walk(None, 0)
+
+    later = [
+        f"{INDENT}{pin.root_task_id}: {pin.scope} {pin.kind}={pin.value}"
+        for task in children[None]
+        for pin in store.scoped_pins(task.id)
+        if pin.scope != ALL_CHILDREN
+    ]
+    if later:
+        lines += ["", "Pinned for delegated roles:", *later]
 
     blockers = store.blockers(session.id)
     if blockers:

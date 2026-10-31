@@ -16,8 +16,11 @@ type PinKind = Literal["model", "provider", "harness"]
 type RequirementSource = Literal["user", "derived"]
 type ReviewKind = Literal["spec", "code"]
 type RoutingKind = Literal["initial", "escalation"]
+type QuestionStatus = Literal["pending", "answered", "canceled"]
 
 PIN_KINDS: tuple[PinKind, ...] = get_args(PinKind.__value__)
+ALL_CHILDREN = "all"
+"""The pin scope covering every delegated child of a root task."""
 
 
 class TaskStatus(StrEnum):
@@ -122,6 +125,76 @@ class Pin:
 
     def selection(self) -> Selection:
         return Selection(self.value, pinned=self.user_pinned)
+
+
+@dataclass(frozen=True, slots=True)
+class ScopedPin:
+    """An explicit user pin for delegated work under one root task, kept by scope.
+
+    Task pins are not inherited, so a scoped pin is copied onto each matching child as it is
+    created, and stays here for children created later (such as V1-12 reviewers).
+    """
+
+    id: str
+    root_task_id: str
+    scope: str
+    """``all`` (every delegated child) or a canonical role."""
+    kind: PinKind
+    value: str
+    requirement_id: str
+    """The user requirement holding the instruction that authorized the pin."""
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningQuestion:
+    """A consequential decision only the user can make, blocking one root task's plan."""
+
+    id: str
+    task_id: str
+    question: str
+    why: str
+    """Why the answer is consequential."""
+    status: QuestionStatus
+    answer: str | None
+    decision_id: str | None
+    """The user ``Decision`` recorded from the answer."""
+    blocker_id: str | None
+    created_at: str
+    answered_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedPin:
+    """An explicit user execution constraint in a validated plan."""
+
+    kind: PinKind
+    value: str
+    scope: str
+    """``all``, a canonical role, or the key of a ``PlannedTask``."""
+    evidence: str
+    """The user's literal instruction, recorded as a user requirement."""
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedTask:
+    key: str
+    """Proposal-local ID, used only to link dependencies and pins within one ``PlanWrite``."""
+    goal: str
+    role: str
+    depends_on: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PlanWrite:
+    """A validated child-task graph for one root task, persisted all at once or not at all."""
+
+    root_task_id: str
+    tasks: tuple[PlannedTask, ...]
+    assumptions: tuple[str, ...] = ()
+    """Unconfirmed assumptions, attached to the root task."""
+    pins: tuple[PlannedPin, ...] = ()
+    made_by: str = "orchestrator"
 
 
 @dataclass(frozen=True, slots=True)

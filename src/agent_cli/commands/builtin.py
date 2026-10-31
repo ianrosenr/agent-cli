@@ -1,9 +1,9 @@
 """Built-in slash commands.
 
 Apart from ``/help``, ``/exit``, ``/startup``, ``/providers``, ``/status``, ``/skills``,
-``/models``, and ``/budget``, these are placeholders that establish the user-facing shell
-contract. Each names the roadmap issue that will implement it (see docs/BUILD_GUIDE.md, Build
-Order).
+``/models``, ``/budget``, and ``/autopilot``, these are placeholders that establish the
+user-facing shell contract. Each names the roadmap issue that will implement it (see
+docs/BUILD_GUIDE.md, Build Order).
 """
 
 from __future__ import annotations
@@ -16,10 +16,11 @@ from agent_cli.commands.registry import (
     CommandRegistry,
     ExitShell,
 )
-from agent_cli.config import Config, ConfigError
+from agent_cli.config import Config, ConfigError, ConfigService, Layer
 from agent_cli.guided_setup import GuidedSetup
 from agent_cli.state import TaskStateError, status_lines
 from agent_cli.state.status import NO_ACTIVE_TASK
+from agent_cli.terms import ImplementationMode
 
 HELP_INTRO = """\
 Agent CLI help
@@ -28,9 +29,9 @@ Describe what you want done at the > prompt, in plain language:
 
   > add expiration support to our cache layer
 
-Agent CLI will plan the work, route it to the right model and coding agent, review the
-result, and show you the diff. Task handling arrives in V1-09; until then it replies with
-a placeholder.
+Agent CLI inspects the repository, plans the work as role-assigned subtasks, and writes
+short specs for review. When a decision only you can make is open, it asks one question,
+and your next line is the answer. Implementation, review, and diffs arrive in later issues.
 
 Commands start with / and control Agent CLI itself. Ctrl-C clears the current line;
 Ctrl-D or /exit quits."""
@@ -115,6 +116,81 @@ def budget_command(context: CommandContext, args: str) -> str:
     return "\n".join(budget_lines(context.config, context.tasks))
 
 
+AUTOPILOT_SETTINGS: dict[str, ImplementationMode] = {
+    "on": "autopilot",
+    "off": "checkpoint",
+    "plan-only": "plan-only",
+}
+AUTOPILOT_LAYERS = {"global": Layer.GLOBAL, "project": Layer.PROJECT}
+MODE_DESCRIPTIONS: dict[ImplementationMode, str] = {
+    "autopilot": "make every change an approved spec authorizes without asking each time",
+    "checkpoint": "ask before each batch of changes",
+    "plan-only": "change no files; explain the plan instead",
+}
+AUTOPILOT_USAGE = "Usage: /autopilot [status | on | off | plan-only] [global | project]"
+
+
+def autopilot_command(context: CommandContext, args: str) -> str:
+    """Show or save ``implementation.mode``. The workflow that applies it is V1-10's."""
+    if context.config is None:
+        return "Configuration is unavailable in this session."
+    words = args.split()
+    if not words or words == ["status"]:
+        return autopilot_status(context.config)
+    setting, *scope = words
+    if (
+        setting not in AUTOPILOT_SETTINGS
+        or len(scope) > 1
+        or not set(scope) <= AUTOPILOT_LAYERS.keys()
+    ):
+        return AUTOPILOT_USAGE
+    layer = AUTOPILOT_LAYERS[scope[0]] if scope else Layer.GLOBAL
+    if context.config.paths.file_for(layer) is None:
+        return "There is no project here: run Agent CLI inside a Git repository, or use global."
+    mode = AUTOPILOT_SETTINGS[setting]
+    try:
+        path = context.config.save(layer, {"implementation": {"mode": mode}})
+        effective, source = implementation_mode(context.config)
+    except ConfigError as error:
+        return f"Cannot save configuration: {error}"
+    lines = [f"Implementation mode set to {mode} in {path}."]
+    if effective != mode:
+        lines.append(f"The {source} still sets {effective}, which takes precedence here.")
+    return "\n".join(lines)
+
+
+def autopilot_status(config: ConfigService) -> str:
+    try:
+        mode, source = implementation_mode(config)
+    except ConfigError as error:
+        return f"Cannot read configuration: {error}"
+    width = max(len(name) for name in MODE_DESCRIPTIONS)
+    return "\n".join(
+        [
+            f"Implementation mode: {mode} (from {source})",
+            "",
+            *(f"  {name:<{width}}  {text}" for name, text in MODE_DESCRIPTIONS.items()),
+            "",
+            "Change it with /autopilot on, off (checkpoint), or plan-only; add global or "
+            "project to choose where it is saved (default: global).",
+        ]
+    )
+
+
+def implementation_mode(config: ConfigService) -> tuple[ImplementationMode, str]:
+    """The effective mode and the layer that sets it."""
+    mode = config.resolve().implementation.mode
+    layers = {
+        Layer.SESSION: config.session,
+        Layer.PROJECT: config.read(Layer.PROJECT),
+        Layer.GLOBAL: config.read(Layer.GLOBAL),
+    }
+    for layer, data in layers.items():
+        if "mode" in data.get("implementation", {}):
+            return mode, config.source(layer)
+    return mode, "defaults"
+
+
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
     """A placeholder command for a capability that a later roadmap issue implements."""
 
@@ -135,7 +211,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("skills", "Show available skills and routing.", skills_command),
     Command("models", "Show the model registry and role thresholds.", models_command),
     Command("budget", "Show paid-API spend, reservations, and limits.", budget_command),
-    planned("autopilot", "Choose the implementation mode.", "implementation modes", "V1-09"),
+    Command("autopilot", "Show or choose the implementation mode.", autopilot_command),
     planned(
         "diff", "Show the diff produced by delegated work.", "worktrees and worker diffs", "V1-11"
     ),

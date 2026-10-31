@@ -208,7 +208,40 @@ V2 = (
 )
 """Skill-routing decisions and escalations (V1-06): append-only, JSON arrays for detail."""
 
-MIGRATIONS: tuple[Migration, ...] = (V1, V2)
+V3 = (
+    """
+    CREATE TABLE planning_questions (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks (id),
+        question TEXT NOT NULL,
+        why TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'answered', 'canceled')),
+        answer TEXT,
+        decision_id TEXT REFERENCES decisions (id),
+        blocker_id TEXT REFERENCES blockers (id),
+        created_at TEXT NOT NULL,
+        answered_at TEXT,
+        CHECK ((status = 'answered') = (answer IS NOT NULL))
+    )
+    """,
+    "CREATE UNIQUE INDEX one_pending_question_per_task "
+    "ON planning_questions (task_id) WHERE status = 'pending'",
+    """
+    CREATE TABLE scoped_pins (
+        id TEXT PRIMARY KEY,
+        root_task_id TEXT NOT NULL REFERENCES tasks (id),
+        scope TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('model', 'provider', 'harness')),
+        value TEXT NOT NULL,
+        requirement_id TEXT NOT NULL REFERENCES requirements (id),
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX scoped_pins_by_root ON scoped_pins (root_task_id)",
+)
+"""Planning questions (at most one pending per root task) and scoped user pins (V1-09)."""
+
+MIGRATIONS: tuple[Migration, ...] = (V1, V2, V3)
 """``MIGRATIONS[n]`` upgrades the schema from version ``n`` to ``n + 1``."""
 
 

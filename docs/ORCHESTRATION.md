@@ -92,6 +92,31 @@ Keep specs concise: enough to remove implementation ambiguity, not a design essa
 
 V1-09 never approves its own specs. V1-10 owns spec review and approval.
 
+## Implementation
+
+`agent_cli.orchestration` implements the V1-09 planning contract:
+
+| Module | Responsibility |
+| --- | --- |
+| `domain.py` | `PlanningInput`, `PlanProposal`, `WorkItem`, and whole-proposal validation (roles, IDs, dependencies, cycles, duplicates, requirement citations, pin authorization) |
+| `inspection.py` | deterministic goal → V1-05 anchors, and bounded `RepositoryContext` facts for the planner |
+| `calls.py` | `DirectModelCall`: planning pin or role floor → V1-07 candidates → V1-08 budget filtering → `BudgetGuard` |
+| `planner.py` | the `Planner` seam, the provider-backed planner prompt and strict reply parser, and `FakePlanner` |
+| `spec_author.py` | `SpecDraft`, draft validation, fixed-order spec rendering, the provider-backed spec author, and `FakeSpecAuthor` |
+| `service.py` | `OrchestrationService`: session/root lifecycle, questions, the atomic plan write, skill routing, specs |
+| `render.py` | the compact plan/question output shown at the prompt |
+
+`cli.handle_input` sends every non-slash line to `OrchestrationService.handle`, built on first use so planning stays out of startup. Outside a Git repository there is no task state, so ordinary input explains where to run instead.
+
+Validation details worth knowing:
+
+- Every work item must cite the IDs of the user requirements it serves; that citation is its authority for scope.
+- A pin must quote the user's own words (a requirement or a planning answer), and the quote must name the pinned value. Repository text therefore cannot authorize a pin. A hedged instruction ("prefer ...", "ideally ...") is reported as a preference, not pinned.
+- Pin scopes are `all`, a delegated role, a work-item ID, or `orchestrator` (the planning calls themselves). Role and `all` scopes are copied onto matching children and kept as scoped pins for roles created later, such as a V1-12 code reviewer. When a proposal adds an `orchestrator` model pin, planning reruns once under it; if the pinned model cannot run, planning stops rather than substituting.
+- Planner and spec-author replies are parsed strictly: unknown fields (such as skill or model choices) are errors.
+
+`/autopilot` shows the effective `implementation.mode` and where it comes from; `/autopilot on|off|plan-only [global|project]` saves only that key (default: global). `off` means `checkpoint`. V1-10 applies the mode.
+
 ## Roles and authority
 
 | Role | Reasoning floor | May | May not |

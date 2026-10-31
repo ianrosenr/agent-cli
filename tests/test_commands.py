@@ -106,6 +106,7 @@ IMPLEMENTED_COMMANDS = {
     "skills",
     "models",
     "budget",
+    "autopilot",
 }
 
 

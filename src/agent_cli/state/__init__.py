@@ -5,6 +5,7 @@ while canonical task state is never discarded.
 """
 
 from agent_cli.state.models import (
+    ALL_CHILDREN,
     PIN_KINDS,
     Approval,
     Artifact,
@@ -15,11 +16,17 @@ from agent_cli.state.models import (
     Finding,
     Pin,
     PinKind,
+    PlannedPin,
+    PlannedTask,
+    PlanningQuestion,
+    PlanWrite,
+    QuestionStatus,
     Requirement,
     Review,
     RoutedSignal,
     RoutedSkill,
     RoutingKind,
+    ScopedPin,
     Session,
     SkillRouting,
     SpecVersion,
@@ -31,6 +38,7 @@ from agent_cli.state.status import status_lines
 from agent_cli.state.task_store import TaskStateError, TaskStore
 
 __all__ = [
+    "ALL_CHILDREN",
     "PIN_KINDS",
     "Approval",
     "Artifact",
@@ -41,11 +49,17 @@ __all__ = [
     "Finding",
     "Pin",
     "PinKind",
+    "PlanWrite",
+    "PlannedPin",
+    "PlannedTask",
+    "PlanningQuestion",
+    "QuestionStatus",
     "Requirement",
     "Review",
     "RoutedSignal",
     "RoutedSkill",
     "RoutingKind",
+    "ScopedPin",
     "Session",
     "SkillRouting",
     "SpecVersion",
