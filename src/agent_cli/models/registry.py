@@ -109,7 +109,7 @@ def parse_entry(data: object, index: int) -> ModelEntry:
     if not sources:
         raise RegistryError(f"{where}.sources must name the evidence for the scores")
     return ModelEntry(
-        id=text(fields["id"], f"{where}.id"),
+        id=identifier(fields["id"], f"{where}.id"),
         display_name=text(fields["display_name"], f"{where}.display_name"),
         status=choice(ModelStatus, fields["status"], f"{where}.status"),
         scores=Scores(**{key: scores[key] for key in SCORE_KEYS}),
@@ -117,7 +117,7 @@ def parse_entry(data: object, index: int) -> ModelEntry:
         cost=choice(Cost, fields["cost"], f"{where}.cost"),
         confidence=choice(Confidence, fields["confidence"], f"{where}.confidence"),
         sources=sources,
-        aliases=names(fields.get("aliases", []), f"{where}.aliases"),
+        aliases=identifiers(fields.get("aliases", []), f"{where}.aliases"),
     )
 
 
@@ -138,6 +138,23 @@ def text(value: object, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RegistryError(f"{key} must be a non-empty string")
     return value
+
+
+
+
+def identifier(value: object, key: str) -> str:
+    result = text(value, key)
+    if result != result.strip():
+        raise RegistryError(f"{key} must not have surrounding whitespace")
+    return result
+
+
+def identifiers(value: object, key: str) -> tuple[str, ...]:
+    result = names(value, key)
+    for index, item in enumerate(result):
+        if item != item.strip():
+            raise RegistryError(f"{key}[{index}] must not have surrounding whitespace")
+    return result
 
 
 def names(value: object, key: str) -> tuple[str, ...]:
