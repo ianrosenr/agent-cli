@@ -622,7 +622,7 @@ def test_provider_classifier_is_batch_first_and_sends_only_compact_inputs() -> N
             ]
         }
     )
-    adapter = provider("p", "api", "tiny", reply=f"```json\n{reply}\n```")
+    adapter = provider("p", "subscription", "tiny", reply=f"```json\n{reply}\n```")
     choice = ClassifierChoice("auto", ModelPath("tiny", adapter.identity()), "tiny")
     classifier = build_classifier(choice, AdapterRegistry(providers=[adapter]))
     assert isinstance(classifier, ProviderSignalClassifier)
@@ -648,11 +648,11 @@ def test_provider_classifier_is_batch_first_and_sends_only_compact_inputs() -> N
     assert result.signals == {"t1": (signal,), "t2": ()}
     assert result.rejected == {"t1": ("security-skill-name",)}
     assert result.identity is not None and result.identity.startswith("provider-classifier@1 ")
-    assert "auto: tiny via p (api)" in result.identity
+    assert "auto: tiny via p (subscription)" in result.identity
 
 
 def test_provider_classifier_failure_falls_back_without_breaking_routing() -> None:
-    adapter = provider("p", "api", "tiny", reply="I think t1 is about auth.")
+    adapter = provider("p", "subscription", "tiny", reply="I think t1 is about auth.")
     classifier = ProviderSignalClassifier(
         adapter, ModelPath("tiny", adapter.identity()), "selected"
     )
@@ -660,6 +660,18 @@ def test_provider_classifier_failure_falls_back_without_breaking_routing() -> No
     assert result.mode is ClassifierMode.FAILED and "not JSON" in result.error
     assert "selected:" in classifier.identity
 
+
+def test_paid_provider_classifier_without_budgeted_invoker_never_calls_provider() -> None:
+    adapter = provider("p", "api", "tiny")
+    classifier = ProviderSignalClassifier(
+        adapter, ModelPath("tiny", adapter.identity()), "selected"
+    )
+
+    result = classify(classifier, inputs(), load_policy().vocabulary)
+
+    assert result.mode is ClassifierMode.FAILED
+    assert "requires budget enforcement" in result.error
+    assert adapter.requests == []
 
 def test_oversized_batch_falls_back_without_calling_the_provider() -> None:
     adapter = provider("p", "api", "tiny")
