@@ -45,7 +45,6 @@ HEDGES = frozenset(
 """Words that make a sentence a routing preference rather than a hard pin."""
 NEGATIONS = frozenset({"don", "dont", "not", "never", "avoid", "no", "without", "except"})
 SCOPE_WORDS: dict[str, tuple[str, ...]] = {
-    ALL_CHILDREN: ("all", "every", "each", "subagent", "agent", "worker", "everything"),
     PLANNING_SCOPE: ("plan", "orchestrat"),
     "implementer": ("implement", "cod", "build", "writ"),
     "code_reviewer": ("review",),
@@ -320,7 +319,8 @@ def check_pins(
     sentence is reported as not pinned instead.
     """
     sentences = [normalize(part) for text in planning.user_texts for part in split_sentences(text)]
-    scopes = {ALL_CHILDREN, PLANNING_SCOPE, *DELEGATED_ROLES, *(i.id for i in proposal.work_items)}
+    work_item_scopes = {item.id for item in proposal.work_items}
+    scopes = {ALL_CHILDREN, PLANNING_SCOPE, *DELEGATED_ROLES, *work_item_scopes}
     pins: list[PlannedPin] = []
     unpinned: list[str] = []
     problems: list[str] = []
@@ -341,6 +341,15 @@ def check_pins(
             problems.append(f"{name}: the quoted instruction does not name {pin.value!r}")
         elif reason := not_an_instruction(evidence, sentence, value):
             unpinned.append(f'"{pin.evidence}" ({reason})')
+        elif pin.scope == PLANNING_SCOPE and pin.kind == "harness":
+            problems.append(
+                f"{name}: V1-09 planning uses direct provider calls and cannot honor a harness pin"
+            )
+        elif pin.scope in work_item_scopes:
+            problems.append(
+                f"{name}: planner-local task scopes cannot be authorized from user text; "
+                "use an explicit role or all-subagents scope"
+            )
         elif not scope_matches(pin.scope, sentence):
             problems.append(f"{name}: the user's instruction is not about {pin.scope}")
         elif chosen.setdefault((pin.scope, pin.kind), pin.value) != pin.value:
@@ -356,10 +365,21 @@ def split_sentences(text: str) -> list[str]:
 
 
 def scope_matches(scope: str, sentence: str) -> bool:
+    if scope == ALL_CHILDREN:
+        return all_children_scope(sentence)
     stems = SCOPE_WORDS.get(scope)
-    if stems is None:
-        return True  # a work-item ID: the planner's own name for part of this request
-    return any(word.startswith(stems) for word in sentence.split())
+    return stems is not None and any(word.startswith(stems) for word in sentence.split())
+
+
+def all_children_scope(sentence: str) -> bool:
+    """Only explicit universal wording may authorize an all-child pin.
+
+    A singular phrase such as "reviewer agent" must never let planner output widen a pin to
+    every delegated child.
+    """
+    return contains(sentence, "everything") or bool(
+        re.search(r"\b(?:all|every|each)\s+(?:sub\s+)?(?:agents?|workers?|tasks?)\b", sentence)
+    )
 
 
 def not_an_instruction(evidence: str, sentence: str, value: str) -> str:
