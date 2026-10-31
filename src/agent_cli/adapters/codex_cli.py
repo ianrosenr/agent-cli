@@ -1,7 +1,7 @@
 """Codex CLI harness adapter using the user's existing ChatGPT subscription login.
 
 The adapter launches the installed Codex CLI in bounded headless mode. It never copies OpenAI
-credentials and fails closed when API/workload-identity overrides are present, so this
+credentials and isolates API/workload-identity overrides from its child processes, so this
 subscription route cannot silently become pay-as-you-go API usage.
 """
 
@@ -44,7 +44,7 @@ READINESS_TIMEOUT_S = 5.0
 INTERRUPT_TIMEOUT_S = 2.0
 
 # Codex exec can prefer environment credentials over the stored ChatGPT login. This
-# subscription-only harness refuses to run while any alternate billing/auth route is configured.
+# subscription-only harness removes alternate billing/auth routes from its child environment.
 BILLING_OVERRIDE_ENV = frozenset(
     {
         "CODEX_API_KEY",
