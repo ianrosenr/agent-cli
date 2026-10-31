@@ -673,6 +673,7 @@ def test_paid_provider_classifier_without_budgeted_invoker_never_calls_provider(
     assert "requires budget enforcement" in result.error
     assert adapter.requests == []
 
+
 def test_oversized_batch_falls_back_without_calling_the_provider() -> None:
     adapter = provider("p", "api", "tiny")
     path = ModelPath("tiny", adapter.identity(), context_limit=300)
