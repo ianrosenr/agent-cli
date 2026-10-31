@@ -14,7 +14,7 @@ from types import MappingProxyType
 from typing import cast
 
 from agent_cli.config.model import RoleFloors, Tier
-from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, unusable_reason
+from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, unusable_reason, usable_paths
 from agent_cli.models.domain import (
     ModelCapability,
     ModelEntry,
@@ -91,6 +91,38 @@ def eligible_models(registry: ModelRegistry, need: RoleRequirement) -> tuple[Mod
 
 
 @dataclass(frozen=True, slots=True)
+class ModelCandidate:
+    """One capability-ranked automatic worker model with every currently usable access path.
+
+    V1-07 does not finalize an automatic model/provider pair. Later budget, provider-health,
+    access, and harness policy may remove or reorder these candidates before execution.
+    """
+
+    requirement: RoleRequirement
+    model_id: str
+    entry: ModelEntry
+    paths: tuple[ModelPath, ...]
+
+
+def ranked_model_candidates(
+    registry: ModelRegistry,
+    role: Role,
+    floors: RoleFloors,
+    runtime: RuntimePaths,
+    preference: Sequence[AccessKind],
+    context_tokens: int | None = None,
+) -> tuple[ModelCandidate, ...]:
+    """Capability-ranked automatic candidates without committing to a model/provider pair."""
+    need = requirement(role, floors)
+    result: list[ModelCandidate] = []
+    for entry in eligible_models(registry, need):
+        paths = usable_paths(runtime.serving(entry.names), preference, context_tokens)
+        if paths:
+            result.append(ModelCandidate(need, entry.id, entry, paths))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
 class ModelPin:
     """A model the user named for delegated work. A hard constraint, not routing evidence."""
 
@@ -102,7 +134,6 @@ class ModelPin:
 
 
 class SelectionKind(StrEnum):
-    AUTOMATIC = "automatic"
     PINNED = "pinned"
     PINNED_UNSCORED = "pinned_unscored"
     """Pinned to a model the registry has no active scores for; no scores are invented."""
@@ -140,21 +171,17 @@ def select_model(
     floors: RoleFloors,
     runtime: RuntimePaths,
     preference: Sequence[AccessKind],
-    pin: ModelPin | None = None,
+    pin: ModelPin,
     context_tokens: int | None = None,
 ) -> ModelSelection:
-    """Choose the model and provider path for ``role``, or raise ``NoModelAvailable``."""
+    """Resolve an explicit worker-model pin to one usable path.
+
+    Automatic routing intentionally uses ``ranked_model_candidates`` instead so V1-08,
+    V1-13, and the full router can apply budget, health, access, and harness policy before
+    finalizing a model/provider pair.
+    """
     need = requirement(role, floors)
-    if pin is not None:
-        return select_pinned(registry, need, runtime, preference, pin, context_tokens)
-    for entry in eligible_models(registry, need):
-        path = choose_path(runtime.serving(entry.names), preference, context_tokens)
-        if path is not None:
-            return ModelSelection(need, SelectionKind.AUTOMATIC, entry.id, path, entry)
-    raise NoModelAvailable(
-        f"no active model with {need.primary} >= {need.minimum} ({need.floor} floor for "
-        f"{role}) has a usable provider path" + problems_suffix(runtime)
-    )
+    return select_pinned(registry, need, runtime, preference, pin, context_tokens)
 
 
 def select_pinned(
