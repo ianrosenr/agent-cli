@@ -22,6 +22,8 @@ Per-task and daily limits are not compared, because one task can span several da
 
 Session and task layers are in-memory override mappings with the same schema as the files.
 
+Cost ceilings are hard runtime limits. A plain approval does not bypass them. Monthly/daily accounting is global, per-task accounting applies to the root user task tree, and paid API calls require a conservative pre-call cost bound. Spend accounting itself lives in `~/.agent-cli/state/spend.sqlite`; configuration remains in the ordinary layered config above.
+
 ## Defaults
 
 ```yaml
