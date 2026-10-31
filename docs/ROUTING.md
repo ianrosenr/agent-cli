@@ -19,13 +19,15 @@ Hard runtime constraints still apply: budget ceilings, provider readiness, conte
 
 If the requested model cannot be executed, ask the user rather than substituting another model.
 
+A user may explicitly pin a runtime-reachable model that has no active registry score. Treat it as an explicit unscored override: do not invent scores and do not make it automatically eligible for other tasks.
+
 When only the model is pinned, provider and harness selection may still optimize among compatible paths for that same model.
 
 ## Selection order
 
 
 1. **User pin.** If a specific model is pinned for this scope, select it and skip normal capability classification/role-floor filtering for model choice.
-2. **Eligible models.** Otherwise, use active registry models whose tier meets the role floor and whose capabilities fit the task (e.g. context size).
+2. **Eligible models.** Otherwise, use active registry models whose role-relevant capability score meets the configured role floor and whose runtime constraints fit the task.
 3. **Healthy access paths.** For the selected/eligible model, providers not in cooldown.
 4. **Budget check.** Drop paid paths that would exceed any hard limit.
 5. **Preference.** Prefer subscription → local → paid API. Within a class, prefer the cheapest compatible path.
@@ -38,31 +40,100 @@ Harness capabilities come from adapters. Core routing must not contain vendor-sp
 
 ## Model registry
 
-Each model entry holds capability estimates:
+The built-in seed lives at:
 
-- reasoning, coding, repository engineering, debugging, tool use, architecture, security reasoning
-- latency, context size, cost
-- tier (`low` / `mid` / `high`), derived from scores
-- status: `candidate` or `active`
-- score sources and confidence
+```text
+builtins/models/registry.yaml
+```
 
-Scores should eventually come from recognized benchmarks (SWE-bench Verified, Aider Polyglot, Terminal-Bench, and similar). V1 needs only the registry and routing interfaces with a hand-maintained seed. Static hard/medium/easy lists are not the long-term design.
+It describes model capability facts only. Runtime provider/access paths come from provider adapters, so the same canonical model may be available through subscription, local, or API access without duplicating its scores.
+
+Each entry includes:
+
+- canonical model ID and optional aliases
+- status: `active` or `candidate`
+- capability scores: reasoning, coding, repository engineering, debugging, tool use, architecture, security reasoning
+- latency: `fast | medium | slow`
+- coarse cost hint: `free | low | medium | high`
+- confidence: `low | medium | high`
+- concise score/evidence sources
+
+Capability scores are integers from 1 through 5:
+
+```text
+1 = weak
+2 = usable for simple/bounded work
+3 = competent
+4 = strong
+5 = exceptional
+```
+
+Do not infer scores from model names, vendors, size, latency, or price. Do not fabricate real-model scores merely to populate the seed. A small or initially empty real-model seed is valid until evidence-backed entries are available.
+
+The coarse cost category is a routing hint, not exact provider pricing or the V1-08 spend ledger.
+
+Candidate or unknown models are never automatically promoted because a provider reports them.
 
 ## Role floors
 
-| Role | Default floor |
-| --- | --- |
-| Orchestrator | high |
-| Spec author | high |
-| Research investigator | high |
-| Security investigator | high |
-| Spec reviewer | mid |
-| Code reviewer | mid |
-| Implementer | low, if the spec is precise |
+Named floors map exactly to numeric minimum scores:
 
-Floors are built in and configurable under `routing.role_floors` ([CONFIGURATION.md](CONFIGURATION.md)). They are not shown during normal `/startup`.
+```text
+low  = 2
+mid  = 3
+high = 4
+```
 
-**Risk escalation** raises a reviewer's floor to `high` for: authentication, authorization, cryptography, destructive operations, important migrations, public API changes, repeated failures, unresolved reviewer/implementer disagreement, or significant deviation from spec.
+A floor applies to the role's primary capability; it is not an opaque global model grade.
+
+| Role | Primary capability | Default floor |
+| --- | --- | --- |
+| Orchestrator | reasoning | high |
+| Spec author | reasoning | high |
+| Spec reviewer | reasoning | mid |
+| Architect | architecture | high |
+| Implementer | coding | low |
+| Code reviewer | coding | mid |
+| Research investigator | reasoning | high |
+| Security investigator | security reasoning | high |
+| Skill author | reasoning | high |
+| Skill evaluator | reasoning | high |
+
+Floors are configurable under `routing.role_floors` and hidden from normal `/startup`.
+
+After floor filtering, V1-07 ranks candidates deterministically by primary capability, a role-relevant secondary capability, confidence, latency, coarse cost, then canonical model ID. Later budget, provider-health, access-path, and harness constraints may remove or reorder candidates in the full routing pipeline.
+
+**Risk escalation** may raise an affected reviewer's floor to `high` for authentication, authorization, cryptography, destructive operations, important migrations, public API changes, repeated failures, unresolved reviewer/implementer disagreement, or significant deviation from spec.
+
+## Skill-classifier model selection
+
+The V1-06 semantic skill classifier is optional. Agent CLI does not require a special "System-1 provider."
+
+Advanced config supports behavior equivalent to:
+
+```yaml
+routing:
+  classifier:
+    mode: auto                 # auto | selected | disabled
+    selected_model: null
+```
+
+The built-in classifier floor is intentionally low:
+
+```text
+primary capability = reasoning
+minimum score = 2
+```
+
+In `auto` mode, only active models with reasoning >= 2, coarse cost `free` or `low`, and at least one READY provider path are eligible. Rank them by lower cost, lower latency, higher reasoning, higher confidence, then canonical model ID. Apply the configured access preference for provider choice.
+
+If none qualify, V1-06 deterministic routing remains the normal fallback. Do not silently use a medium/high-cost model solely to improve skill routing.
+
+In `selected` mode, use the exact user-selected classifier model if a READY compatible path exists. Do not silently substitute another model. An explicit selected model may be expensive or unscored because the user chose it.
+
+In `disabled` mode, never invoke a semantic classifier.
+
+When no low-cost classifier is available, `/models` or other management surfaces may recommend configuring one, but normal orchestration must continue without it.
 
 ## Cost guardrails
 
@@ -106,10 +177,6 @@ Do not call an endpoint already known to be in cooldown.
 
 ## Model discovery
 
-```
-new model detected → persist as candidate → gather metadata
- → find benchmark evidence → run local evals if needed
- → estimate scores + confidence → activate only when policy allows
-```
+V1-14 owns persistence and ingestion of newly seen models as candidates.
 
-V1 implements only the candidate workflow. A new model never becomes preferred just because it is new.
+V1-07 may expose registry APIs needed by discovery, but it does not scan provider catalogs on a schedule, auto-score unknown models, or auto-activate them. A new model never becomes preferred just because it is new.
