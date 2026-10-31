@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from rich.console import RenderableType
+
 from agent_cli.adapters import (
     AdapterRegistry,
     Capability,
