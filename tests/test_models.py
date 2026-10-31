@@ -36,6 +36,7 @@ from agent_cli.models import (
     build_classifier,
     eligible_models,
     load_registry,
+    ranked_model_candidates,
     models_lines,
     parse_registry,
     requirement,
@@ -121,6 +122,8 @@ def test_valid_entry_is_parsed_with_categories_and_aliases() -> None:
         (model("a", cost="cheap"), "cost must be one of free, low, medium, high"),
         (model("a", latency=1), "latency must be one of"),
         (model("a", display_name=""), "display_name must be a non-empty string"),
+        (model(" a "), "id must not have surrounding whitespace"),
+        (model("a", aliases=[" b "]), "aliases[0] must not have surrounding whitespace"),
         (model("a", aliases="b"), "aliases must be a list"),
         (model("a", scores={"vibes": 3}), "scores must have exactly"),
     ],
@@ -233,8 +236,7 @@ def test_automatic_selection_never_goes_below_the_floor() -> None:
     need = requirement("orchestrator", RoleFloors())
     assert [entry.id for entry in eligible_models(reg, need)] == ["strong"]
     runtime = paths(provider("p", "api", "weak"))
-    with pytest.raises(NoModelAvailable, match="reasoning >= 4"):
-        select_model(reg, "orchestrator", RoleFloors(), runtime, PREFERENCE)
+    assert ranked_model_candidates(reg, "orchestrator", RoleFloors(), runtime, PREFERENCE) == ()
 
 
 def test_candidate_models_are_never_selected_automatically() -> None:
@@ -242,14 +244,14 @@ def test_candidate_models_are_never_selected_automatically() -> None:
     need = requirement("implementer", RoleFloors())
     assert [entry.id for entry in eligible_models(reg, need)] == ["ok"]
     runtime = paths(provider("p", "api", "cand"))
-    with pytest.raises(NoModelAvailable):
-        select_model(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
+    assert ranked_model_candidates(reg, "implementer", RoleFloors(), runtime, PREFERENCE) == ()
 
 
 def test_unknown_runtime_models_are_never_selected_automatically() -> None:
     runtime = paths(provider("p", "api", "mystery"))
-    with pytest.raises(NoModelAvailable):
-        select_model(registry(), "implementer", RoleFloors(), runtime, PREFERENCE)
+    assert ranked_model_candidates(
+        registry(), "implementer", RoleFloors(), runtime, PREFERENCE
+    ) == ()
 
 
 def test_ranking_uses_every_tie_break_in_order() -> None:
@@ -274,24 +276,41 @@ def test_ranking_uses_every_tie_break_in_order() -> None:
     ]
 
 
-def test_selection_skips_ranked_models_without_a_usable_path() -> None:
+def test_ranked_candidates_skip_models_without_a_usable_path() -> None:
     reg = registry(model("best", scores={"coding": 5}), model("next", scores={"coding": 4}))
     runtime = paths(provider("p", "api", "next"))
-    chosen = select_model(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
-    assert (chosen.kind, chosen.model_id, chosen.path.provider.id) == (
-        SelectionKind.AUTOMATIC,
-        "next",
-        "p",
+    candidates = ranked_model_candidates(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
+    assert [candidate.model_id for candidate in candidates] == ["next"]
+    assert [path.provider.id for path in candidates[0].paths] == ["p"]
+
+
+def test_automatic_candidates_do_not_finalize_model_or_provider_choice() -> None:
+    reg = registry(
+        model("best", scores={"coding": 5}),
+        model("subscription-option", scores={"coding": 4}),
     )
-    assert not chosen.pinned and not chosen.warnings
+    runtime = paths(
+        provider("paid", "api", "best"),
+        provider("sub", "subscription", "subscription-option"),
+    )
+
+    candidates = ranked_model_candidates(
+        reg, "implementer", RoleFloors(), runtime, PREFERENCE
+    )
+
+    assert [candidate.model_id for candidate in candidates] == ["best", "subscription-option"]
+    assert candidates[0].paths[0].provider.id == "paid"
+    assert candidates[1].paths[0].provider.id == "sub"
 
 
 def test_alias_reported_by_a_provider_matches_the_canonical_model() -> None:
     reg = registry(model("canon", aliases=["vendor/canon-2"]))
     runtime = paths(provider("p", "api", "vendor/canon-2"))
-    chosen = select_model(reg, "implementer", RoleFloors(), runtime, PREFERENCE)
-    assert chosen.model_id == "canon"
-    assert chosen.path.model_id == "vendor/canon-2"
+    (candidate,) = ranked_model_candidates(
+        reg, "implementer", RoleFloors(), runtime, PREFERENCE
+    )
+    assert candidate.model_id == "canon"
+    assert candidate.paths[0].model_id == "vendor/canon-2"
 
 
 # -- Explicit pins -----------------------------------------------------------------------------
@@ -328,8 +347,9 @@ def test_pinned_unscored_runtime_model_is_allowed_without_inventing_scores() -> 
     )
     assert "unscored" in chosen.warnings[0]
     # The pin does not make the model eligible for unrelated automatic selection.
-    with pytest.raises(NoModelAvailable):
-        select_model(registry(), "architect", RoleFloors(), runtime, PREFERENCE)
+    assert ranked_model_candidates(
+        registry(), "architect", RoleFloors(), runtime, PREFERENCE
+    ) == ()
 
 
 def test_pinned_candidate_is_treated_as_unscored() -> None:
@@ -664,6 +684,19 @@ def test_provider_classifier_makes_no_call_for_an_empty_batch() -> None:
 )
 def test_malformed_classifier_output_is_rejected(reply: str) -> None:
     with pytest.raises(ClassifierOutputError):
+        parse_reply(reply, {"t1"})
+
+
+def test_duplicate_classifier_results_for_one_task_are_rejected() -> None:
+    reply = json.dumps(
+        {
+            "results": [
+                {"task_id": "t1", "signals": ["a"]},
+                {"task_id": "t1", "signals": ["b"]},
+            ]
+        }
+    )
+    with pytest.raises(ClassifierOutputError, match="duplicate result for task_id 't1'"):
         parse_reply(reply, {"t1"})
 
 
