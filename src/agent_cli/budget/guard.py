@@ -94,6 +94,23 @@ class BudgetGuard:
         )
         return replace(call, input_tokens=self.estimator.input_bound(call, request))
 
+    def invoke_classifier(
+        self, adapter: ProviderAdapter, request: ProviderRequest, task_ids: tuple[str, ...]
+    ) -> ProviderResponse:
+        """Budget one classifier batch without mixing root-task spend scopes."""
+        task_id: str | None = None
+        if task_ids:
+            if self.tasks is None:
+                raise BudgetError("paid classifier tasks need task state for budget scoping")
+            roots = {self.tasks.root_task(candidate) for candidate in task_ids}
+            if len(roots) != 1:
+                raise BudgetError(
+                    "paid classifier batch spans multiple root-task budgets; split it before "
+                    "invocation"
+                )
+            task_id = task_ids[0]
+        return self.invoke(adapter, request, "skill_classification", task_id=task_id)
+
     def invoke(
         self,
         adapter: ProviderAdapter,
