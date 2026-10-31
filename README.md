@@ -8,7 +8,7 @@ Describe a goal in natural language. Agent CLI inspects the repo, plans and revi
 
 ## Status
 
-Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell with layered configuration, a guided `/startup` setup, persistent task state behind `/status`, a repository fact index, the model registry behind `/models`, hard paid-API budget guardrails behind `/budget`, and root-prompt orchestration planning that persists role-assigned subtasks and pending specs (implementation is not wired yet); `/review` and `/diff` are still placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
+Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell with layered configuration, a guided `/startup` setup, persistent task state behind `/status`, a repository fact index, the model registry behind `/models`, hard paid-API budget guardrails behind `/budget`, root-prompt orchestration planning, the first-party Anthropic API provider, and a real Claude Code subscription harness (implementation orchestration is not wired yet); `/review` and `/diff` are still placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
 
 ## Development
 
@@ -24,7 +24,7 @@ uv run pytest
 
 ## What V1 targets
 
-- Harness adapters: Pi, Codex CLI, Claude Code, OpenCode
+- Harness adapters: Claude Code (implemented), Codex CLI (next), Pi, OpenCode
 - Providers: subscription access, local OpenAI-compatible endpoints, paid APIs
 - Default paid-API budget: $20/month, no daily limit, $1/task, $0.30/call
 - Implementation modes: autopilot (default), checkpoint, plan-only
