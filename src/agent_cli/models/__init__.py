@@ -7,7 +7,7 @@ provider health (V1-13), harness choice, and discovery (V1-14) live elsewhere. S
 docs/ROUTING.md.
 """
 
-from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, runtime_paths
+from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, runtime_paths, usable_paths
 from agent_cli.models.classifier_selection import (
     CLASSIFIER_MINIMUM,
     ClassifierChoice,
@@ -30,12 +30,14 @@ from agent_cli.models.domain import (
 from agent_cli.models.eligibility import (
     FLOOR_SCORES,
     ROLE_CAPABILITIES,
+    ModelCandidate,
     ModelPin,
     ModelSelection,
     NoModelAvailable,
     RoleRequirement,
     SelectionKind,
     eligible_models,
+    ranked_model_candidates,
     requirement,
     select_model,
 )
@@ -52,6 +54,7 @@ __all__ = [
     "Cost",
     "Latency",
     "ModelCapability",
+    "ModelCandidate",
     "ModelEntry",
     "ModelPath",
     "ModelPin",
@@ -73,8 +76,10 @@ __all__ = [
     "load_registry",
     "models_lines",
     "parse_registry",
+    "ranked_model_candidates",
     "requirement",
     "runtime_paths",
     "select_classifier",
     "select_model",
+    "usable_paths",
 ]
