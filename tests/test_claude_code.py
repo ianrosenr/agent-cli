@@ -252,7 +252,7 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
         "claude-sonnet-5-5",
     )
     permission_index = call["argv"].index("--permission-mode")
-    assert call["argv"][permission_index + 1] == "acceptEdits"
+    assert call["argv"][permission_index + 1] == "auto"
     assert call["env"] == {"PATH": "/usr/bin"}
 
     assert harness.status(handle) is WorkerStatus.COMPLETED
