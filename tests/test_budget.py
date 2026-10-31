@@ -245,6 +245,7 @@ def test_paid_guard_rejects_price_source_without_a_trusted_input_bound(
     assert rejected.value.reason is BudgetReason.PRICING_UNKNOWN
     assert paid.requests == []
 
+
 def test_amounts_are_formatted_exactly() -> None:
     assert format_usd(20 * USD) == "$20.00"
     assert format_usd(300_000) == "$0.30"
@@ -757,6 +758,7 @@ def test_rejected_call_still_tightens_the_root_task_ceiling(ledger: SpendLedger)
     with pytest.raises(BudgetRejected) as sibling:
         ledger.reserve(call("root"), estimate(450_000), limits(per_task=1 * USD))
     assert sibling.value.reason is BudgetReason.PER_TASK_LIMIT
+
 
 def test_budget_shows_the_root_task_ceiling(ledger: SpendLedger, tasks: TaskStore) -> None:
     session = tasks.start_session()
