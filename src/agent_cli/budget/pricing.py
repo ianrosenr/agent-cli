@@ -18,19 +18,25 @@ from agent_cli.budget.domain import CostEstimate, PaidCall
 from agent_cli.skills.tokens import Utf8ByteEstimator
 
 TOKENS_PER_MILLION = 1_000_000
-REQUEST_OVERHEAD_TOKENS = 256
-"""Allowance for message framing and special tokens around the prompt and system text."""
-INPUT_BOUND = Utf8ByteEstimator(bytes_per_token=1)
-"""One token per UTF-8 byte: tokenizers emit at most one token per byte of input."""
+INPUT_BYTES = Utf8ByteEstimator(bytes_per_token=1)
 
 
-def input_bound(request: ProviderRequest) -> int:
-    """A conservative upper bound on a direct request's input tokens."""
+def input_bound(
+    request: ProviderRequest, *, max_tokens_per_utf8_byte: int, request_overhead_tokens: int
+) -> int:
+    """A pricing-source-supplied conservative input-token bound for a direct request."""
+    if max_tokens_per_utf8_byte < 1 or request_overhead_tokens < 0:
+        raise ValueError("input-bound policy must be conservative and non-negative")
     text = request.prompt + (request.system or "")
-    return INPUT_BOUND.estimate(text) + REQUEST_OVERHEAD_TOKENS
+    utf8_bytes = INPUT_BYTES.estimate(text)
+    return utf8_bytes * max_tokens_per_utf8_byte + request_overhead_tokens
 
 
 class CostEstimator(Protocol):
+    def input_bound(self, call: PaidCall, request: ProviderRequest) -> int | None:
+        """Return a trusted conservative request input bound, or None when unprovable."""
+        ...
+
     def estimate(self, call: PaidCall) -> CostEstimate | None:
         """A conservative upper-bound estimate for ``call``, or ``None`` when its price is
         unknown or untrusted. Called only for calls with input and output bounds."""
@@ -46,10 +52,24 @@ class CostEstimator(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Price:
-    """Per-million-token rates in ``usd_micros``, so a $3.00/Mtok rate is ``3_000_000``."""
+    """Versioned rate plus trusted request-bound policy for one provider/model path."""
 
     input_micros_per_mtok: int
     output_micros_per_mtok: int
+    max_input_tokens_per_utf8_byte: int | None = None
+    request_overhead_tokens: int | None = None
+
+    def bound_input(self, request: ProviderRequest) -> int | None:
+        if (
+            self.max_input_tokens_per_utf8_byte is None
+            or self.request_overhead_tokens is None
+        ):
+            return None
+        return input_bound(
+            request,
+            max_tokens_per_utf8_byte=self.max_input_tokens_per_utf8_byte,
+            request_overhead_tokens=self.request_overhead_tokens,
+        )
 
     def cost(self, input_tokens: int, output_tokens: int) -> int:
         """Exact integer cost, rounded up to the next micro-dollar."""
@@ -95,6 +115,10 @@ class PriceTable:
 
     def price(self, provider_id: str, model_id: str) -> Price | None:
         return self.prices.get((provider_id.casefold(), model_id.casefold()))
+
+    def input_bound(self, call: PaidCall, request: ProviderRequest) -> int | None:
+        price = self.price(call.provider_id, call.model_id)
+        return None if price is None else price.bound_input(request)
 
     def estimate(self, call: PaidCall) -> CostEstimate | None:
         price = self.price(call.provider_id, call.model_id)
