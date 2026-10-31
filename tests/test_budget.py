@@ -236,9 +236,7 @@ def test_input_bound_is_at_least_one_token_per_byte() -> None:
 def test_paid_guard_rejects_price_source_without_a_trusted_input_bound(
     ledger: SpendLedger,
 ) -> None:
-    rates_only = PriceTable.of(
-        "rates-only", "1", [("paid", "m", Price(100 * USD, 100 * USD))]
-    )
+    rates_only = PriceTable.of("rates-only", "1", [("paid", "m", Price(100 * USD, 100 * USD))])
     paid = provider("paid", "api", "m")
 
     with pytest.raises(BudgetRejected) as rejected:
@@ -616,15 +614,11 @@ def test_provider_failure_after_dispatch_is_charged_the_reserved_bound(
     assert reservation.note == "failed after dispatch: AdapterError"
 
 
-def test_paid_classifier_runs_through_budget_guard(
-    ledger: SpendLedger, tasks: TaskStore
-) -> None:
+def test_paid_classifier_runs_through_budget_guard(ledger: SpendLedger, tasks: TaskStore) -> None:
     session = tasks.start_session()
     root = tasks.create_task(session.id, "Root")
     child = tasks.create_task(session.id, "Classify", parent_id=root.id)
-    reply = (
-        '{"results":[{"task_id":"' + child.id + '","signals":[],"evidence":"bounded"}]}'
-    )
+    reply = '{"results":[{"task_id":"' + child.id + '","signals":[],"evidence":"bounded"}]}'
     paid = provider("paid", "api", "m", reply=reply)
     choice = ClassifierChoice("selected", ModelPath("m", paid.identity()), "m")
     budget = guard(ledger, tasks)
