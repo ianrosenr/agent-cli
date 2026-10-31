@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-
 from agent_cli.adapters import (
     AdapterRegistry,
     Capability,
@@ -61,7 +59,7 @@ class Conversation:
     def read_line(self, prompt: str) -> str:
         return self.answers.pop(0)
 
-    def write_line(self, shown: object) -> None:
+    def write_line(self, shown: RenderableType) -> None:
         self.output.append(plain(shown))
 
 
