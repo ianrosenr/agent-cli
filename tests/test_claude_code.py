@@ -214,6 +214,27 @@ def test_non_subscription_auth_is_rejected(method: str) -> None:
     assert "subscription" in readiness.reason
 
 
+def test_oauth_without_subscription_metadata_is_rejected() -> None:
+    commands = FakeCommands(
+        auth={"loggedIn": True, "authMethod": "oauth_token"}
+    )
+    readiness = adapter(commands=commands).readiness()
+    assert readiness.state is ReadinessState.AUTH_REQUIRED
+
+
+def test_oauth_with_subscription_metadata_is_ready() -> None:
+    commands = FakeCommands(
+        auth={
+            "loggedIn": True,
+            "authMethod": "oauth_token",
+            "subscriptionType": "Pro",
+        }
+    )
+    readiness = adapter(commands=commands).readiness()
+    assert readiness.state is ReadinessState.READY
+    assert "subscription auth (Pro)" in readiness.reason
+
+
 def test_signed_out_is_auth_required() -> None:
     commands = FakeCommands(
         auth={"loggedIn": False, "authMethod": "none"},
