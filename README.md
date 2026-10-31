@@ -8,7 +8,7 @@ Describe a goal in natural language. Agent CLI inspects the repo, plans and revi
 
 ## Status
 
-Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell with layered configuration, a guided `/startup` setup, persistent task state behind `/status`, a repository fact index, the model registry behind `/models`, hard paid-API budget guardrails behind `/budget`, root-prompt orchestration planning, the first-party Anthropic API provider, and real Claude Code and Codex CLI subscription harnesses (implementation orchestration is not wired yet); `/review` and `/diff` are still placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
+Pre-alpha. The repository contains design docs, agent contracts, and a runnable CLI shell with layered configuration, a guided `/startup` setup, persistent task state behind `/status`, a repository fact index, the model registry behind `/models`, hard paid-API budget guardrails behind `/budget`, root-prompt orchestration planning, the first-party Anthropic API provider, real Claude Code and Codex CLI subscription harnesses, and config-driven `/login` for cached native subscription auth (implementation orchestration is not wired yet); `/review` and `/diff` are still placeholders. See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md#15-build-order) for the build order.
 
 ## Development
 
