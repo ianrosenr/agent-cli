@@ -27,5 +27,26 @@
 #       - concise evidence label
 #     aliases: []                 # other IDs providers report this model as
 
-version: 1
-models: []
+version: 2
+models:
+  # Conservative, reviewed scores: enough for the orchestrator, spec_author, architect, and
+  # research floors (4), deliberately not the high security floor. No 5 without independent
+  # evaluation evidence.
+  - id: claude-sonnet-5-5
+    display_name: Claude Sonnet 5.5
+    status: active
+    scores:
+      reasoning: 4
+      coding: 4
+      repository_engineering: 4
+      debugging: 4
+      tool_use: 4
+      architecture: 4
+      security_reasoning: 3
+    latency: fast
+    cost: medium
+    confidence: medium
+    sources:
+      - "Anthropic models overview, reviewed 2026-10-31: https://platform.claude.com/docs/en/models/overview"
+      - "Anthropic Claude Sonnet 5.5 model page: https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+    aliases: []

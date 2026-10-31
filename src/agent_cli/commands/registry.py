@@ -58,6 +58,8 @@ class CommandContext:
     """Canonical task state; ``None`` outside a repository, where no task state exists."""
     orchestrate: Callable[[str], RenderableType] | None = None
     """Plans one line of ordinary input; ``None`` where orchestration cannot run."""
+    reload_adapters: Callable[[], None] | None = None
+    """Rebuilds ``adapters`` from the current configuration, after setup changes it."""
 
 
 class ExitShell(Exception):

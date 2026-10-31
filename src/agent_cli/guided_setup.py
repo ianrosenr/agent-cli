@@ -7,6 +7,7 @@ nothing until the user confirms the summary.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -288,6 +289,16 @@ def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
     return layer_data
 
 
+ANTHROPIC = "anthropic"
+ANTHROPIC_KEY_ENV = "ANTHROPIC_API_KEY"
+ANTHROPIC_ENTRY: RawConfig = {
+    "type": "anthropic",
+    "api_key_env": ANTHROPIC_KEY_ENV,
+    "enabled": True,
+}
+"""A reference to the key, never the key itself: Agent CLI never asks for a secret."""
+
+
 def default_status(config: Config) -> RenderableType:
     """Configured harnesses and providers, with no adapters to report runtime readiness."""
     return providers_view(AdapterRegistry(), config)
@@ -340,6 +351,10 @@ class GuidedSetup:
     harness_provider_status: HarnessProviderStatus = default_status
     files: dict[Layer, RawConfig] = field(default_factory=dict)
     """Global and project config as read once at the start, so every step checks the same data."""
+    saved: bool = False
+    """Whether the run wrote configuration."""
+    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
+    """Checked only for whether a credential variable is set; its value is never read out."""
 
     def run(self) -> RenderableType:
         """Run the whole flow and return the closing message. Never writes unless confirmed."""
@@ -397,6 +412,9 @@ class GuidedSetup:
                     index = [s.key for s in SETTINGS].index(BUDGET_KEYS[0])
 
         changes, removals = self.plan(target, inherited, layer_data, answers)
+        provider = self.ask_anthropic(self.resolve(Layer.PROJECT))
+        if provider:
+            changes = merge(changes, provider)
         self.write_line("")
         self.write_line(self.summary(target, current, inherited, answers, changes, removals))
         self.write_line("")
@@ -409,6 +427,7 @@ class GuidedSetup:
             path = self.service.save(target, changes, removals)
         except ConfigError as problem:
             return error("Could not save settings.", str(problem))
+        self.saved = True
         return success(f"Settings saved to {path}.")
 
     def resolve(self, through: Layer, proposal: tuple[Layer, RawConfig] | None = None) -> Config:
@@ -417,6 +436,43 @@ class GuidedSetup:
         if proposal is not None:
             replace[proposal[0]] = proposal[1]
         return self.service.resolve(through=through, replace=replace)
+
+    def ask_anthropic(self, config: Config) -> RawConfig:
+        """Offer to configure the Anthropic API by reference to ``ANTHROPIC_API_KEY``.
+
+        Only when no ``providers.anthropic`` exists yet, so a custom credential reference is
+        never replaced. Whether the variable is set is shown; its value never is.
+        """
+        if ANTHROPIC in config.providers:
+            return {}
+        detected = bool(self.environ.get(ANTHROPIC_KEY_ENV, "").strip())
+        self.write_line("")
+        self.write_line(
+            section(
+                "Anthropic API",
+                fields([(f"{ANTHROPIC_KEY_ENV} detected", "yes" if detected else "no")], indent=1),
+            )
+        )
+        if not detected:
+            self.write_line(
+                indented(
+                    muted(
+                        f"Skipped. To use Claude through the Anthropic API, set "
+                        f"{ANTHROPIC_KEY_ENV} in your environment and run /startup again. "
+                        "Never paste the key here."
+                    )
+                )
+            )
+            return {}
+        self.write_line(answer_hint(YES_NO, "y", default="yes"))
+        while True:
+            answer = self.read_line(f"Configure Anthropic using {ANTHROPIC_KEY_ENV} (y/n): ")
+            try:
+                accepted = not answer.strip() or parse_bool(answer.strip())
+            except InvalidAnswer:
+                self.format_not_followed(YES_NO, "y", default="yes")
+                continue
+            return {"providers": {ANTHROPIC: dict(ANTHROPIC_ENTRY)}} if accepted else {}
 
     def ask_target(self) -> Layer:
         project = self.service.paths.project_file
@@ -570,6 +626,14 @@ class GuidedSetup:
                 note.append(" (overridden by project config)", style="warning")
             rows.append((setting.label, Text(setting.format(value), style="value"), note))
 
+        if contains(changes, f"providers.{ANTHROPIC}"):
+            rows.append(
+                (
+                    "Anthropic API",
+                    Text(f"key from env {ANTHROPIC_KEY_ENV}", style="value"),
+                    Text(f"→ {target.value}", style="accent"),
+                )
+            )
         heading = section("Summary", note=f"changes are written to {self.service.source(target)}")
         gitignore = (
             muted("Project runtime directories (state, worktrees) will be git-ignored.")

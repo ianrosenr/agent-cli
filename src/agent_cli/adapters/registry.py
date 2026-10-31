@@ -25,6 +25,12 @@ class AdapterRegistry:
         for provider in providers:
             self.register_provider(provider)
 
+    def reset(self, other: AdapterRegistry) -> None:
+        """Replace every adapter with ``other``'s, in place, so holders of this registry see the
+        new set (for example after setup changes configuration)."""
+        self._harnesses = other.harnesses()
+        self._providers = other.providers()
+
     def register_harness(self, adapter: HarnessAdapter) -> None:
         harness_id = adapter.identity().id
         if harness_id in self._harnesses:

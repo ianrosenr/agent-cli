@@ -25,10 +25,17 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter
 from agent_cli.adapters.provider import ProviderAdapter
-from agent_cli.budget import BudgetGuard, Price, PriceTable, ReservationStatus, SpendLedger
+from agent_cli.budget import (
+    BudgetGuard,
+    Price,
+    PriceTable,
+    ReservationStatus,
+    SettlementSource,
+    SpendLedger,
+)
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import ConfigPaths, ConfigService, Layer
-from agent_cli.models import ModelRegistry
+from agent_cli.models import ModelRegistry, runtime_paths
 from agent_cli.orchestration import (
     DELEGATED_ROLES,
     SECTIONS,
@@ -52,6 +59,7 @@ from agent_cli.orchestration import planner as planner_module
 from agent_cli.orchestration.domain import RepositoryContext, UserText
 from agent_cli.orchestration.planner import render_prompt
 from agent_cli.orchestration.spec_author import SpecRequest, draft_problems, known_area
+from agent_cli.runtime import default_adapters, provider_estimators
 from agent_cli.skills import FakeClassifier
 from agent_cli.state import (
     Approval,
@@ -65,6 +73,9 @@ from agent_cli.state import (
 )
 from agent_cli.terms import AccessKind
 from agent_cli.ui import plain
+from fake_anthropic import SONNET, FakeAnthropic, FakeMessages
+from fake_anthropic import message as anthropic_message
+from fake_anthropic import resolver as anthropic_credentials
 from gitrepo import commit, git, write
 from test_models import model, registry
 
@@ -985,6 +996,55 @@ def test_provider_backed_planning_and_spec_authoring_end_to_end(
     spec = store.latest_spec(child.id)
     assert spec is not None and "Existing get callers behave the same." in spec.body
     assert "Planned with planner-model via scripted (subscription)." in output
+
+
+def anthropic_reply(kwargs: dict[str, Any]) -> Any:
+    """What Claude would answer to the planner and spec-author prompts, Anthropic-shaped."""
+    payload = json.loads(kwargs["messages"][0]["content"])
+    if kwargs.get("system") == planner_module.SYSTEM:
+        reply = default_plan_reply(payload)
+    else:
+        provider = ScriptedProvider("api")
+        spec_request = ProviderRequest(SONNET, json.dumps(payload), "spec", 1)
+        reply = json.loads(provider.invoke(spec_request).text)
+    return anthropic_message(json.dumps(reply), input_tokens=900, output_tokens=300)
+
+
+def test_anthropic_planning_and_spec_authoring_end_to_end(
+    store: TaskStore, config: ConfigService, tmp_path: Path
+) -> None:
+    config.save(
+        Layer.GLOBAL,
+        {"providers": {"anthropic": {"type": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}}},
+    )
+    fake = FakeAnthropic(messages=FakeMessages(reply=anthropic_reply, count=1_000))
+    adapters = default_adapters(config.resolve(), anthropic_credentials(), fake.factory)
+    assert adapters.providers()["anthropic"].readiness().ready
+    assert [p.model_id for p in runtime_paths(adapters, config.resolve()).paths] == [SONNET]
+    ledger = SpendLedger(tmp_path / "spend.sqlite")
+    orchestrator = OrchestrationService(
+        store,
+        config,
+        adapters,
+        ledger=ledger,
+        estimator=provider_estimators(adapters),
+        classifier=lambda *_: None,
+    )
+
+    output = plain(orchestrator.handle(GOAL))
+
+    assert [c["model"] for c in fake.messages.created] == [SONNET, SONNET]
+    assert fake.messages.created[0]["system"] == planner_module.SYSTEM
+    assert len(fake.messages.counted) == 2  # one exact count per call, reused at dispatch
+    [child] = store.subtasks(root_of(store))
+    spec = store.latest_spec(child.id)
+    assert spec is not None and spec.approval is Approval.PENDING
+    assert "Existing get callers behave the same." in spec.body
+    reservations = ledger.reservations()
+    assert [r.status for r in reservations] == [ReservationStatus.SETTLED] * 2
+    assert {r.settlement_source for r in reservations} == {SettlementSource.TOKEN_PRICING}
+    assert all(r.settled_micros == 900 * 2 + 300 * 10 for r in reservations)
+    assert f"Planned with {SONNET} via anthropic (api)." in output
 
 
 def test_no_executable_planning_path_blocks_instead_of_fabricating_a_plan(

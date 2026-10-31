@@ -85,12 +85,16 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     if context.config is None:
         return error(UNAVAILABLE)
     adapters = adapters_of(context)
-    return GuidedSetup(
+    setup = GuidedSetup(
         context.config,
         context.read_line,
         context.write_line,
         lambda config: providers_view(adapters, config),
-    ).run()
+    )
+    result = setup.run()
+    if setup.saved and context.reload_adapters is not None:
+        context.reload_adapters()
+    return result
 
 
 def providers_command(context: CommandContext, args: str) -> RenderableType:

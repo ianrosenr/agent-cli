@@ -20,6 +20,7 @@ from agent_cli.adapters import AdapterRegistry
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
 from agent_cli.config import ConfigError, ConfigPaths, ConfigService
+from agent_cli.runtime import provider_estimators, session_adapters
 from agent_cli.state import TaskStore
 from agent_cli.ui import blocks, error, home, is_unicode, make_console
 
@@ -55,6 +56,7 @@ def run_shell(
     config: ConfigService | None = None,
     adapters: AdapterRegistry | None = None,
     tasks: TaskStore | None = None,
+    reload_adapters: Callable[[], None] | None = None,
 ) -> int:
     """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
     context = CommandContext(
@@ -65,6 +67,7 @@ def run_shell(
         adapters=adapters,
         tasks=tasks,
         orchestrate=orchestrator(config, adapters, tasks),
+        reload_adapters=reload_adapters,
     )
     write_line(startup)
     while True:
@@ -95,10 +98,31 @@ def orchestrator(
         if service is None:
             from agent_cli.orchestration import OrchestrationService
 
-            service = OrchestrationService(tasks, config, adapters or AdapterRegistry())
+            registry = adapters or AdapterRegistry()
+            service = OrchestrationService(
+                tasks, config, registry, estimator=provider_estimators(registry)
+            )
         return service.handle(text)
 
     return orchestrate
+
+
+def reloader(config: ConfigService, adapters: AdapterRegistry) -> Callable[[], None]:
+    """Rebuild ``adapters`` in place from the current configuration, after setup saves it.
+
+    Only for the registry ``session_adapters`` built, since the rebuild replaces every adapter.
+    Invalid configuration leaves the current adapters in place. Hand edits to config files take
+    effect on the next start.
+    """
+
+    def reload() -> None:
+        try:
+            config.resolve()
+        except ConfigError:
+            return
+        adapters.reset(session_adapters(config))
+
+    return reload
 
 
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -120,20 +144,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         startup = blocks(home(registry, unicode=is_unicode(console)), config_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
+        adapters = session_adapters(config)
         return run_shell(
-            registry, terminal_reader(), console.print, startup, config, default_adapters(), tasks
+            registry,
+            terminal_reader(),
+            console.print,
+            startup,
+            config,
+            adapters,
+            tasks,
+            reloader(config, adapters),
         )
     except KeyboardInterrupt:
         return 130
-
-
-def default_adapters() -> AdapterRegistry:
-    """The harness and provider adapters available to every session.
-
-    Real adapters are registered here as they are added (Pi is the first candidate). Adapter
-    construction must stay cheap: detection happens later, through ``readiness()``.
-    """
-    return AdapterRegistry()
 
 
 def config_problem(config: ConfigService) -> RenderableType | None:

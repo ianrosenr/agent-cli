@@ -18,6 +18,13 @@ def isolated_home(
     return home
 
 
+@pytest.fixture(autouse=True)
+def no_real_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hide a developer's real Anthropic credentials and endpoint from every test."""
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def paths(tmp_path: Path) -> ConfigPaths:
     """Config locations in a temporary home and a temporary Git repository."""

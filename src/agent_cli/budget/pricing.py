@@ -8,7 +8,7 @@ no real provider prices: until a trusted price source is configured, every paid 
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Protocol
@@ -141,3 +141,29 @@ class PriceTable:
 
 NO_PRICING = PriceTable("agent-cli-builtin", "1")
 """The default: no trusted prices, so every paid API path fails closed as ``pricing_unknown``."""
+
+
+class ProviderEstimators:
+    """Routes each call to the estimator ``lookup`` returns for its provider ID.
+
+    A provider without one is priced by ``NO_PRICING`` and so fails closed. ``lookup`` is asked
+    on every call, so it may follow a provider set that changes during a session.
+    """
+
+    def __init__(self, lookup: Callable[[str], CostEstimator | None]) -> None:
+        self.lookup = lookup
+
+    def of(self, provider_id: str) -> CostEstimator:
+        estimator = self.lookup(provider_id)
+        return NO_PRICING if estimator is None else estimator
+
+    def input_bound(self, call: PaidCall, request: ProviderRequest) -> int | None:
+        return self.of(call.provider_id).input_bound(call, request)
+
+    def estimate(self, call: PaidCall) -> CostEstimate | None:
+        return self.of(call.provider_id).estimate(call)
+
+    def price_usage(
+        self, call: PaidCall, estimate: CostEstimate, input_tokens: int, output_tokens: int
+    ) -> int | None:
+        return self.of(call.provider_id).price_usage(call, estimate, input_tokens, output_tokens)

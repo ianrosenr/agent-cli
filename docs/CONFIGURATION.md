@@ -99,7 +99,21 @@ providers:
     api_key_env: LOCAL_VLLM_API_KEY      # or: api_key_keyring: agent-cli/local-vllm
 ```
 
-Values come from environment variables or the OS credential store.
+Values come from environment variables or the OS credential store, and are held in memory only: never written, logged, or shown. Configure exactly one of `api_key_env` and `api_key_keyring` per provider; both is a misconfiguration, and a reference whose value is missing or empty means sign-in is required.
+
+`api_key_keyring: <service>/<name>` reads the OS keyring entry `<name>` under service `<service>` (through the `keyring` package); a bare `<name>` uses the `agent-cli` service.
+
+The first-party Anthropic API is configured like this, which `/startup` offers to write when `ANTHROPIC_API_KEY` is set (it only checks that the variable exists):
+
+```yaml
+providers:
+  anthropic:
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    enabled: true
+```
+
+`base_url` is not supported for `anthropic` in V1.
 
 Like other sections, provider and harness entries merge by key across layers, so a project can change one field of a provider defined globally (for example `enabled: false`). Required fields such as a provider's `type` must be present once all layers are merged.
 
