@@ -178,7 +178,9 @@ def test_skills_lists_the_catalog_without_task_state(context: CommandContext) ->
     assert "budget 8000 tokens" in lines[0] and "estimator utf8-bytes-div3@1" in lines[0]
     assert lines[2].split() == ["Skill", "Source", "Version", "Activation", "Tokens"]
     row = next(line for line in lines if line.split()[:1] == ["security"])
-    assert row.split()[1:4] == ["builtin", "1.0.0", "auto"]
+    cells = row.split()
+    assert cells[1].startswith("builtin:")
+    assert cells[2:4] == ["1.0.0", "auto"]
     assert "Routing:" not in lines
     assert not any("trust boundar" in line.lower() for line in lines[3:])  # no skill bodies
 
@@ -205,11 +207,9 @@ def test_skills_shows_effective_source_activation_and_routing(
 
     with_state = replace(context, config=config, tasks=TaskStore(store.path))
     lines = with_state.registry.dispatch("/skills", with_state).splitlines()
-    assert next(line for line in lines if line.split()[:1] == ["testing"]).split()[1:4] == [
-        "project",
-        "3.1.0",
-        "auto",
-    ]
+    testing = next(line for line in lines if line.split()[:1] == ["testing"]).split()
+    assert testing[1] == f"project:{override.parent.parent.resolve()}"
+    assert testing[2:4] == ["3.1.0", "auto"]
     assert next(line for line in lines if line.split()[:1] == ["data"]).split()[3] == "explicit"
     routing = lines[lines.index("Routing:") + 1 :]
     assert routing[0].startswith(f"  Add refresh endpoint ({task.id}) · role: implementer")
