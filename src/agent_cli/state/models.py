@@ -211,6 +211,8 @@ class RoutedSkill:
     version: str
     source: str
     """Where the effective package came from: ``builtin``, ``global``, ``project``, ..."""
+    source_path: str
+    """Concrete root directory that supplied the effective skill package."""
     tokens: int
     reason: str
 
