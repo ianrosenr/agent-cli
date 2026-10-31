@@ -213,7 +213,7 @@ def check_constraints(value: Any, source: str, path: str, meta: Mapping[str, Any
     if maximum is not None and value > maximum:
         raise ConfigError(source, path, f"must be at most {maximum}, got {value}")
     kind = meta.get("kind")
-    if kind == "required" and not value:
+    if (kind == "required" and not value) or (kind == "nonempty" and not value.strip()):
         raise ConfigError(source, path, "must not be empty")
     elif kind == "unique-nonempty":
         if not value:

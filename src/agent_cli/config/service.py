@@ -202,6 +202,17 @@ def check_cost_order(cost: CostConfig, layer: Mapping[str, Any], source: str) ->
         )
 
 
+def check_classifier(merged: Mapping[str, Any], layer: Mapping[str, Any], source: str) -> None:
+    """``selected`` classifier mode needs a model once the layer touching it is merged."""
+    if "classifier" not in layer.get("routing", {}):
+        return
+    classifier = merged["routing"]["classifier"]
+    if classifier["mode"] == "selected" and not classifier["selected_model"]:
+        raise ConfigError(
+            source, "routing.classifier.selected_model", "is required when mode is selected"
+        )
+
+
 def label(key: str) -> str:
     return "the " + key.removesuffix("_limit_usd").replace("_", "-") + " limit"
 
@@ -261,6 +272,7 @@ class ConfigService:
             merged = merge(merged, data)
             check_required(Config, merged, data, source)
             check_cost_order(build(CostConfig, merged["cost"]), data, source)
+            check_classifier(merged, data, source)
             for key, value in data.get("cost", {}).items():
                 ceilings[key] = (value, layer.value)
         return build(Config, merged)

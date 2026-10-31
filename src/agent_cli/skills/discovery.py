@@ -14,6 +14,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent_cli.assets import builtin_root
 from agent_cli.skills.models import Skill, SkillError, SkillSource, SourceKind
 from agent_cli.skills.parser import SKILL_FILE, parse_skill
 from agent_cli.skills.tokens import DEFAULT_ESTIMATOR, TokenEstimator
@@ -21,15 +22,6 @@ from agent_cli.state.paths import AGENT_DIR
 
 SKILLS_DIR = "skills"
 POLICIES_DIR = "policies"
-PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-
-
-def builtin_root() -> Path:
-    """Shipped built-ins: inside the installed package, or the repository's ``builtins/``."""
-    packaged = PACKAGE_ROOT / "builtins"
-    if packaged.is_dir():
-        return packaged
-    return PACKAGE_ROOT.parent.parent / "builtins"
 
 
 def skill_sources(

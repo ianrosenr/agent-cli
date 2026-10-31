@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 import stat
 from pathlib import Path
@@ -9,9 +10,10 @@ import pytest
 import yaml
 
 from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
-from agent_cli.config.model import CostConfig
+from agent_cli.config.model import CostConfig, RoleFloors
 from agent_cli.config.schema import ordered, to_raw
 from agent_cli.config.service import FILE_HEADER, CostOrderError
+from agent_cli.terms import CANONICAL_ROLES
 
 CANONICAL_DEFAULTS = yaml.safe_load(
     """
@@ -43,11 +45,17 @@ routing:
   role_floors:
     orchestrator: high
     spec_author: high
+    spec_reviewer: mid
+    architect: high
+    implementer: low
+    code_reviewer: mid
     research_investigator: high
     security_investigator: high
-    spec_reviewer: mid
-    code_reviewer: mid
-    implementer: low
+    skill_author: high
+    skill_evaluator: high
+  classifier:
+    mode: auto
+    selected_model: null
 """
 )
 
@@ -104,6 +112,39 @@ def test_nested_partial_overrides_inherit_sibling_keys(
     assert config.git.worktree_dir == ".agent-cli/worktrees"
     assert config.routing.role_floors.implementer == "mid"
     assert config.routing.role_floors.orchestrator == "high"
+
+
+def test_role_floor_fields_are_exactly_the_canonical_roles() -> None:
+    assert tuple(f.name for f in dataclasses.fields(RoleFloors)) == CANONICAL_ROLES
+
+
+def test_selected_classifier_model_may_come_from_a_more_general_layer(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.global_file, {"routing": {"classifier": {"selected_model": "tiny"}}})
+    write(paths.project_file, {"routing": {"classifier": {"mode": "selected"}}})
+    classifier = service.resolve().routing.classifier
+    assert (classifier.mode, classifier.selected_model) == ("selected", "tiny")
+
+
+def test_selected_model_is_kept_but_unused_outside_selected_mode(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(
+        paths.project_file, {"routing": {"classifier": {"mode": "disabled", "selected_model": "x"}}}
+    )
+    classifier = service.resolve().routing.classifier
+    assert (classifier.mode, classifier.selected_model) == ("disabled", "x")
+
+
+def test_clearing_the_selected_model_in_selected_mode_is_rejected(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(
+        paths.global_file, {"routing": {"classifier": {"mode": "selected", "selected_model": "x"}}}
+    )
+    with pytest.raises(ConfigError, match="required when mode is selected"):
+        service.resolve(task={"routing": {"classifier": {"selected_model": None}}})
 
 
 def test_lists_replace_rather_than_append(service: ConfigService, paths: ConfigPaths) -> None:
@@ -173,6 +214,14 @@ def test_discover_finds_the_repository_root(tmp_path: Path) -> None:
         ({"git": {"branch_prefix": "has space/"}}, "git.branch_prefix", "branch prefix"),
         ({"routing": {"role_floors": {"intern": "low"}}}, "routing.role_floors.intern", ""),
         ({"routing": {"role_floors": {"implementer": "top"}}}, "routing.role_floors", "one of"),
+        ({"routing": {"classifier": {"mode": "cheap"}}}, "routing.classifier.mode", "one of"),
+        ({"routing": {"classifier": {"selected_model": ""}}}, "routing.classifier", "empty"),
+        ({"routing": {"classifier": {"selected_model": "  "}}}, "routing.classifier", "empty"),
+        (
+            {"routing": {"classifier": {"mode": "selected"}}},
+            "routing.classifier.selected_model",
+            "required when mode is selected",
+        ),
         ({"providers": {"local": {"base_url": "http://x"}}}, "providers.local.type", "required"),
         ({"providers": {"local": "openai"}}, "providers.local", "expected a mapping"),
         ({"harnesses": {"pi": {"path": "/bin/pi"}}}, "harnesses.pi.path", "unknown key"),

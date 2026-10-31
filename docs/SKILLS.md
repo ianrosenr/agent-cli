@@ -71,7 +71,7 @@ Type-safety rules belong to `software-engineering`; there is no separate type-sa
 
 The orchestrator assigns role and subtask scope. Deterministic repository inspection always participates; an injected cheap semantic classifier may add normalized signals when available. Deterministic code maps the resulting signals to skills.
 
-V1-06 works without a production classifier. V1-07 later chooses the concrete classifier model/provider.
+V1-06 works without a production classifier. V1-07 chooses the concrete classifier model/provider (`routing.classifier`, shown by `/models`); with none available, routing stays deterministic.
 
 Selection uses:
 

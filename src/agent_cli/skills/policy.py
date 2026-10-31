@@ -14,9 +14,11 @@ from typing import Any
 
 import yaml
 
-from agent_cli.skills.discovery import POLICIES_DIR, SkillCatalog, builtin_root
+from agent_cli.assets import builtin_root
+from agent_cli.skills.discovery import POLICIES_DIR, SkillCatalog
 from agent_cli.skills.models import SkillError
 from agent_cli.skills.parser import is_skill_name
+from agent_cli.terms import CANONICAL_ROLES
 
 type Fail = Callable[[str], SkillError]
 
@@ -30,18 +32,6 @@ TOP_LEVEL_KEYS = (
     "skills",
 )
 REPOSITORY_KINDS = ("categories", "facts")
-CANONICAL_ROLES = (
-    "orchestrator",
-    "spec_author",
-    "spec_reviewer",
-    "architect",
-    "implementer",
-    "code_reviewer",
-    "research_investigator",
-    "security_investigator",
-    "skill_author",
-    "skill_evaluator",
-)
 
 
 class Strength(IntEnum):
