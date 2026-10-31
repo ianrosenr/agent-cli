@@ -23,7 +23,7 @@
                                │
               ┌────────────────┴────────────────┐
      Harness adapter                    Provider adapter
-   (Claude Code, Pi, Codex CLI, OpenCode)   (subscription, local, API)
+   (Claude Code, Codex CLI, Pi, OpenCode)   (subscription, local, API)
 ```
 
 | Component | Owns | Does not own |
@@ -60,7 +60,7 @@ Agent CLI owns:
 
 Harnesses own the mechanics of executing a coding agent.
 
-Claude Code, Pi, Codex CLI, and OpenCode are examples of external harnesses. Claude Code is the first harness target; Pi is the second portability test. Neither is an architectural dependency.
+Claude Code, Codex CLI, Pi, and OpenCode are examples of external harnesses. Claude Code and Codex CLI are the first two real integrations; Pi is the next portability test. None is an architectural dependency.
 
 ## Model, provider, harness
 

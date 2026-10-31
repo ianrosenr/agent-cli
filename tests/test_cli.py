@@ -260,6 +260,7 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         # Real adapters are built at startup from config; none imports a vendor SDK.
         "agent_cli.adapters.anthropic",
         "agent_cli.adapters.claude_code",
+        "agent_cli.adapters.codex_cli",
         "agent_cli.adapters.credentials",
         "agent_cli.runtime",
     }

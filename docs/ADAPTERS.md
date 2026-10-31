@@ -1,6 +1,6 @@
 # Harness and provider adapters
 
-Agent CLI is the control plane. It decides what work exists, who owns it, which model, provider, and harness run it, and how results are reviewed. External **harnesses** (Claude Code, Pi, Codex CLI, OpenCode, ...) execute coding agents; **providers** serve models. Adapters translate between Agent CLI's normalized contract and each one's native commands, SDK, RPC, or process. Agent CLI never reimplements a harness's tool loop, streaming, or sessions.
+Agent CLI is the control plane. It decides what work exists, who owns it, which model, provider, and harness run it, and how results are reviewed. External **harnesses** (Claude Code, Codex CLI, Pi, OpenCode, ...) execute coding agents; **providers** serve models. Adapters translate between Agent CLI's normalized contract and each one's native commands, SDK, RPC, or process. Agent CLI never reimplements a harness's tool loop, streaming, or sessions.
 
 Code lives in `src/agent_cli/adapters/`:
 
@@ -29,7 +29,7 @@ Core code depends only on these types. Adding an adapter means implementing an i
 
 ## Status
 
-The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude Code is the first real harness; Pi remains the second portability test.
+The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude Code and Codex CLI are the first two real subscription harnesses; Pi is next as the portability test.
 
 ### Claude Code harness (V1-10.5)
 
@@ -42,6 +42,18 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 - **Lifecycle.** Start/status/result/interruption are normalized. Results retain a concise summary, token usage when Claude reports it, and Git changed-file/diff information. Raw stderr is never surfaced because it may contain task context.
 - **Provider pin.** This fixed access path identifies itself as `claude-subscription`. A conflicting provider pin, including the paid `anthropic` API provider, is rejected rather than substituted.
 - **Config.** No config is required for normal detection. `harnesses.claude-code.command` can override the executable path and `enabled: false` disables it.
+
+### Codex CLI harness (V1-10.6)
+
+`codex-cli` (`src/agent_cli/adapters/codex_cli.py`) wraps the installed Codex CLI and deliberately uses the user's ChatGPT subscription login rather than OpenAI API credentials.
+
+- **Detection/auth.** Runtime always registers the adapter so `/startup` and `/providers` can detect `codex`. Readiness runs bounded `codex --version` and `codex login status` checks while forcing the built-in OpenAI provider, ChatGPT login method, and default OpenAI inference endpoint. Runtime auth is never written to Agent CLI config.
+- **Subscription-only.** Readiness fails closed when OpenAI/Codex API-key, base-URL, access-token, or workload-identity environment variables are set and tells the user which variable to unset. It requires `Logged in using ChatGPT`, so the route cannot silently become pay-as-you-go.
+- **Execution.** Workers use `codex exec --json --ephemeral` with `--ask-for-approval never`, the exact selected model, and the supplied cwd/worktree. Task/spec/role/skills context goes over stdin, not argv.
+- **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Codex's `workspace-write` sandbox; `plan-only` uses `read-only`. Checkpoint approval stays in Agent CLI orchestration, shared across every harness.
+- **Lifecycle.** Start/status/result/interruption are normalized. JSONL events provide the final agent message, thread reference, and token usage; Git changed-file/diff information is collected separately. Raw stderr and vendor error details are never surfaced.
+- **Provider pin.** This fixed access path identifies itself as `openai-subscription`. A conflicting provider pin is rejected rather than substituted.
+- **Config.** No config is required for normal detection. `harnesses.codex-cli.command` can override the executable path and `enabled: false` disables it.
 
 ### Anthropic provider (V1-09.5)
 
