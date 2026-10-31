@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from agent_cli import __version__
 from agent_cli.adapters import AdapterRegistry
@@ -18,8 +19,13 @@ from agent_cli.config import ConfigError, ConfigPaths, ConfigService
 from agent_cli.startup import render_startup, supports_color
 from agent_cli.state import TaskStore
 
+if TYPE_CHECKING:
+    from agent_cli.orchestration import OrchestrationService
+
 PROMPT = "> "
-NATURAL_LANGUAGE_PLACEHOLDER = "Orchestration is not implemented yet."
+NO_ORCHESTRATION = (
+    "Agent CLI plans work inside a Git repository. Start it from your project's directory."
+)
 
 type ReadLine = Callable[[str], str]
 type WriteLine = Callable[[str], None]
@@ -32,8 +38,9 @@ def handle_input(line: str, context: CommandContext) -> str | None:
         return None
     if is_command(text):
         return context.registry.dispatch(text, context)
-    # V1-09 replaces this with the orchestration entry point.
-    return NATURAL_LANGUAGE_PLACEHOLDER
+    if context.orchestrate is None:
+        return NO_ORCHESTRATION
+    return context.orchestrate(text)
 
 
 def run_shell(
@@ -53,6 +60,7 @@ def run_shell(
         write_line=write_line,
         adapters=adapters,
         tasks=tasks,
+        orchestrate=orchestrator(config, adapters, tasks),
     )
     write_line(startup)
     while True:
@@ -68,6 +76,25 @@ def run_shell(
             return 0
         if response is not None:
             write_line(response)
+
+
+def orchestrator(
+    config: ConfigService | None, adapters: AdapterRegistry | None, tasks: TaskStore | None
+) -> Callable[[str], str] | None:
+    """The orchestration entry point, built on first use so planning stays out of startup."""
+    if config is None or tasks is None:
+        return None
+    service: OrchestrationService | None = None
+
+    def orchestrate(text: str) -> str:
+        nonlocal service
+        if service is None:
+            from agent_cli.orchestration import OrchestrationService
+
+            service = OrchestrationService(tasks, config, adapters or AdapterRegistry())
+        return service.handle(text)
+
+    return orchestrate
 
 
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

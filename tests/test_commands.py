@@ -28,6 +28,7 @@ REQUIRED_COMMANDS = {
     "providers",
     "models",
     "autopilot",
+    "cancel",
     "review",
     "diff",
 }
@@ -106,6 +107,8 @@ IMPLEMENTED_COMMANDS = {
     "skills",
     "models",
     "budget",
+    "autopilot",
+    "cancel",
 }
 
 

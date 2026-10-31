@@ -23,19 +23,48 @@ def test_empty_input_is_ignored(context: CommandContext, line: str) -> None:
     assert cli.handle_input(line, context) is None
 
 
-def test_natural_language_returns_placeholder(context: CommandContext) -> None:
-    output = cli.handle_input("add a health endpoint", context)
-    assert output == cli.NATURAL_LANGUAGE_PLACEHOLDER
+def test_natural_language_without_a_repository_explains_where_to_run(
+    context: CommandContext,
+) -> None:
+    assert cli.handle_input("add a health endpoint", context) == cli.NO_ORCHESTRATION
 
 
-def test_natural_language_mentioning_slash_is_not_dispatched(context: CommandContext) -> None:
-    output = cli.handle_input("explain what /help does", context)
-    assert output == cli.NATURAL_LANGUAGE_PLACEHOLDER
+def recording() -> tuple[CommandContext, list[str]]:
+    seen: list[str] = []
+
+    def orchestrate(text: str) -> str:
+        seen.append(text)
+        return f"planned: {text}"
+
+    return CommandContext(registry=build_registry(), orchestrate=orchestrate), seen
+
+
+def test_ordinary_text_goes_straight_to_orchestration() -> None:
+    context, seen = recording()
+    assert (
+        cli.handle_input("  add a health endpoint  ", context) == "planned: add a health endpoint"
+    )
+    assert seen == ["add a health endpoint"]
+
+
+def test_natural_language_mentioning_slash_is_not_dispatched() -> None:
+    context, seen = recording()
+    cli.handle_input("explain what /help does", context)
+    assert seen == ["explain what /help does"]
 
 
 @pytest.mark.parametrize("line", ["help", "please /help", "status/budget"])
-def test_slash_commands_only_start_with_slash(context: CommandContext, line: str) -> None:
-    assert cli.handle_input(line, context) == cli.NATURAL_LANGUAGE_PLACEHOLDER
+def test_slash_commands_only_start_with_slash(line: str) -> None:
+    context, seen = recording()
+    cli.handle_input(line, context)
+    assert seen == [line]
+
+
+def test_slash_commands_bypass_orchestration() -> None:
+    context, seen = recording()
+    output = cli.handle_input("/status", context)
+    assert output == "No active task."
+    assert seen == []
 
 
 def test_slash_input_is_trimmed_and_dispatched(context: CommandContext) -> None:
@@ -76,7 +105,7 @@ def test_first_input_is_a_task_with_no_mode_selection() -> None:
     output: list[str] = []
     cli.run_shell(build_registry(), scripted("add a health endpoint"), output.append, STARTUP)
 
-    assert output == [STARTUP, cli.NATURAL_LANGUAGE_PLACEHOLDER]
+    assert output == [STARTUP, cli.NO_ORCHESTRATION]
 
 
 def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
@@ -89,7 +118,7 @@ def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
     assert output[0] == STARTUP
     assert output[1].startswith("Not implemented yet:")
     assert output[2].startswith("Unknown command: /bogus.")
-    assert output[3] == cli.NATURAL_LANGUAGE_PLACEHOLDER
+    assert output[3] == cli.NO_ORCHESTRATION
     assert len(output) == 4
 
 
@@ -100,7 +129,7 @@ def test_shell_continues_after_ctrl_c() -> None:
     )
 
     assert code == 0
-    assert output == [STARTUP, cli.NATURAL_LANGUAGE_PLACEHOLDER]
+    assert output == [STARTUP, cli.NO_ORCHESTRATION]
 
 
 def test_shell_exits_on_exit_command() -> None:
@@ -124,19 +153,21 @@ def test_main_runs_shell_through_prompt_toolkit(
     assert capsys.readouterr().out.lstrip().startswith(WORDMARK[0])
 
 
-def test_piped_input_runs_without_a_terminal() -> None:
+def test_piped_input_runs_without_a_terminal(tmp_path: Path) -> None:
+    # Outside a repository, so the subprocess cannot write task state anywhere real.
     result = subprocess.run(
         [sys.executable, "-m", "agent_cli"],
         input="/help\n\nhello\n",
         capture_output=True,
         text=True,
         check=True,
+        cwd=tmp_path,
     )
     assert result.stdout.lstrip().startswith(WORDMARK[0])
     assert TAGLINE in result.stdout
     assert "\033[" not in result.stdout
     assert "Agent CLI help" in result.stdout
-    assert cli.NATURAL_LANGUAGE_PLACEHOLDER in result.stdout
+    assert cli.NO_ORCHESTRATION in result.stdout
     assert result.stderr == ""
 
 

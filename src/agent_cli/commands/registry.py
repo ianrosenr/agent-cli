@@ -51,6 +51,8 @@ class CommandContext:
     """Harness and provider adapters; ``None`` when none are available in this session."""
     tasks: TaskStore | None = None
     """Canonical task state; ``None`` outside a repository, where no task state exists."""
+    orchestrate: Callable[[str], str] | None = None
+    """Plans one line of ordinary input; ``None`` where orchestration cannot run."""
 
 
 class ExitShell(Exception):

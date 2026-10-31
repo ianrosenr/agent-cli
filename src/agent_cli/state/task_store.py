@@ -24,6 +24,7 @@ from typing import Any, cast
 from agent_cli.adapters import WorkerStatus
 from agent_cli.state.migrations import MIGRATIONS, Migration, MigrationError, migrate
 from agent_cli.state.models import (
+    ALL_CHILDREN,
     PIN_KINDS,
     Approval,
     Artifact,
@@ -34,12 +35,16 @@ from agent_cli.state.models import (
     Finding,
     Pin,
     PinKind,
+    PlannedPin,
+    PlanningQuestion,
+    PlanWrite,
     Requirement,
     RequirementSource,
     Review,
     ReviewKind,
     RoutedSignal,
     RoutedSkill,
+    ScopedPin,
     Session,
     SkillRouting,
     SpecVersion,
@@ -48,6 +53,7 @@ from agent_cli.state.models import (
     Worker,
 )
 from agent_cli.state.paths import ensure_private_dir, project_state_dir
+from agent_cli.terms import CANONICAL_ROLES
 
 TASKS_FILE = "tasks.sqlite"
 BUSY_TIMEOUT = 5.0
@@ -204,19 +210,30 @@ class TaskStore:
         parent_id: str | None = None,
         role: str | None = None,
     ) -> Task:
-        now = self._clock()
-        task = Task(new_id("task"), session_id, parent_id, goal, TaskStatus.PENDING, role, now, now)
         with self._write() as db:
-            if parent_id is not None and self._session_of(db, parent_id) != session_id:
-                raise TaskStateError(f"parent task {parent_id} belongs to another session")
-            db.execute(
-                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task.id, session_id, parent_id, goal, task.status, role, now, now),
-            )
-            self._event(
-                db, session_id, task.id, "task_created", task.id, goal=goal, parent=parent_id or ""
-            )
+            return self._insert_task(db, session_id, goal, parent_id, role)
+
+    def _insert_task(
+        self,
+        db: sqlite3.Connection,
+        session_id: str,
+        goal: str,
+        parent_id: str | None,
+        role: str | None,
+        status: TaskStatus = TaskStatus.PENDING,
+    ) -> Task:
+        now = self._clock()
+        task = Task(new_id("task"), session_id, parent_id, goal, status, role, now, now)
+        if parent_id is not None and self._session_of(db, parent_id) != session_id:
+            raise TaskStateError(f"parent task {parent_id} belongs to another session")
+        db.execute(
+            "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+            "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (task.id, session_id, parent_id, goal, task.status, role, now, now),
+        )
+        self._event(
+            db, session_id, task.id, "task_created", task.id, goal=goal, parent=parent_id or ""
+        )
         return task
 
     def task(self, task_id: str) -> Task | None:
@@ -266,29 +283,43 @@ class TaskStore:
 
     def _update_task(self, task_id: str, column: str, value: str, kind: str, **detail: str) -> None:
         with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            previous = db.execute(f"SELECT {column} FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            db.execute(
-                f"UPDATE tasks SET {column} = ?, updated_at = ? WHERE id = ?",
-                (value, self._clock(), task_id),
-            )
-            self._event(
-                db, session_id, task_id, kind, task_id, old=previous[0] or "", new=value, **detail
-            )
+            self._set_task(db, task_id, column, value, kind, **detail)
+
+    def _set_task(
+        self,
+        db: sqlite3.Connection,
+        task_id: str,
+        column: str,
+        value: str,
+        kind: str,
+        **detail: str,
+    ) -> None:
+        session_id = self._session_of(db, task_id)
+        previous = db.execute(f"SELECT {column} FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        db.execute(
+            f"UPDATE tasks SET {column} = ?, updated_at = ? WHERE id = ?",
+            (value, self._clock(), task_id),
+        )
+        self._event(
+            db, session_id, task_id, kind, task_id, old=previous[0] or "", new=value, **detail
+        )
 
     def add_dependency(self, task_id: str, depends_on: str) -> None:
+        with self._write() as db:
+            self._insert_dependency(db, task_id, depends_on)
+
+    def _insert_dependency(self, db: sqlite3.Connection, task_id: str, depends_on: str) -> None:
         if task_id == depends_on:
             raise TaskStateError(f"task {task_id} cannot depend on itself")
-        with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            if self._session_of(db, depends_on) != session_id:
-                raise TaskStateError(f"task {depends_on} belongs to another session")
-            db.execute(
-                "INSERT OR IGNORE INTO task_dependencies (task_id, depends_on, created_at) "
-                "VALUES (?, ?, ?)",
-                (task_id, depends_on, self._clock()),
-            )
-            self._event(db, session_id, task_id, "dependency_added", depends_on)
+        session_id = self._session_of(db, task_id)
+        if self._session_of(db, depends_on) != session_id:
+            raise TaskStateError(f"task {depends_on} belongs to another session")
+        db.execute(
+            "INSERT OR IGNORE INTO task_dependencies (task_id, depends_on, created_at) "
+            "VALUES (?, ?, ?)",
+            (task_id, depends_on, self._clock()),
+        )
+        self._event(db, session_id, task_id, "dependency_added", depends_on)
 
     def dependencies(self, task_id: str) -> list[str]:
         rows = self._read(
@@ -307,27 +338,38 @@ class TaskStore:
         supersedes: str | None = None,
     ) -> Requirement:
         """Record a requirement. Changing one supersedes it; the original intent is kept."""
+        with self._write() as db:
+            return self._insert_requirement(db, session_id, text, source, task_id, supersedes)
+
+    def _insert_requirement(
+        self,
+        db: sqlite3.Connection,
+        session_id: str,
+        text: str,
+        source: RequirementSource,
+        task_id: str | None,
+        supersedes: str | None = None,
+    ) -> Requirement:
         requirement = Requirement(
             new_id("req"), session_id, task_id, text, source, self._clock(), None
         )
-        with self._write() as db:
-            self._check_session(db, task_id, session_id)
-            db.execute(
-                "INSERT INTO requirements (id, session_id, task_id, text, source, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (requirement.id, session_id, task_id, text, source, requirement.created_at),
-            )
-            if supersedes is not None:
-                supersede(db, "requirements", supersedes, requirement.id, session_id)
-            self._event(
-                db,
-                session_id,
-                task_id,
-                "requirement_added",
-                requirement.id,
-                source=source,
-                supersedes=supersedes or "",
-            )
+        self._check_session(db, task_id, session_id)
+        db.execute(
+            "INSERT INTO requirements (id, session_id, task_id, text, source, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (requirement.id, session_id, task_id, text, source, requirement.created_at),
+        )
+        if supersedes is not None:
+            supersede(db, "requirements", supersedes, requirement.id, session_id)
+        self._event(
+            db,
+            session_id,
+            task_id,
+            "requirement_added",
+            requirement.id,
+            source=source,
+            supersedes=supersedes or "",
+        )
         return requirement
 
     def requirements(self, session_id: str, current_only: bool = True) -> list[Requirement]:
@@ -340,15 +382,20 @@ class TaskStore:
         return [to_requirement(row) for row in rows]
 
     def add_assumption(self, task_id: str, text: str, made_by: str) -> Assumption:
-        assumption = Assumption(new_id("assume"), task_id, text, made_by, None, self._clock())
         with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            db.execute(
-                "INSERT INTO assumptions (id, task_id, text, made_by, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (assumption.id, task_id, text, made_by, assumption.created_at),
-            )
-            self._event(db, session_id, task_id, "assumption_added", assumption.id, by=made_by)
+            return self._insert_assumption(db, task_id, text, made_by)
+
+    def _insert_assumption(
+        self, db: sqlite3.Connection, task_id: str, text: str, made_by: str
+    ) -> Assumption:
+        assumption = Assumption(new_id("assume"), task_id, text, made_by, None, self._clock())
+        session_id = self._session_of(db, task_id)
+        db.execute(
+            "INSERT INTO assumptions (id, task_id, text, made_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (assumption.id, task_id, text, made_by, assumption.created_at),
+        )
+        self._event(db, session_id, task_id, "assumption_added", assumption.id, by=made_by)
         return assumption
 
     def resolve_assumption(self, assumption_id: str, confirmed: bool) -> None:
@@ -378,6 +425,22 @@ class TaskStore:
         task_id: str | None = None,
         supersedes: str | None = None,
     ) -> Decision:
+        with self._write() as db:
+            return self._insert_decision(
+                db, session_id, question, decision, decided_by, rationale, task_id, supersedes
+            )
+
+    def _insert_decision(
+        self,
+        db: sqlite3.Connection,
+        session_id: str,
+        question: str,
+        decision: str,
+        decided_by: str,
+        rationale: str,
+        task_id: str | None,
+        supersedes: str | None = None,
+    ) -> Decision:
         record = Decision(
             new_id("decision"),
             session_id,
@@ -389,33 +452,32 @@ class TaskStore:
             self._clock(),
             None,
         )
-        with self._write() as db:
-            self._check_session(db, task_id, session_id)
-            db.execute(
-                "INSERT INTO decisions (id, session_id, task_id, question, decision, decided_by, "
-                "rationale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    record.id,
-                    session_id,
-                    task_id,
-                    question,
-                    decision,
-                    decided_by,
-                    rationale,
-                    record.created_at,
-                ),
-            )
-            if supersedes is not None:
-                supersede(db, "decisions", supersedes, record.id, session_id)
-            self._event(
-                db,
+        self._check_session(db, task_id, session_id)
+        db.execute(
+            "INSERT INTO decisions (id, session_id, task_id, question, decision, decided_by, "
+            "rationale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.id,
                 session_id,
                 task_id,
-                "decision_recorded",
-                record.id,
-                by=decided_by,
-                supersedes=supersedes or "",
-            )
+                question,
+                decision,
+                decided_by,
+                rationale,
+                record.created_at,
+            ),
+        )
+        if supersedes is not None:
+            supersede(db, "decisions", supersedes, record.id, session_id)
+        self._event(
+            db,
+            session_id,
+            task_id,
+            "decision_recorded",
+            record.id,
+            by=decided_by,
+            supersedes=supersedes or "",
+        )
         return record
 
     def decisions(self, session_id: str, current_only: bool = True) -> list[Decision]:
@@ -505,33 +567,38 @@ class TaskStore:
 
         The replaced pin is kept and linked to this one.
         """
+        with self._write() as db:
+            return self._insert_pin(db, task_id, kind, value, user_pinned)
+
+    def _insert_pin(
+        self, db: sqlite3.Connection, task_id: str, kind: PinKind, value: str, user_pinned: bool
+    ) -> Pin:
         if kind not in PIN_KINDS:
             raise TaskStateError(f"unknown pin kind: {kind}")
         if not value:
             raise TaskStateError(f"empty {kind} pin")
         pin = Pin(new_id("pin"), task_id, kind, value, user_pinned, self._clock())
-        with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            db.execute(
-                "INSERT INTO execution_pins (id, task_id, kind, value, user_pinned, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (pin.id, task_id, kind, value, int(user_pinned), pin.created_at),
-            )
-            db.execute(
-                "UPDATE execution_pins SET ended_at = ?, superseded_by = ? "
-                "WHERE task_id = ? AND kind = ? AND ended_at IS NULL AND id <> ?",
-                (pin.created_at, pin.id, task_id, kind, pin.id),
-            )
-            self._event(
-                db,
-                session_id,
-                task_id,
-                "pin_set",
-                pin.id,
-                kind=kind,
-                value=value,
-                user_pinned=str(user_pinned).lower(),
-            )
+        session_id = self._session_of(db, task_id)
+        db.execute(
+            "INSERT INTO execution_pins (id, task_id, kind, value, user_pinned, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (pin.id, task_id, kind, value, int(user_pinned), pin.created_at),
+        )
+        db.execute(
+            "UPDATE execution_pins SET ended_at = ?, superseded_by = ? "
+            "WHERE task_id = ? AND kind = ? AND ended_at IS NULL AND id <> ?",
+            (pin.created_at, pin.id, task_id, kind, pin.id),
+        )
+        self._event(
+            db,
+            session_id,
+            task_id,
+            "pin_set",
+            pin.id,
+            kind=kind,
+            value=value,
+            user_pinned=str(user_pinned).lower(),
+        )
         return pin
 
     def clear_pin(self, task_id: str, kind: PinKind) -> bool:
@@ -676,15 +743,28 @@ class TaskStore:
         return [to_finding(row) for row in rows]
 
     def add_blocker(self, task_id: str, reason: str, owner: str = "user") -> Blocker:
-        blocker = Blocker(new_id("blocker"), task_id, reason, owner, None, self._clock())
         with self._write() as db:
-            session_id = self._session_of(db, task_id)
-            db.execute(
-                "INSERT INTO blockers (id, task_id, reason, owner, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (blocker.id, task_id, reason, owner, blocker.created_at),
+            return self._insert_blocker(db, task_id, reason, owner)
+
+    def _insert_blocker(
+        self, db: sqlite3.Connection, task_id: str, reason: str, owner: str
+    ) -> Blocker:
+        blocker = Blocker(new_id("blocker"), task_id, reason, owner, None, self._clock())
+        session_id = self._session_of(db, task_id)
+        db.execute(
+            "INSERT INTO blockers (id, task_id, reason, owner, created_at) VALUES (?, ?, ?, ?, ?)",
+            (blocker.id, task_id, reason, owner, blocker.created_at),
+        )
+        self._event(db, session_id, task_id, "blocker_added", blocker.id, owner=owner)
+        return blocker
+
+    def block_task(self, task_id: str, reason: str, owner: str = "user") -> Blocker:
+        """Add a blocker and mark the task ``blocked``, together."""
+        with self._write() as db:
+            blocker = self._insert_blocker(db, task_id, reason, owner)
+            self._set_task(
+                db, task_id, "status", TaskStatus.BLOCKED, "status_changed", reason=reason
             )
-            self._event(db, session_id, task_id, "blocker_added", blocker.id, owner=owner)
         return blocker
 
     def resolve_blocker(self, blocker_id: str, resolution: str) -> None:
@@ -702,14 +782,19 @@ class TaskStore:
 
     def _resolve(self, table: str, record_id: str, resolution: str, kind: str) -> None:
         with self._write() as db:
-            row = db.execute(f"SELECT task_id FROM {table} WHERE id = ?", (record_id,)).fetchone()
-            if row is None:
-                raise TaskStateError(f"unknown {table[:-1]}: {record_id}")
-            db.execute(
-                f"UPDATE {table} SET resolution = ?, resolved_at = ? WHERE id = ?",
-                (resolution, self._clock(), record_id),
-            )
-            self._event(db, self._session_of(db, row[0]), row[0], kind, record_id)
+            self._resolve_in(db, table, record_id, resolution, kind)
+
+    def _resolve_in(
+        self, db: sqlite3.Connection, table: str, record_id: str, resolution: str, kind: str
+    ) -> None:
+        row = db.execute(f"SELECT task_id FROM {table} WHERE id = ?", (record_id,)).fetchone()
+        if row is None:
+            raise TaskStateError(f"unknown {table[:-1]}: {record_id}")
+        db.execute(
+            f"UPDATE {table} SET resolution = ?, resolved_at = ? WHERE id = ?",
+            (resolution, self._clock(), record_id),
+        )
+        self._event(db, self._session_of(db, row[0]), row[0], kind, record_id)
 
     def record_review(
         self,
@@ -885,6 +970,259 @@ class TaskStore:
         )
         return {row["task_id"]: to_skill_routing(row) for row in rows}
 
+    # -- Planning ------------------------------------------------------------------------------
+
+    def start_root_task(
+        self, session_id: str, goal: str, role: str = "orchestrator"
+    ) -> tuple[Task, Requirement]:
+        """Create a root task for a user request, ``in_progress``, with the literal request
+        recorded as its user requirement."""
+        with self._write() as db:
+            task = self._insert_task(db, session_id, goal, None, role, TaskStatus.IN_PROGRESS)
+            requirement = self._insert_requirement(db, session_id, goal, "user", task.id)
+        return task, requirement
+
+    def task_requirements(self, task_id: str) -> list[Requirement]:
+        """The task's current requirements, oldest first."""
+        rows = self._read(
+            "SELECT * FROM requirements WHERE task_id = ? AND superseded_by IS NULL ORDER BY rowid",
+            task_id,
+        )
+        return [to_requirement(row) for row in rows]
+
+    def task_decisions(self, task_id: str) -> list[Decision]:
+        """The task's current decisions, oldest first."""
+        rows = self._read(
+            "SELECT * FROM decisions WHERE task_id = ? AND superseded_by IS NULL ORDER BY rowid",
+            task_id,
+        )
+        return [to_decision(row) for row in rows]
+
+    def pin_by_user(self, task_id: str, kind: PinKind, value: str, instruction: str) -> Pin:
+        """Pin a task as the user instructed, recording the instruction as a user requirement."""
+        with self._write() as db:
+            self._instruction(db, task_id, instruction)
+            return self._insert_pin(db, task_id, kind, value, True)
+
+    def _instruction(self, db: sqlite3.Connection, task_id: str, text: str) -> str:
+        """The ID of the task's current user requirement with exactly ``text``, recorded now if
+        there is none, so one instruction behind several pins is recorded once."""
+        row = db.execute(
+            "SELECT id FROM requirements WHERE task_id = ? AND text = ? AND source = 'user' "
+            "AND superseded_by IS NULL",
+            (task_id, text),
+        ).fetchone()
+        if row is not None:
+            existing: str = row[0]
+            return existing
+        return self._insert_requirement(db, self._session_of(db, task_id), text, "user", task_id).id
+
+    def persist_plan(self, plan: PlanWrite) -> dict[str, str]:
+        """Write a validated child graph in one transaction; return each task key's new ID.
+
+        Children, roles, dependencies, assumptions, and user pins are committed together or not
+        at all. Pins scoped to ``all`` or a role are copied onto every matching child and kept as
+        scoped pins for children created later. Pins apply from least to most specific (``all``,
+        then a role, then one task), so the most specific pin of a kind wins on each child. A
+        root task's plan is written only once.
+        """
+        root_id = plan.root_task_id
+        with self._write() as db:
+            row = db.execute(
+                "SELECT session_id, parent_id FROM tasks WHERE id = ?", (root_id,)
+            ).fetchone()
+            if row is None:
+                raise TaskStateError(f"unknown task: {root_id}")
+            if row["parent_id"] is not None:
+                raise TaskStateError(f"task {root_id} is not a root task")
+            if db.execute("SELECT 1 FROM tasks WHERE parent_id = ?", (root_id,)).fetchone():
+                raise TaskStateError(f"task {root_id} already has a persisted plan")
+            session_id: str = row["session_id"]
+
+            ids: dict[str, str] = {}
+            roles: dict[str, str] = {}
+            for planned in plan.tasks:
+                if planned.key in ids:
+                    raise TaskStateError(f"duplicate planned task key: {planned.key}")
+                task = self._insert_task(db, session_id, planned.goal, root_id, planned.role)
+                ids[planned.key] = task.id
+                roles[task.id] = planned.role
+            for planned in plan.tasks:
+                for key in planned.depends_on:
+                    if key not in ids:
+                        raise TaskStateError(f"{planned.key} depends on unknown task key: {key}")
+                    self._insert_dependency(db, ids[planned.key], ids[key])
+            for text in plan.assumptions:
+                self._insert_assumption(db, root_id, text, plan.made_by)
+
+            def specificity(pin: PlannedPin) -> int:
+                return 2 if pin.scope in ids else 0 if pin.scope == ALL_CHILDREN else 1
+
+            for pin in sorted(plan.pins, key=specificity):
+                requirement_id = self._instruction(db, root_id, pin.evidence)
+                if pin.scope in ids:
+                    targets = [ids[pin.scope]]
+                else:
+                    if pin.scope != ALL_CHILDREN and pin.scope not in CANONICAL_ROLES:
+                        raise TaskStateError(f"unknown pin scope: {pin.scope}")
+                    self._insert_scoped_pin(db, root_id, pin, requirement_id)
+                    targets = [
+                        task_id
+                        for task_id, role in roles.items()
+                        if pin.scope in (ALL_CHILDREN, role)
+                    ]
+                for task_id in targets:
+                    self._insert_pin(db, task_id, pin.kind, pin.value, True)
+            self._event(
+                db, session_id, root_id, "plan_persisted", root_id, tasks=str(len(plan.tasks))
+            )
+        return ids
+
+    def _insert_scoped_pin(
+        self, db: sqlite3.Connection, root_id: str, pin: PlannedPin, requirement_id: str
+    ) -> None:
+        if pin.kind not in PIN_KINDS:
+            raise TaskStateError(f"unknown pin kind: {pin.kind}")
+        if not pin.value:
+            raise TaskStateError(f"empty {pin.kind} pin")
+        scoped_id = new_id("scoped-pin")
+        db.execute(
+            "INSERT INTO scoped_pins (id, root_task_id, scope, kind, value, requirement_id, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (scoped_id, root_id, pin.scope, pin.kind, pin.value, requirement_id, self._clock()),
+        )
+        self._event(
+            db,
+            self._session_of(db, root_id),
+            root_id,
+            "scoped_pin_set",
+            scoped_id,
+            scope=pin.scope,
+            kind=pin.kind,
+            value=pin.value,
+        )
+
+    def scoped_pins(self, root_task_id: str) -> list[ScopedPin]:
+        rows = self._read(
+            "SELECT * FROM scoped_pins WHERE root_task_id = ? ORDER BY rowid", root_task_id
+        )
+        return [to_scoped_pin(row) for row in rows]
+
+    def ask_planning_question(self, task_id: str, question: str, why: str) -> PlanningQuestion:
+        """Block the task on a question for the user. At most one may be pending per task."""
+        with self._write() as db:
+            pending = db.execute(
+                "SELECT id FROM planning_questions WHERE task_id = ? AND status = 'pending'",
+                (task_id,),
+            ).fetchone()
+            if pending is not None:
+                raise TaskStateError(f"task {task_id} already has pending question {pending[0]}")
+            blocker = self._insert_blocker(
+                db, task_id, f"Waiting for your answer: {question}", "user"
+            )
+            record = PlanningQuestion(
+                new_id("question"),
+                task_id,
+                question,
+                why,
+                "pending",
+                None,
+                None,
+                blocker.id,
+                self._clock(),
+                None,
+            )
+            db.execute(
+                "INSERT INTO planning_questions (id, task_id, question, why, status, blocker_id, "
+                "created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                (record.id, task_id, question, why, blocker.id, record.created_at),
+            )
+            self._set_task(
+                db, task_id, "status", TaskStatus.BLOCKED, "status_changed", reason="question"
+            )
+            self._event(db, self._session_of(db, task_id), task_id, "question_asked", record.id)
+        return record
+
+    def answer_planning_question(self, question_id: str, answer: str) -> Decision:
+        """Record the user's answer as a user decision, resolve the question's blocker, and put
+        the task back ``in_progress``, all together."""
+        if not answer.strip():
+            raise TaskStateError("an answer cannot be empty")
+        with self._write() as db:
+            row = db.execute(
+                "SELECT * FROM planning_questions WHERE id = ?", (question_id,)
+            ).fetchone()
+            if row is None:
+                raise TaskStateError(f"unknown planning question: {question_id}")
+            if row["status"] != "pending":
+                raise TaskStateError(f"planning question {question_id} is {row['status']}")
+            task_id: str = row["task_id"]
+            session_id = self._session_of(db, task_id)
+            decision = self._insert_decision(
+                db, session_id, row["question"], answer, "user", row["why"], task_id
+            )
+            db.execute(
+                "UPDATE planning_questions SET status = 'answered', answer = ?, decision_id = ?, "
+                "answered_at = ? WHERE id = ?",
+                (answer, decision.id, self._clock(), question_id),
+            )
+            if row["blocker_id"] is not None:
+                self._resolve_in(db, "blockers", row["blocker_id"], "answered", "blocker_resolved")
+            self._set_task(
+                db, task_id, "status", TaskStatus.IN_PROGRESS, "status_changed", reason="answered"
+            )
+            self._event(db, session_id, task_id, "question_answered", question_id)
+        return decision
+
+    def cancel_planning_question(self, question_id: str) -> None:
+        """Withdraw a pending question: its blocker is resolved and its task is canceled."""
+        with self._write() as db:
+            row = db.execute(
+                "SELECT * FROM planning_questions WHERE id = ?", (question_id,)
+            ).fetchone()
+            if row is None:
+                raise TaskStateError(f"unknown planning question: {question_id}")
+            if row["status"] != "pending":
+                raise TaskStateError(f"planning question {question_id} is {row['status']}")
+            db.execute(
+                "UPDATE planning_questions SET status = 'canceled', answered_at = ? WHERE id = ?",
+                (self._clock(), question_id),
+            )
+            if row["blocker_id"] is not None:
+                self._resolve_in(db, "blockers", row["blocker_id"], "canceled", "blocker_resolved")
+            self._set_task(
+                db,
+                row["task_id"],
+                "status",
+                TaskStatus.CANCELED,
+                "status_changed",
+                reason="canceled",
+            )
+            self._event(
+                db,
+                self._session_of(db, row["task_id"]),
+                row["task_id"],
+                "question_canceled",
+                question_id,
+            )
+
+    def planning_questions(self, task_id: str) -> list[PlanningQuestion]:
+        rows = self._read(
+            "SELECT * FROM planning_questions WHERE task_id = ? ORDER BY rowid", task_id
+        )
+        return [to_planning_question(row) for row in rows]
+
+    def pending_planning_question(self, session_id: str) -> PlanningQuestion | None:
+        """The session's most recent pending planning question, if any."""
+        rows = self._read(
+            "SELECT planning_questions.* FROM planning_questions "
+            "JOIN tasks ON tasks.id = planning_questions.task_id "
+            "WHERE tasks.session_id = ? AND planning_questions.status = 'pending' "
+            "ORDER BY planning_questions.rowid DESC LIMIT 1",
+            session_id,
+        )
+        return to_planning_question(rows[0]) if rows else None
+
     # -- Events --------------------------------------------------------------------------------
 
     def events(self, session_id: str, task_id: str | None = None) -> list[Event]:
@@ -976,6 +1314,14 @@ def to_spec(row: sqlite3.Row) -> SpecVersion:
 
 def to_pin(row: sqlite3.Row) -> Pin:
     return record(Pin, row, kind=cast(PinKind, row["kind"]), user_pinned=bool(row["user_pinned"]))
+
+
+def to_scoped_pin(row: sqlite3.Row) -> ScopedPin:
+    return record(ScopedPin, row, kind=cast(PinKind, row["kind"]))
+
+
+def to_planning_question(row: sqlite3.Row) -> PlanningQuestion:
+    return record(PlanningQuestion, row)
 
 
 def to_worker(row: sqlite3.Row) -> Worker:
