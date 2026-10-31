@@ -10,11 +10,18 @@ from rich.console import RenderableType
 
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import Config, ConfigError, ConfigPaths, ConfigService, Layer
+from agent_cli.config.model import HarnessConfig
 from agent_cli.config.schema import to_raw
 from agent_cli.guided_setup import CANCELED, SETTINGS, GuidedSetup, Setting, lookup
 from agent_cli.ui import plain
 
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
+STARTUP_DEFAULT = Config(
+    harnesses={
+        "claude-code": HarnessConfig(),
+        "codex-cli": HarnessConfig(),
+    }
+)
 ADVANCED = ("role_floors", "orchestrator", "routing", "capability", "fallback", "classifier")
 
 
@@ -356,7 +363,7 @@ def test_answers_not_in_the_stated_format_are_asked_again(
         setting.how, setting.example + note, default
     )
     assert conversation.prompts.count(conversation.prompts[index + 1]) == 2
-    assert ConfigService(paths).resolve() == Config()
+    assert ConfigService(paths).resolve() == STARTUP_DEFAULT
 
 
 @pytest.mark.parametrize("setting", SETTINGS, ids=[s.key for s in SETTINGS])
