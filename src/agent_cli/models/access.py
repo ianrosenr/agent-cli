@@ -70,16 +70,16 @@ def runtime_paths(adapters: AdapterRegistry, config: Config) -> RuntimePaths:
     return RuntimePaths(tuple(paths), tuple(problems))
 
 
-def choose_path(
+def usable_paths(
     candidates: Sequence[ModelPath],
     preference: Sequence[AccessKind],
     context_tokens: int | None = None,
-) -> ModelPath | None:
-    """The preferred path for one model, by access preference then provider ID.
+) -> tuple[ModelPath, ...]:
+    """All usable paths, ordered by access preference then provider ID.
 
-    Paths whose access kind is not in ``preference`` (or unknown) are never used, so a
-    preference without ``api`` never reaches a paid API. A path with an unknown context limit
-    is assumed to fit.
+    Returning every path lets later budget, health, and harness policy make the final choice.
+    Paths whose access kind is not in ``preference`` (or unknown) are excluded. A path with
+    an unknown context limit is assumed to fit.
     """
     order = {kind: rank for rank, kind in enumerate(preference)}
     ranked = [
@@ -88,9 +88,17 @@ def choose_path(
         if exclusion(path, preference, context_tokens) is None
         and (access := path.access) is not None
     ]
-    if not ranked:
-        return None
-    return min(ranked, key=lambda item: item[:2])[2]
+    return tuple(item[2] for item in sorted(ranked, key=lambda item: item[:2]))
+
+
+def choose_path(
+    candidates: Sequence[ModelPath],
+    preference: Sequence[AccessKind],
+    context_tokens: int | None = None,
+) -> ModelPath | None:
+    """The preferred path for a hard-constrained model, when one path must be chosen now."""
+    paths = usable_paths(candidates, preference, context_tokens)
+    return paths[0] if paths else None
 
 
 def exclusion(
