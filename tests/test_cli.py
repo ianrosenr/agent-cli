@@ -82,7 +82,7 @@ def test_first_input_is_a_task_with_no_mode_selection() -> None:
 def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
     output: list[str] = []
     code = cli.run_shell(
-        build_registry(), scripted("", "/budget", "/bogus", "hi"), output.append, STARTUP
+        build_registry(), scripted("", "/review", "/bogus", "hi"), output.append, STARTUP
     )
 
     assert code == 0

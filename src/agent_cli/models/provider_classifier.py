@@ -8,10 +8,10 @@ raises, and the V1-06 seam records the failure and falls back to deterministic r
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from agent_cli.adapters import ProviderAdapter, ProviderRequest
+from agent_cli.adapters import ProviderAdapter, ProviderRequest, ProviderResponse
 from agent_cli.models.access import ModelPath
 from agent_cli.skills.classifier import ClassificationInput, ClassificationResult
 from agent_cli.skills.policy import SignalVocabulary
@@ -39,6 +39,15 @@ class ClassifierBatchTooLarge(ValueError):
     """The batch would not fit the model's context limit, so no call was made."""
 
 
+class ClassifierBudgetRequired(ValueError):
+    """A paid classifier path was not given a budget-enforced invocation boundary."""
+
+
+type ProviderInvoke = Callable[
+    [ProviderAdapter, ProviderRequest, tuple[str, ...]], ProviderResponse
+]
+
+
 class ProviderSignalClassifier:
     def __init__(
         self,
@@ -46,6 +55,7 @@ class ProviderSignalClassifier:
         path: ModelPath,
         selection: str,
         estimator: TokenEstimator = DEFAULT_ESTIMATOR,
+        budgeted_invoke: ProviderInvoke | None = None,
     ) -> None:
         self.adapter = adapter
         self.path = path
@@ -53,6 +63,8 @@ class ProviderSignalClassifier:
         """How the model was chosen (``auto`` or ``selected``), recorded in the identity."""
         self.estimator = estimator
         """Conservative token estimate, used to keep a batch within the context limit."""
+        self.budgeted_invoke = budgeted_invoke
+        """Required for paid/unknown-access paths; unpaid paths may invoke directly."""
 
     @property
     def identity(self) -> str:
@@ -78,15 +90,23 @@ class ProviderSignalClassifier:
                     f"batch of {len(inputs)} needs about {needed} tokens; "
                     f"{self.path.model_id} via {self.path.provider.id} allows {limit}"
                 )
-        response = self.adapter.invoke(
-            ProviderRequest(
-                model_id=self.path.model_id,
-                prompt=prompt,
-                system=SYSTEM,
-                max_output_tokens=max_output,
-            )
+        request = ProviderRequest(
+            model_id=self.path.model_id,
+            prompt=prompt,
+            system=SYSTEM,
+            max_output_tokens=max_output,
         )
-        return parse_reply(response.text, {item.task_id for item in inputs})
+        task_ids = tuple(item.task_id for item in inputs)
+        if self.path.access in ("subscription", "local"):
+            response = self.adapter.invoke(request)
+        elif self.budgeted_invoke is None:
+            raise ClassifierBudgetRequired(
+                f"{self.path.model_id} via {self.path.provider.id} requires budget enforcement; "
+                "using deterministic skill routing instead"
+            )
+        else:
+            response = self.budgeted_invoke(self.adapter, request, task_ids)
+        return parse_reply(response.text, set(task_ids))
 
 
 def render_prompt(inputs: Sequence[ClassificationInput], vocabulary: SignalVocabulary) -> str:

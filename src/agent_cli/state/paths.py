@@ -1,7 +1,8 @@
 """Where Agent CLI keeps local runtime state.
 
-Project state lives in ``<repo>/.agent-cli/state/`` and global caches in
-``~/.agent-cli/cache/``. Neither is configuration, and neither is ever committed.
+Project state lives in ``<repo>/.agent-cli/state/``, global canonical state (the paid-spend
+ledger) in ``~/.agent-cli/state/``, and global caches in ``~/.agent-cli/cache/``. None of it is
+configuration, and none of it is ever committed.
 """
 
 from __future__ import annotations
@@ -16,6 +17,10 @@ SELF_IGNORE = "# Agent CLI runtime state: never commit.\n*\n"
 
 def project_state_dir(root: Path) -> Path:
     return root / AGENT_DIR / STATE_DIR
+
+
+def global_state_dir(home: Path | None = None) -> Path:
+    return (Path.home() if home is None else home) / AGENT_DIR / STATE_DIR
 
 
 def global_cache_dir(home: Path | None = None) -> Path:

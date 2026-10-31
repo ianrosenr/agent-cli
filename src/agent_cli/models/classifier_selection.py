@@ -15,7 +15,7 @@ from agent_cli.adapters import AdapterRegistry
 from agent_cli.config.model import ClassifierConfig, ClassifierSelection
 from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, unusable_reason
 from agent_cli.models.domain import Cost, ModelCapability, ModelEntry, ModelRegistry
-from agent_cli.models.provider_classifier import ProviderSignalClassifier
+from agent_cli.models.provider_classifier import ProviderInvoke, ProviderSignalClassifier
 from agent_cli.skills.classifier import SignalClassifier
 from agent_cli.terms import AccessKind
 
@@ -112,7 +112,9 @@ def select_classifier(
 
 
 def build_classifier(
-    choice: ClassifierChoice, adapters: AdapterRegistry
+    choice: ClassifierChoice,
+    adapters: AdapterRegistry,
+    budgeted_invoke: ProviderInvoke | None = None,
 ) -> SignalClassifier | None:
     """The classifier to inject into ``SkillRouter``, or ``None`` for deterministic routing."""
     if choice.path is None:
@@ -120,4 +122,6 @@ def build_classifier(
     adapter = adapters.provider(choice.path.provider.id)
     if adapter is None:
         return None
-    return ProviderSignalClassifier(adapter, choice.path, choice.mode)
+    return ProviderSignalClassifier(
+        adapter, choice.path, choice.mode, budgeted_invoke=budgeted_invoke
+    )
