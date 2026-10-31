@@ -353,7 +353,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             except subprocess.TimeoutExpired:
                 worker.process.kill()
                 worker.process.wait(timeout=INTERRUPT_TIMEOUT_S)
-        except OSError as error:
+        except (OSError, subprocess.TimeoutExpired) as error:
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
                 f"cannot interrupt Claude Code ({type(error).__name__})",
@@ -402,9 +402,17 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         return worker
 
     def git_changes(self, cwd: Path) -> Changes:
-        tracked = self.git_runner(("git", "diff", "HEAD", "--name-only", "--"), cwd)
-        untracked = self.git_runner(("git", "ls-files", "--others", "--exclude-standard"), cwd)
-        diff = self.git_runner(("git", "diff", "--no-ext-diff", "HEAD", "--"), cwd)
+        try:
+            tracked = self.git_runner(("git", "diff", "HEAD", "--name-only", "--"), cwd)
+            untracked = self.git_runner(
+                ("git", "ls-files", "--others", "--exclude-standard"), cwd
+            )
+            diff = self.git_runner(("git", "diff", "--no-ext-diff", "HEAD", "--"), cwd)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise AdapterError(
+                ErrorKind.HARNESS_ERROR,
+                f"cannot inspect Claude Code git changes ({type(error).__name__})",
+            ) from None
         if any(result.returncode != 0 for result in (tracked, untracked, diff)):
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
