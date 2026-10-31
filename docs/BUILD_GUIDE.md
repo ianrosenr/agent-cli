@@ -563,6 +563,9 @@ First real coding harness: Claude Code using the user's existing Claude subscrip
 ### V1-10.6
 Second real coding harness: Codex CLI using the user's existing ChatGPT subscription login. It consumes the same normalized worker request and shared implementation mode, proving the harness contract is portable without vendor branches in orchestration.
 
+### V1-10.7
+Seamless subscription login. `/startup` persists enabled harnesses and offers native sign-in when needed; `/login` later repairs only configured harnesses whose cached native auth is missing or expired.
+
 ### V1-11
 Git worktrees and worker lifecycle.
 
