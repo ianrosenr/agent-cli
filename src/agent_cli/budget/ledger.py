@@ -21,7 +21,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -295,6 +295,7 @@ class SpendLedger:
         reservation: Reservation | None = None
         with self._write() as db:
             usage = current_usage(db, now, call.root_task_id)
+            usage = tighten_task_ceiling(db, call.root_task_id, limits.per_task, usage, stamp)
             rejection = check_limits(limits, usage, estimate.usd_micros)
             if rejection is None:
                 reservation = Reservation(
@@ -311,8 +312,6 @@ class SpendLedger:
                     updated_at=stamp,
                 )
                 insert_reservation(db, reservation)
-                if call.root_task_id is not None:
-                    record_ceiling(db, call.root_task_id, limits.per_task, usage, stamp)
             log_admission(
                 db,
                 call,
@@ -337,9 +336,11 @@ class SpendLedger:
     ) -> None:
         """Log a paid path refused before reservation, such as for unknown pricing."""
         now = self._clock()
+        stamp = timestamp(now)
         with self._write() as db:
             usage = current_usage(db, now, call.root_task_id)
-            log_admission(db, call, rejection, estimate, limits, usage, timestamp(now), None)
+            usage = tighten_task_ceiling(db, call.root_task_id, limits.per_task, usage, stamp)
+            log_admission(db, call, rejection, estimate, limits, usage, stamp, None)
 
     # -- Lifecycle -----------------------------------------------------------------------------
 
@@ -548,27 +549,30 @@ def current_usage(db: sqlite3.Connection, now: datetime, root_task_id: str | Non
     )
 
 
-def record_ceiling(
+def tighten_task_ceiling(
     db: sqlite3.Connection,
-    root_task_id: str,
+    root_task_id: str | None,
     per_task: int | None,
     usage: SpendUsage,
     stamp: str,
-) -> None:
-    """Record the root task's ceiling on its first admission; afterwards only ever lower it."""
+) -> SpendUsage:
+    """Persist the tightest root-task ceiling seen before evaluating a paid call."""
+    if root_task_id is None:
+        return usage
+    previous = None if usage.task_ceiling is None else usage.task_ceiling.limit
+    effective = per_task if usage.task_ceiling is None else tighter(previous, per_task)
     if usage.task_ceiling is None:
         db.execute(
             "INSERT INTO task_ceilings (root_task_id, limit_micros, created_at, updated_at) "
             "VALUES (?, ?, ?, ?)",
-            (root_task_id, per_task, stamp, stamp),
+            (root_task_id, effective, stamp, stamp),
         )
-        return
-    lowered = tighter(usage.task_ceiling.limit, per_task)
-    if lowered != usage.task_ceiling.limit:
+    elif effective != previous:
         db.execute(
             "UPDATE task_ceilings SET limit_micros = ?, updated_at = ? WHERE root_task_id = ?",
-            (lowered, stamp, root_task_id),
+            (effective, stamp, root_task_id),
         )
+    return replace(usage, task_ceiling=TaskCeiling(effective))
 
 
 def insert_reservation(db: sqlite3.Connection, reservation: Reservation) -> None:
