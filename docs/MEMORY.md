@@ -42,6 +42,8 @@ This SQLite database is durable source-of-truth state and is git-ignored. It car
 
 Repository-derived indexes are separate rebuildable state. See [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 
+Paid-spend accounting is also separate from task memory because monthly/daily limits span repositories. Its authoritative canonical ledger lives at `~/.agent-cli/state/spend.sqlite`. Task state may link concise budget events, but it is not the financial source of truth.
+
 V1 uses local stores only; no vector database.
 
 ## Implementation
