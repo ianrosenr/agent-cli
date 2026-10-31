@@ -44,6 +44,7 @@ from agent_cli.skills.tokens import DEFAULT_ESTIMATOR
 from agent_cli.state import PinKind
 from agent_cli.terms import AccessKind, Role
 
+
 class PlanningUnavailable(Exception):
     """No model path can make this call now. Nothing was substituted; the user must act."""
 
