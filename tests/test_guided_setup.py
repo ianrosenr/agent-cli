@@ -120,13 +120,14 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
         workers__max_concurrency="6",
         skills__paths="~/skills, /opt/team skills",
         implementation__mode="checkpoint",
-        harnesses__claude-code__enabled="n",
-        harnesses__codex-cli__enabled="y",
         review__before_merge_request="n",
         git__use_worktrees="no",
         git__worktree_dir=".agent-cli/trees",
         git__branch_prefix="bot/",
     )
+    keys = [setting.key for setting in SETTINGS]
+    answers[keys.index("harnesses.claude-code.enabled")] = "n"
+    answers[keys.index("harnesses.codex-cli.enabled")] = "y"
     result, _ = run(service, "y", *answers, "y")
     assert result.startswith("Done  Settings saved")
     config = ConfigService(paths).resolve()
