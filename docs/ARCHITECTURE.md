@@ -29,7 +29,7 @@
 | Component | Owns | Does not own |
 | --- | --- | --- |
 | CLI shell | input, slash commands, status and diff display | decisions about work |
-| Orchestrator | decomposition, coordination, escalation, user questions | model choice, spend enforcement |
+| Orchestrator | decomposition, canonical planning state, coordination, escalation, user questions | direct code edits, coding-agent runtime, model choice, spend enforcement |
 | Memory store | canonical task state ([MEMORY.md](MEMORY.md)) | worker scratch reasoning |
 | Repository fact index | cached structural repository facts and task inspection ([REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md)) | semantic decisions or worker authority |
 | Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md), [SKILL_ROUTING.md](SKILL_ROUTING.md)) | skill content or model choice |
@@ -75,9 +75,10 @@ Keeping them separate allows the same model to be reached through another provid
 ## Boundaries
 
 - **Trust.** Repository content, model output, and tool output are untrusted input. Credentials come from environment variables or the OS credential store, never from ordinary YAML.
-- **State.** Only the orchestrator writes canonical memory. Workers return results; the orchestrator decides what becomes shared truth.
+- **State.** Only the orchestration layer writes canonical memory. Untrusted planner/worker model output is validated before persistence; workers return results and do not write shared truth directly.
 - **Filesystem.** Each implementer writes only inside its own worktree. The user's checkout is changed only when the user accepts a final diff.
 - **Spend.** Paid calls require a conservative upper-bound estimate and atomic ledger reservation before dispatch. An LLM or plain approval cannot override hard ceilings. Opaque paid harnesses are eligible only when their integration exposes an enforceable bound.
+- **Planning.** Root natural-language input may use direct provider reasoning for decomposition/spec authoring, but planning never launches a coding harness or edits repository files. Paid planning calls use the same budget guard as every other paid provider call.
 - **Failure.** A worker or provider failure is contained to that task and surfaces to the orchestrator. It does not crash the session.
 
 ## Product and runtime layout
