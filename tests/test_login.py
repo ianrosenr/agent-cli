@@ -145,6 +145,18 @@ def test_offer_prompts_only_when_auth_is_needed_and_can_be_declined() -> None:
     assert any("Authentication is needed for: Codex CLI" in shown for shown in conversation.output)
 
 
+def test_offer_reprompts_invalid_answer_then_logs_in() -> None:
+    claude = FakeHarness("claude-code", "Claude Code", ReadinessState.READY)
+    codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.AUTH_REQUIRED)
+    login, conversation = service(claude, codex, answers=["yy", "y"])
+
+    output = login.offer()
+
+    assert output is not None
+    assert codex.login_calls == 1
+    assert any("Type y for yes or n for no." in shown for shown in conversation.output)
+
+
 def test_offer_is_silent_when_everything_is_already_ready() -> None:
     claude = FakeHarness("claude-code", "Claude Code", ReadinessState.READY)
     codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.READY)
