@@ -256,9 +256,11 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
 
         argv = self.worker_argv(request)
-        prompt = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
-        stdout = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
-        stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+        # These files intentionally outlive this method: stdout/stderr belong to the running
+        # worker and are closed when its final result is collected.
+        prompt = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
+        stdout = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
+        stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
         prompt.write(render_worker_prompt(request))
         prompt.seek(0)
         try:
