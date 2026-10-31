@@ -7,7 +7,13 @@ provider health (V1-13), harness choice, and discovery (V1-14) live elsewhere. S
 docs/ROUTING.md.
 """
 
-from agent_cli.models.access import ModelPath, RuntimePaths, choose_path, runtime_paths, usable_paths
+from agent_cli.models.access import (
+    ModelPath,
+    RuntimePaths,
+    choose_path,
+    runtime_paths,
+    usable_paths,
+)
 from agent_cli.models.classifier_selection import (
     CLASSIFIER_MINIMUM,
     ClassifierChoice,
