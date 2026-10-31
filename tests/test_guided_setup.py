@@ -91,7 +91,9 @@ def test_enter_through_writes_a_valid_complete_global_config(
 ) -> None:
     result, _ = run(service, *ENTER_THROUGH)
     assert result == f"Done  Settings saved to {paths.global_file}."
-    assert ConfigService(paths).resolve() == Config()
+    config = ConfigService(paths).resolve()
+    assert config.harnesses["claude-code"].enabled is True
+    assert config.harnesses["codex-cli"].enabled is True
     saved = load(paths.global_file)
     assert isinstance(saved, dict)
     assert saved["workers"] == {"max_concurrency": 3}
@@ -104,7 +106,9 @@ def test_enter_through_outside_a_repository_writes_global(tmp_path: Path) -> Non
     result, conversation = run(ConfigService(paths), *ENTER_THROUGH[1:])
     assert result == f"Done  Settings saved to {paths.global_file}."
     assert "Not inside a Git repository" in conversation.transcript
-    assert ConfigService(paths).resolve() == Config()
+    config = ConfigService(paths).resolve()
+    assert config.harnesses["claude-code"].enabled is True
+    assert config.harnesses["codex-cli"].enabled is True
 
 
 def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> None:
@@ -116,6 +120,8 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
         workers__max_concurrency="6",
         skills__paths="~/skills, /opt/team skills",
         implementation__mode="checkpoint",
+        harnesses__claude-code__enabled="n",
+        harnesses__codex-cli__enabled="y",
         review__before_merge_request="n",
         git__use_worktrees="no",
         git__worktree_dir=".agent-cli/trees",
@@ -131,6 +137,8 @@ def test_answers_are_persisted(service: ConfigService, paths: ConfigPaths) -> No
     assert config.workers.max_concurrency == 6
     assert config.skills.paths == ("~/skills", "/opt/team skills")
     assert config.implementation.mode == "checkpoint"
+    assert config.harnesses["claude-code"].enabled is False
+    assert config.harnesses["codex-cli"].enabled is True
     assert config.review.before_merge_request is False
     assert config.git == type(config.git)(False, ".agent-cli/trees", "bot/")
 
