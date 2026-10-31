@@ -14,11 +14,34 @@ Instead:
 
 1. The orchestrator decomposes the request and assigns each subtask a role.
 2. Repository inspection reads cached structural facts from the Repository Fact Index; see [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
-3. One cheap System-1-style classifier batches the subtasks and maps their compact context to normalized routing signals.
+3. An optional injected cheap classifier may batch subtasks and map compact context to normalized routing signals.
 4. Deterministic code maps role defaults and signals to skills.
 5. Only selected `SKILL.md` bodies enter worker context.
 
-The classifier is intentionally optimized for cost and latency rather than maximum accuracy. Misses are recovered through dynamic escalation and become routing-evaluation cases.
+V1-06 does not require a production classifier implementation. With no classifier wired, routing still works from role defaults plus deterministic repository facts. Once V1-07 provides model-registry intelligence, a cheap production classifier can use the same seam without changing skill selection.
+
+Classifier misses are recovered through dynamic escalation and become routing-evaluation cases.
+
+## V1-06 and V1-07 boundary
+
+V1-06 owns the classifier **interface**, normalized signal vocabulary, fake classifier, batching contract, deterministic fallback, and signal-to-skill selection.
+
+V1-07 owns choosing the concrete production classifier model/provider using the model registry and capability thresholds.
+
+V1-06 must not invent temporary model-selection logic merely because it is implemented first.
+
+The supported pre-V1-07 path is:
+
+```text
+role defaults
++ RepositoryFacts
++ deterministic signals
++ activation policy
++ context budget
+→ selected skills
+```
+
+If no classifier is available, this is valid runtime behavior rather than an error.
 
 ## Flow
 
@@ -60,17 +83,18 @@ A small, low-cost model is sufficient to answer questions such as:
 
 The expensive orchestrator should spend reasoning on decomposition, ambiguity, and decisions—not on selecting skill files.
 
-The classifier MUST:
+The classifier contract MUST:
 
-- use the cheapest configured model that meets the routing-classification floor
-- batch all new or changed subtasks from one orchestration cycle into one call when practical
+- be batch-first so all new or changed subtasks from one orchestration cycle can be classified together when practical
 - receive only compact subtask context and the active signal vocabulary
 - return only normalized signal IDs plus optional brief evidence
-- have a small output budget
+- have a small output contract
 - never directly choose skills
 - never change role authority
 
-If the classifier is unavailable or exceeds its budget, routing falls back to role defaults plus deterministic repository facts. It MUST NOT automatically escalate to an expensive model solely to improve skill selection.
+Choosing the cheapest configured model that satisfies the routing-classification floor belongs to V1-07, not V1-06.
+
+If the classifier is absent, unavailable, or exceeds its budget, routing falls back to role defaults plus deterministic repository facts. It MUST NOT automatically escalate to an expensive model solely to improve skill selection.
 
 ## Inputs
 
@@ -133,6 +157,16 @@ For each subtask it:
 
 The selector never asks a model which skills to load.
 
+## Skill-context token estimation
+
+`skills.context_budget_tokens` budgets skill content only; it is not the worker model's complete context-window limit.
+
+Before V1-07 knows the concrete model/tokenizer, V1-06 uses a small versioned `TokenEstimator` interface with one deterministic conservative estimator. The same estimator must drive discovery metadata, budget selection, telemetry, and `/skills` display.
+
+A simple V1 default such as `ceil(utf8_byte_length / 3)` is acceptable. Later model-specific tokenizers can replace it through the same interface.
+
+Never truncate a skill body to make it fit. Required role-default skills must fit in full or routing fails clearly.
+
 ## Example
 
 Request:
@@ -191,10 +225,12 @@ If a worker discovers an uncovered policy domain:
 
 1. the worker reports the new fact in ordinary language with evidence
 2. the orchestrator records the new task/repository fact
-3. the cheap classifier reclassifies only the changed subtask, unless deterministic logic can derive the signal directly
+3. the classifier seam reclassifies only the changed subtask when one is available, unless deterministic logic can derive the signal directly
 4. deterministic skill selection runs again
-5. newly selected skill content is injected
+5. V1-06 returns the newly selected policy
 6. the escalation and reason are recorded
+
+V1-06 does not own harness follow-up or live worker-context injection; later orchestration/worker lifecycle code decides how newly selected policy reaches a running worker.
 
 The worker keeps the same role authority and approved scope.
 
@@ -204,7 +240,7 @@ Routing quality improves independently from worker quality.
 
 Persist:
 
-- classifier model/version
+- classifier model/version when a classifier was used
 - classifier input version
 - emitted signals
 - deterministic signals
