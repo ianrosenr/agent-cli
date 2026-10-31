@@ -25,11 +25,12 @@ from agent_cli.budget import (
     BudgetRejected,
     CallBounds,
     PathQuote,
-    budget_candidates,
-    budget_pinned,
+    quote_path,
+    rank_quotes,
 )
 from agent_cli.config import Config
 from agent_cli.models import (
+    ModelPath,
     ModelPin,
     ModelRegistry,
     ModelRoutingError,
@@ -42,10 +43,6 @@ from agent_cli.models import (
 from agent_cli.skills.tokens import DEFAULT_ESTIMATOR
 from agent_cli.state import PinKind
 from agent_cli.terms import AccessKind, Role
-
-QUOTE_OVERHEAD_TOKENS = 256
-"""Added to one-token-per-byte input when quoting paths; the guard re-bounds before invoking."""
-
 
 class PlanningUnavailable(Exception):
     """No model path can make this call now. Nothing was substituted; the user must act."""
@@ -93,7 +90,7 @@ class DirectModelCall:
     def __call__(
         self, role: Role, purpose: str, system: str, prompt: str, max_output_tokens: int
     ) -> ModelReply:
-        quote = self.choose(role, purpose, system + prompt, max_output_tokens)
+        quote = self.choose(role, purpose, system, prompt, max_output_tokens)
         adapter = self.adapters.provider(quote.path.provider.id)
         if adapter is None:
             raise PlanningUnavailable(f"provider {quote.path.provider.id} is not registered")
@@ -112,17 +109,22 @@ class DirectModelCall:
         self.replies.append(reply)
         return reply
 
-    def choose(self, role: Role, purpose: str, text: str, max_output_tokens: int) -> PathQuote:
-        """The budget-compliant path for this call. Reserves nothing."""
+    def choose(
+        self,
+        role: Role,
+        purpose: str,
+        system: str,
+        prompt: str,
+        max_output_tokens: int,
+    ) -> PathQuote:
+        """The budget-compliant path for this call. Reserves nothing.
+
+        Paid quotes use the same trusted provider/model-specific input bound that BudgetGuard
+        will enforce at dispatch; an untrusted generic byte+overhead estimate never chooses the
+        paid path.
+        """
         preference = self.config.access.preference
-        context = DEFAULT_ESTIMATOR.estimate(text) + max_output_tokens
-        bounds = CallBounds(
-            purpose,
-            len(text.encode("utf-8")) + QUOTE_OVERHEAD_TOKENS,
-            max_output_tokens,
-            root_task_id=self.root_task_id,
-            task_id=self.root_task_id,
-        )
+        context = DEFAULT_ESTIMATOR.estimate(system + prompt) + max_output_tokens
         try:
             usage = self.guard.ledger.usage(self.root_task_id)
         except BudgetError as error:
@@ -130,12 +132,39 @@ class DirectModelCall:
         provider = self.pins.get("provider")
         model = self.pins.get("model")
         estimator, limits = self.guard.estimator, self.guard.limits
+
+        def quoted(model_id: str, path: ModelPath, capability_rank: int) -> PathQuote:
+            bounds = CallBounds(
+                purpose,
+                None,
+                max_output_tokens,
+                root_task_id=self.root_task_id,
+                task_id=self.root_task_id,
+            )
+            call = bounds.call(path)
+            if call.paid:
+                request = ProviderRequest(path.model_id, prompt, system, max_output_tokens)
+                try:
+                    input_tokens = estimator.input_bound(call, request)
+                except ValueError:
+                    input_tokens = None
+                bounds = replace(bounds, input_tokens=input_tokens)
+            return quote_path(model_id, path, capability_rank, bounds, estimator, limits, usage)
+
         try:
             if model is not None:
                 pin = ModelPin(model, f"task:{self.root_task_id}/role:{role}")
                 pinned = pinned_paths(self.registry, self.runtime, preference, pin, context)
-                budgeted = budget_pinned(
-                    pinned, bounds, estimator, limits, usage, preference, provider
+                paths = pinned.paths
+                if provider is not None:
+                    paths = tuple(path for path in paths if path.provider.id == provider)
+                    if not paths:
+                        raise PlanningUnavailable(
+                            f"pinned model {pinned.model_id!r} is not served by pinned provider "
+                            f"{provider!r}; ask the user how to proceed"
+                        )
+                budgeted = rank_quotes(
+                    (quoted(pinned.model_id, path, 0) for path in paths), preference
                 )
             else:
                 candidates = ranked_model_candidates(
@@ -146,17 +175,14 @@ class DirectModelCall:
                     preference,
                     context,
                 )
-                if provider is not None:
-                    candidates = tuple(
-                        replace(c, paths=paths)
-                        for c in candidates
-                        if (paths := tuple(p for p in c.paths if p.provider.id == provider))
-                    )
-                if not candidates:
+                quotes = []
+                for rank, candidate in enumerate(candidates):
+                    for path in candidate.paths:
+                        if provider is None or path.provider.id == provider:
+                            quotes.append(quoted(candidate.model_id, path, rank))
+                if not quotes:
                     raise PlanningUnavailable(self.no_candidates(role, provider))
-                budgeted = budget_candidates(
-                    candidates, bounds, estimator, limits, usage, preference
-                )
+                budgeted = rank_quotes(quotes, preference)
             return budgeted.first(purpose)
         except (ModelRoutingError, BudgetBlocked) as error:
             raise PlanningUnavailable(str(error)) from error
