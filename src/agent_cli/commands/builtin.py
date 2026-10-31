@@ -29,6 +29,7 @@ from agent_cli.ui import (
     blocks,
     error,
     fields,
+    info,
     heading,
     muted,
     section,
@@ -290,7 +291,11 @@ def planned(name: str, description: str, capability: str, issue: str) -> Command
 BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("help", "Show this help.", help_command),
     Command("exit", "Exit Agent CLI.", exit_command),
-    Command("startup", "Guided setup for access, harnesses, budgets, review, and Git.", startup_command),
+    Command(
+        "startup",
+        "Guided setup for access, harnesses, budgets, review, and Git.",
+        startup_command,
+    ),
     Command("login", "Sign into enabled subscription harnesses.", login_command),
     Command(
         "providers", "Show configured and detected harnesses and providers.", providers_command
