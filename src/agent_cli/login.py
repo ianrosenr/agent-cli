@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from rich.console import RenderableType
 
 from agent_cli.adapters import AdapterError, AdapterRegistry, Capability, ReadinessState
+from agent_cli.adapters.harness import HarnessAdapter
 from agent_cli.config import Config
 from agent_cli.config.model import HarnessConfig
 from agent_cli.ui import blocks, error, fields, info, muted, section, success, warning
@@ -33,7 +34,7 @@ class HarnessLoginService:
     def enabled(self, harness_id: str) -> bool:
         return self.config.harnesses.get(harness_id, HarnessConfig()).enabled
 
-    def selected(self, target: str = "") -> tuple[object, ...] | RenderableType:
+    def selected(self, target: str = "") -> tuple[HarnessAdapter, ...] | RenderableType:
         if target:
             harness_id = ALIASES.get(target.lower())
             if harness_id is None:
