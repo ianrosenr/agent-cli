@@ -6,10 +6,11 @@ vendor-specific code lives in individual adapter implementations.
 """
 
 from agent_cli.adapters.domain import (
-    AdapterError,
-    Capability,
     DIAGNOSTIC_AUTHORITY,
     IMPLEMENTATION_AUTHORITY,
+    RESEARCH_AUTHORITY,
+    AdapterError,
+    Capability,
     Changes,
     ErrorKind,
     Failure,
@@ -23,7 +24,6 @@ from agent_cli.adapters.domain import (
     ProviderResponse,
     Readiness,
     ReadinessState,
-    RESEARCH_AUTHORITY,
     Selection,
     Usage,
     WorkerAuthority,
@@ -39,12 +39,13 @@ from agent_cli.adapters.registry import AdapterRegistry
 from agent_cli.adapters.status import adapter_status, providers_view
 
 __all__ = [
+    "DIAGNOSTIC_AUTHORITY",
+    "IMPLEMENTATION_AUTHORITY",
+    "RESEARCH_AUTHORITY",
     "AdapterError",
     "AdapterRegistry",
     "Capability",
     "Changes",
-    "DIAGNOSTIC_AUTHORITY",
-    "IMPLEMENTATION_AUTHORITY",
     "ErrorKind",
     "Failure",
     "HarnessAdapter",
@@ -60,7 +61,6 @@ __all__ = [
     "ProviderResponse",
     "Readiness",
     "ReadinessState",
-    "RESEARCH_AUTHORITY",
     "Selection",
     "Usage",
     "WorkerAuthority",
