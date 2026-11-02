@@ -25,6 +25,7 @@ from agent_cli.adapters import (
     ProviderRequest,
     ProviderResponse,
     ReadinessState,
+    DIAGNOSTIC_AUTHORITY,
     Usage,
     WorkerStatus,
 )
@@ -266,7 +267,8 @@ def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
     [worker] = store.workers(child.id)
     assert worker.status is WorkerStatus.RUNNING
     [running] = harness.workers.values()
-    assert running.request.mode == "plan-only"
+    assert running.request.authority == DIAGNOSTIC_AUTHORITY
+    assert running.request.mode is None
     assert running.request.working_directory != project
 
 
