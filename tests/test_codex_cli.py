@@ -11,6 +11,7 @@ import pytest
 
 from agent_cli.adapters import (
     DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     RESEARCH_AUTHORITY,
     AdapterError,
     ErrorKind,
@@ -185,6 +186,7 @@ def request(tmp_path: Path, **changes: Any) -> WorkerRequest:
         "working_directory": tmp_path,
         "repository": "agent-cli",
         "skills": ("testing policy", "interfaces policy"),
+        "authority": IMPLEMENTATION_AUTHORITY,
         "model": Selection.pin("gpt-5.3-codex"),
         "provider": Selection.pin(SUBSCRIPTION_PROVIDER_ID),
         "harness": Selection.pin(HARNESS_ID),
