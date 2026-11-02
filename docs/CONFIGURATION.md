@@ -109,6 +109,8 @@ On first interactive launch, Agent CLI runs `/startup` automatically when neithe
 
 For `version: latest`, Agent CLI performs a best-effort update at interactive process startup at most once every 24 hours, recorded in `~/.agent-cli/state/harness-updates.json`. It never checks before every query. Update failures are non-blocking when the installed harness remains usable. Exact version pins are never automatically moved to another version.
 
+Configured enabled subscription harnesses that support bounded direct model calls are also exposed automatically as provider paths. No duplicate `providers:` entry is required. For example, a ready `claude-code` harness contributes `claude-subscription`, and a ready `codex-cli` harness contributes `openai-subscription`. Their authentication remains the native CLI session.
+
 Authentication stays owned and cached by each native CLI. `/startup` offers sign-in when an enabled harness needs it; later, `/login` checks the saved harness configuration, skips already-authenticated harnesses, and launches native login only where needed. `/login claude` and `/login codex` target one harness. Agent CLI never copies credentials. Subscription child processes isolate API/cloud credential environment variables so existing API setup cannot silently redirect subscription execution.
 
 ## Credentials
