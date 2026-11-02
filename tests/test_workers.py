@@ -465,12 +465,8 @@ def test_recovery_preserves_independent_queued_tasks(tmp_path: Path) -> None:
     interrupted = store.create_task(
         session.id, "Interrupted", parent_id=parent.id, role="implementer"
     )
-    queued = store.create_task(
-        session.id, "Queued", parent_id=parent.id, role="implementer"
-    )
-    store.record_worker(
-        interrupted.id, "implementer", WorkerStatus.RUNNING, worktree="uncertain"
-    )
+    queued = store.create_task(session.id, "Queued", parent_id=parent.id, role="implementer")
+    store.record_worker(interrupted.id, "implementer", WorkerStatus.RUNNING, worktree="uncertain")
 
     assert reconcile_orphaned_workers(store) == 1
     failed = store.task(interrupted.id)
