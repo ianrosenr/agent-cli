@@ -244,7 +244,6 @@ def test_restart_reconciliation_never_replays_active_worker(tmp_path: Path) -> N
     assert reconcile_orphaned_workers(store) == 0
 
 
-
 def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
