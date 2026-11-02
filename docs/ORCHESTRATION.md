@@ -2,68 +2,115 @@
 
 ## Task flow
 
-V1 planning and execution are deliberately separate phases:
+The root prompt is one continuous supervisor conversation. Internal actions are deliberately small:
 
 ```text
-user goal
- → V1-09 orchestrator: inspect repo, separate facts from assumptions, decompose
- → V1-09 spec author: persist concise pending implementation specs
- → STOP: plan is ready for review/implementation
- → V1-10 spec reviewer: challenge spec → approved spec
- → V1-10 implementer workflow
- → V1-11 worker/worktree execution
- → V1-12 code reviewer: challenge diff against spec → fixes
- → orchestrator: final diff to user → MR gate
+user turn
+  -> answer
+  -> scout (read-only repository work)
+  -> ship  (repository-changing work)
 ```
 
-Ordinary text at the root prompt is the primary input. Slash commands bypass it and remain control/status/configuration commands. There is no separate orchestration REPL, route selector, `/orchestrate`, `/agent`, or `/chat` mode: natural-language intent decides the workflow (see [Root-prompt conversation](#root-prompt-conversation)).
-
-V1-09 ends with canonical planning state: a root orchestration task, a validated child-task graph, role assignments, skill-routing decisions, explicit execution pins, and pending short specs for non-trivial implementer work. It does not edit code, launch coding harnesses, create worktrees, approve specs, or run implementation/review loops.
-
-Planning/spec-author reasoning may use direct provider calls through the existing model, access, and budget seams. Paid planning calls must pass V1-08 budget admission and reservation immediately before invocation. Planning model calls are control-plane reasoning, not coding workers.
-
-## Root-prompt conversation
-
-V1-09.9 makes the root prompt one continuous conversation. Each turn is understood semantically, in context, and delegation happens behind the scenes; there are no trigger phrases or modes to learn:
+The supervisor also estimates `trivial | moderate | complex`. That estimate guides how much
+orchestration and model intelligence to spend; it never grants authority.
 
 ```text
-user turn + compact recent conversation
-   -> low-cost semantic router
-       -> chat ------------------> DirectAnswerService
-       -> repository_question ---> RepositoryAnswerService (read-only)
-       -> orchestration ---------> OrchestrationService -> planner/spec/workers/review
+answer
+  -> direct answer, optionally with bounded repository context
+
+trivial scout/ship
+  -> one typed worker task
+  -> skill + dispatch routing
+  -> worker lifecycle
+
+moderate/complex scout/ship
+  -> conditional decomposition/planning
+  -> independent typed worker tasks
+  -> skill + dispatch routing
+  -> worker lifecycle
 ```
 
-Order of decision (`agent_cli.gateway`):
+V1-09.9 implements the supervisor intake and the first optimization: trivial scout/ship work
+bypasses the planner-model call and persists one bounded task directly. Worker execution still
+lands in V1-11.
 
-1. A pending planning question takes the next line as its answer, before any routing (guardrail).
-2. Greetings take a fast path to `chat` with no routing call. This is the only phrase rule, and it never leads to work.
-3. Every other turn goes to the semantic router: in `auto`, one small call on the cheapest adequate reachable model (`reasoning` 2+, cheapest and fastest first). Free/low-cost models are preferred, but routing does not disappear when none is configured; the cheapest adequate reachable fallback is used. `selected` uses exactly the configured model. It sees the message and a compact view of recent turns, and returns `{"intent", "confident", "request"}`, where `request` restates the turn self-contained, with references such as "do that" or "the other option" resolved. It is not the V1-06 skill classifier.
-4. Policy: orchestration needs a confident verdict with a concrete request. An unsure or vague work verdict is answered read-only (`repository_question` in a repository, else `chat`). A router failure, no reachable router model, or `routing.classifier.mode: disabled` → `chat`. `repository_task` is for read-only work that requires actually running a command/tool (tests, lint, git status, runtime checks); it delegates as work rather than pretending static chat can answer it. Classification alone never grants write authority; orchestration still only plans, and V1-10 spec review gates implementation.
+## Root-prompt supervisor
 
-Conversation history is kept in memory for the shell session, apart from canonical task state. Answers never write the task store. When a turn is delegated, the router's restated request becomes the root goal, the literal turn stays the user requirement, and a compact transcript of the turns it refers to is recorded as a `derived` requirement. The planner sees that transcript as `context`: evidence of which change the user approved, never the user's words, so it can authorize no pin and stands in for no requirement.
+There are no user-facing `/chat`, `/agent`, scout, or ship modes. The semantic supervisor sees
+the current turn plus compact recent conversation and emits:
 
-`chat` makes one provider-backed call with the recent conversation, needs no Git repository, and writes no task state. `repository_question` adds bounded read-only context (V1-05 inspection facts for the turn and its resolved request, plus short excerpts of the best few files; credential-like lines, private-key blocks, and sensitive files such as `.env`, `*.pem`, and `*secret*` are never sent). It can recommend changes but never makes them; a later "go ahead and do that" is resolved against that answer and delegated.
+```json
+{
+  "action": "answer | scout | ship",
+  "confident": true,
+  "request": "self-contained resolved request",
+  "repository": true,
+  "complexity": "trivial | moderate | complex"
+}
+```
 
-Answers route through the same `DirectModelCall` seam as planning, under a direct-answer policy instead of a role floor: active models with `reasoning` (chat) or `repository_engineering` (repository answers) 3+, cheaper and faster first. Explicit pins the user opens the message with (`use <model>: …`, `ask <model> …`, `via <provider>, …`, `use <model> via <provider> …`; exact registry names and provider IDs only, so a passing mention is never a pin), access preference, and V1-08 budget limits all apply, to routing calls too; answers have no task scope, so global limits govern them. Concise verbosity shows only the answer; normal adds the model used; verbose adds the routing decision, the resolved request, and repository context.
+- **answer**: ordinary chat or a question answerable from bounded repository evidence.
+- **scout**: read-only work requiring tools/fresh evidence: run tests/lint/status, reproduce,
+  investigate, audit, or gather facts.
+- **ship**: user-authorized repository changes.
+- **repository** is context for `answer`, not a separate interaction mode.
+- **complexity** is a resource-allocation hint. It does not widen scope.
 
-Work requested outside a Git repository explains where to run Agent CLI instead.
+Greetings use a deterministic answer fast path. Everything else is semantic. Uncertain work intent
+fails toward read-only answering. Scout/ship outside a repository explains where repository work
+must run.
 
-## Planning lifecycle
+Conversation memory is transient and separate from canonical task state. The literal user turn is
+the authoritative requirement. The supervisor's resolved request becomes the task goal; recent
+conversation is derived context only, so "go ahead and do that" can be resolved without turning an
+earlier assistant suggestion into user authority.
 
-For a new ordinary-language request:
+## Answer path
 
-1. Create one root task with role `orchestrator`.
-2. Record the literal user goal as a user requirement on that root.
-3. Inspect bounded V1-05 repository context before asking repository-answerable questions.
-4. Produce a typed plan proposal; model prose never writes TaskStore directly.
-5. Validate the entire proposed graph before persisting child tasks.
-6. Persist child tasks, roles, dependencies, assumptions, and propagated explicit pins atomically.
-7. Route skills separately through V1-06 after roles are fixed.
-8. Produce and persist pending short specs for non-trivial implementer tasks.
-9. Return a concise plan summary and stop before implementation.
+A direct answer creates no task state. General answers need no repository. Repository answers add
+bounded V1-05 facts/excerpts with credential-like material scrubbed before model context.
 
-If child-graph persistence fails, none of that proposal's child tasks/dependencies/pins are committed. If later skill/spec generation fails, keep the valid graph, mark the affected work blocked, and make the partial phase explicit rather than deleting canonical state.
+Answer calls use generic model/provider routing, access preferences, explicit pins, and budget
+guardrails. Concise verbosity hides internal supervisor decisions.
+
+## Task brief and conditional decomposition
+
+Scout/ship work crosses the conversational boundary as a typed task brief:
+
+```text
+kind: scout | ship
+goal: self-contained supervisor restatement
+context: bounded conversation needed to resolve references
+complexity: trivial | moderate | complex
+```
+
+The user's literal request remains separately stored as the authoritative requirement.
+
+For `trivial` work, `OrchestrationService.prepare_single_task` creates one worker task without a
+planner call:
+
+- scout -> `research_investigator`
+- ship -> `implementer`
+
+It still runs normal validation and skill routing. This is intentionally the cheap path.
+
+For moderate/complex work, the planner is a **conditional decomposer**, not the root gateway.
+It inspects repository evidence, asks only consequential questions, and creates the smallest useful
+dependency graph. Do not decompose merely to fill concurrency.
+
+## Planning lifecycle for decomposed work
+
+1. Create a root task and store the literal user requirement.
+2. Inspect bounded repository context.
+3. Ask a planner only when complexity warrants decomposition or unresolved consequential choices.
+4. Validate the entire typed proposal before persistence.
+5. Persist child tasks/dependencies/assumptions/pins atomically.
+6. Route minimum sufficient skills after roles are fixed.
+7. Produce short implementation specs only when the task/risk needs them.
+8. Hand prepared tasks to authorization/worker lifecycle.
+
+If planning output is malformed, invalid, or unavailable, it is a task failure/blocker; it is not
+silently presented as a user question.
 
 ## Typed plan boundary
 
