@@ -162,7 +162,7 @@ def test_authorization_is_durable_and_new_spec_voids_it(store: TaskStore) -> Non
     authorization = store.add_authorization(
         task.id,
         "autopilot",
-        Approval.APPROVED,
+        AuthorizationStatus.APPROVED,
         "bounded",
         spec_version=spec.version,
         decided_by="policy:autopilot",
@@ -171,13 +171,13 @@ def test_authorization_is_durable_and_new_spec_voids_it(store: TaskStore) -> Non
     store = reopen(store)
     restored = store.latest_authorization(task.id)
     assert restored is not None and restored.id == authorization.id
-    assert restored.status is Approval.APPROVED
+    assert restored.status is AuthorizationStatus.APPROVED
     latest = store.latest_spec(task.id)
     assert latest is not None and latest.approval is Approval.APPROVED
 
     store.add_spec_version(task.id, "Bounded spec v2")
     voided = store.latest_authorization(task.id)
-    assert voided is not None and voided.status is Approval.VOIDED
+    assert voided is not None and voided.status is AuthorizationStatus.VOIDED
 
 
 def test_checkpoint_authorization_blocks_then_resumes_task(store: TaskStore) -> None:
@@ -194,11 +194,11 @@ def test_checkpoint_authorization_blocks_then_resumes_task(store: TaskStore) -> 
     assert store.pending_authorization(session.id) == authorization
     decided = store.decide_authorization(
         authorization.id,
-        Approval.APPROVED,
+        AuthorizationStatus.APPROVED,
         "user",
         "go ahead",
     )
-    assert decided.status is Approval.APPROVED
+    assert decided.status is AuthorizationStatus.APPROVED
     assert store.pending_authorization(session.id) is None
     resumed = store.task(task.id)
     assert resumed is not None and resumed.status is TaskStatus.PENDING
