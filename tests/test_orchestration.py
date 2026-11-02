@@ -72,6 +72,7 @@ from agent_cli.runtime import default_adapters, provider_estimators
 from agent_cli.skills import FakeClassifier
 from agent_cli.state import (
     Approval,
+    AuthorizationStatus,
     PlannedPin,
     PlannedTask,
     PlanWrite,
@@ -310,7 +311,7 @@ def test_trivial_ship_autopilot_authorizes_and_launches(
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
     assert authorization is not None
-    assert authorization.status is Approval.APPROVED
+    assert authorization.status is AuthorizationStatus.APPROVED
     assert authorization.decided_by == "policy:autopilot"
     [running] = harness.workers.values()
     assert running.request.authority == IMPLEMENTATION_AUTHORITY
@@ -351,7 +352,7 @@ def test_trivial_ship_checkpoint_waits_then_launches_on_go_ahead(
     assert root is not None
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
-    assert authorization is not None and authorization.status is Approval.APPROVED
+    assert authorization is not None and authorization.status is AuthorizationStatus.APPROVED
     assert authorization.decided_by == "user"
     assert len(harness.workers) == 1
 
@@ -382,7 +383,7 @@ def test_moderate_single_ship_authorizes_after_spec_and_launches(
     spec = store.latest_spec(child.id)
     authorization = store.latest_authorization(child.id)
     assert spec is not None and spec.approval is Approval.APPROVED
-    assert authorization is not None and authorization.status is Approval.APPROVED
+    assert authorization is not None and authorization.status is AuthorizationStatus.APPROVED
     assert authorization.spec_version == spec.version
     assert len(harness.workers) == 1
 
@@ -412,7 +413,7 @@ def test_complex_single_ship_requires_checkpoint_even_in_autopilot(
     assert root is not None
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
-    assert authorization is not None and authorization.status is Approval.PENDING
+    assert authorization is not None and authorization.status is AuthorizationStatus.PENDING
 
 
 def test_trivial_ship_plan_only_never_launches(
@@ -448,7 +449,7 @@ def test_trivial_ship_plan_only_never_launches(
     assert root is not None
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
-    assert authorization is not None and authorization.status is Approval.REJECTED
+    assert authorization is not None and authorization.status is AuthorizationStatus.REJECTED
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
