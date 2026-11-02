@@ -280,14 +280,14 @@ class CodexCliHarnessAdapter(HarnessAdapter):
         )
 
     def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
-        blocking = self.readiness().blocking_error()
-        if blocking is not None:
-            raise blocking
         if request.model_id != DIRECT_MODEL_ID:
             raise AdapterError(
                 ErrorKind.INCOMPATIBLE,
                 f"Codex subscription does not advertise model {request.model_id!r}",
             )
+        blocking = self.readiness().blocking_error()
+        if blocking is not None:
+            raise blocking
         argv = (
             self.command(),
             "-c",
