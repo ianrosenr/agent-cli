@@ -119,7 +119,9 @@ def test_trivial_dispatch_prefers_cheaper_adequate_model(tmp_path: Path) -> None
     child = task(store)
     adapters, _ = runtime()
 
-    choice = WorkerDispatcher(adapters, registry(), Config()).choose(child, "trivial", {})
+    choice = WorkerDispatcher(adapters, registry(), Config()).choose(
+        child, "trivial", {}, DIAGNOSTIC_AUTHORITY
+    )
 
     assert (choice.model_id, choice.provider_id, choice.harness_id) == ("small", "sub", "crew")
 
@@ -137,7 +139,7 @@ def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_pat
         Config(),
         root,
         poll_seconds=0.01,
-    ).launch(child, "scout", "trivial", child.goal)
+    ).launch(child, "scout", "trivial", child.goal, DIAGNOSTIC_AUTHORITY)
 
     assert "started in background" in started
     [recorded] = store.workers(child.id)
@@ -182,7 +184,7 @@ def test_background_completion_notifies_and_finishes_parent(tmp_path: Path) -> N
         notify=notifications.append,
     )
 
-    executor.launch(child, "scout", "trivial", child.goal)
+    executor.launch(child, "scout", "trivial", child.goal, DIAGNOSTIC_AUTHORITY)
     [token] = harness.workers
     harness.finish(WorkerHandle("crew", token))
 
@@ -214,10 +216,10 @@ def test_worker_concurrency_limit_is_enforced_before_second_launch(tmp_path: Pat
     config = Config(workers=WorkersConfig(max_concurrency=1))
     executor = WorkerExecutor(store, adapters, registry(), config, root)
 
-    executor.launch(first, "scout", "trivial", first.goal)
+    executor.launch(first, "scout", "trivial", first.goal, DIAGNOSTIC_AUTHORITY)
 
     with pytest.raises(WorkerLaunchError, match="concurrency limit"):
-        executor.launch(second, "scout", "trivial", second.goal)
+        executor.launch(second, "scout", "trivial", second.goal, DIAGNOSTIC_AUTHORITY)
     assert store.workers(second.id) == []
 
 
