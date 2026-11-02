@@ -210,7 +210,9 @@ def test_checking_pytest_is_a_read_only_repository_task(
     provider = ModelProvider(route=judge(**{question: ("repository_task", question)}))
     plans = Recorder()
 
-    output = gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(question)
+    output = gateway(
+        config_for(isolated_home, project), provider, orchestrate=plans
+    ).handle(question)
 
     assert output == f"planned: {question}"
     [(text, handoff)] = plans.seen
