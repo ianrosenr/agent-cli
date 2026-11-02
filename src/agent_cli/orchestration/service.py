@@ -60,7 +60,8 @@ from agent_cli.orchestration.spec_author import (
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
 from agent_cli.state import PinKind, Task, TaskStateError, TaskStore
-from agent_cli.ui import error
+from agent_cli.ui import error, info
+from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
 
@@ -157,8 +158,9 @@ class OrchestrationService:
                 ),
                 planning,
             )
-            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-            auth.ensure_any_ready()
+            if handoff.kind == "ship":
+                auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+                auth.ensure_any_ready()
             ids = self.store.persist_plan(plan.write(root.id))
         except (PlanRejected, TaskStateError) as error:
             return self.stop(root, f"the direct task could not be saved: {error}")
@@ -167,6 +169,24 @@ class OrchestrationService:
         problems = self.route_skills(config, guard, registry, items, facts)
         if problems:
             self.block([root.id], "task preparation is incomplete: " + "; ".join(problems))
+
+        if handoff.kind == "scout" and not problems:
+            child = self.store.task(ids[item.id])
+            project_root = self.config.paths.project_root
+            if child is not None and project_root is not None:
+                try:
+                    started = WorkerExecutor(
+                        self.store,
+                        self.adapters,
+                        registry,
+                        config,
+                        project_root,
+                    ).launch(child, "scout", handoff.complexity, child.goal)
+                    return info("Scout started.", started)
+                except WorkerLaunchError:
+                    # No worker route is not a planning failure. Keep the prepared scout resumable.
+                    pass
+
         return render_plan(
             self.store,
             root.id,
