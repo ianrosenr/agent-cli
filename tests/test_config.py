@@ -39,6 +39,7 @@ skills:
   paths: []
   activation: {}
   context_budget_tokens: 8000
+harness_profiles: {}
 harnesses: {}
 providers: {}
 routing:
