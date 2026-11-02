@@ -62,7 +62,15 @@ from agent_cli.orchestration.spec_author import (
 )
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
-from agent_cli.state import Approval, PinKind, Task, TaskAuthorization, TaskStateError, TaskStatus, TaskStore
+from agent_cli.state import (
+    Approval,
+    PinKind,
+    Task,
+    TaskAuthorization,
+    TaskStateError,
+    TaskStatus,
+    TaskStore,
+)
 from agent_cli.terms import TaskComplexity
 from agent_cli.ui import error, info
 from agent_cli.workers import WorkerExecutor, WorkerLaunchError
@@ -320,7 +328,10 @@ class OrchestrationService:
     ) -> RenderableType:
         """Launch only after canonical state records current implementation authorization."""
         dependencies = [self.store.task(task_id) for task_id in self.store.dependencies(task.id)]
-        if any(dependency is None or dependency.status is not TaskStatus.COMPLETED for dependency in dependencies):
+        if any(
+            dependency is None or dependency.status is not TaskStatus.COMPLETED
+            for dependency in dependencies
+        ):
             return render_authorization_result(
                 authorization,
                 "Implementation is authorized and waiting for its dependencies.",
