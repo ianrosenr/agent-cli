@@ -272,7 +272,7 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             ModelDescriptor(
                 SUBSCRIPTION_PROVIDER_ID,
                 DIRECT_MODEL_ID,
-                "GPT-6.1 Sol",
+                "GPT-6 Sol",
                 500_000,
             ),
         )
@@ -296,6 +296,7 @@ class CodexCliHarnessAdapter(HarnessAdapter):
             'openai_base_url=""',
             "exec",
             "--json",
+            "--skip-git-repo-check",
             "--ephemeral",
             "--ask-for-approval",
             "never",
