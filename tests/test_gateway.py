@@ -39,7 +39,7 @@ from agent_cli.gateway.intent import (
     Verdict,
     parse_verdict,
 )
-from agent_cli.gateway.service import RootPromptGateway, explicit_pins
+from agent_cli.gateway.service import SupervisorService, explicit_pins
 from agent_cli.models import ModelRegistry
 from agent_cli.models.provider_classifier import SYSTEM as SKILL_CLASSIFIER_SYSTEM
 from agent_cli.orchestration import (
@@ -167,7 +167,7 @@ def gateway(
     orchestrate: Any = None,
     store: TaskStore | None = None,
     **overrides: Any,
-) -> RootPromptGateway:
+) -> SupervisorService:
     fields: dict[str, Any] = {
         "adapters": AdapterRegistry(providers=list(providers) or [ModelProvider()]),
         "orchestrate": orchestrate,
@@ -176,7 +176,7 @@ def gateway(
         "ledger": SpendLedger(config.paths.global_file.parent / "spend.sqlite"),
     }
     fields.update(overrides)
-    return RootPromptGateway(config, **fields)
+    return SupervisorService(config, **fields)
 
 
 def no_task_state(store: TaskStore) -> bool:
