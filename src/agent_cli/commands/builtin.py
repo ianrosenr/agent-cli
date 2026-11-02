@@ -103,7 +103,6 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
         config = context.config.resolve()
     except ConfigError as problem:
         return blocks(
-            migration,
             result,
             error("Cannot read saved configuration.", str(problem)),
         )
@@ -117,14 +116,14 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     )
     installation = lifecycle.offer_install()
     if "subscription" not in config.access.preference:
-        return blocks(migration, result, installation)
+        return blocks(result, installation)
     login = HarnessLoginService(
         adapters_of(context),
         config,
         context.read_line,
         context.write_line,
     ).offer()
-    return blocks(migration, result, installation, login)
+    return blocks(result, installation, login)
 
 
 def login_command(context: CommandContext, args: str) -> RenderableType:
