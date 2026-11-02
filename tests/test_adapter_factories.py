@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from agent_cli.adapters import HarnessIdentity, ProviderIdentity
 from agent_cli.adapters.cli_harness import CliHarnessAdapter
 from agent_cli.adapters.factories import (
     AdapterFactoryError,
@@ -15,12 +16,17 @@ from agent_cli.config.model import HarnessConfig, ProviderConfig
 from agent_cli.runtime import default_adapters
 
 
-def test_existing_harness_keys_infer_cli_profile_for_backward_compatibility() -> None:
+def harness(profile: str, **changes: object) -> HarnessConfig:
+    values = {"type": "cli", "profile": profile, **changes}
+    return HarnessConfig(**values)
+
+
+def test_builtin_cli_harnesses_require_explicit_type_and_profile() -> None:
     registry = default_adapters(
         Config(
             harnesses={
-                "claude-code": HarnessConfig(),
-                "codex-cli": HarnessConfig(),
+                "claude-code": harness("claude-code"),
+                "codex-cli": harness("codex-cli"),
             }
         )
     )
@@ -33,38 +39,42 @@ def test_cli_profile_can_be_reused_under_another_configured_instance_name() -> N
     registry = default_adapters(
         Config(
             harnesses={
-                "work-claude": HarnessConfig(
-                    type="cli",
-                    profile="claude-code",
+                "work-claude": harness(
+                    "claude-code",
                     command="/opt/work/claude",
                 )
             }
         )
     )
 
-    harness = registry.harness("work-claude")
-    assert isinstance(harness, CliHarnessAdapter)
-    assert harness.command() == "/opt/work/claude"
-    assert harness.identity().id == "work-claude"
-    assert harness.provider_id() == "work-claude-subscription"
+    adapter = registry.harness("work-claude")
+    assert isinstance(adapter, CliHarnessAdapter)
+    assert adapter.command() == "/opt/work/claude"
+    assert adapter.identity().id == "work-claude"
+    assert adapter.provider_id() == "work-claude-subscription"
 
 
 def test_unknown_harness_type_and_profile_fail_explicitly() -> None:
     with pytest.raises(AdapterFactoryError, match="unknown type"):
-        default_adapters(Config(harnesses={"x": HarnessConfig(type="other")}))
+        default_adapters(
+            Config(harnesses={"x": HarnessConfig(type="other", profile="anything")})
+        )
 
     with pytest.raises(AdapterFactoryError, match="unknown cli profile"):
-        default_adapters(
-            Config(harnesses={"x": HarnessConfig(type="cli", profile="not-real")})
-        )
+        default_adapters(Config(harnesses={"x": harness("not-real")}))
 
 
 def test_new_supported_harness_type_can_be_registered_without_runtime_changes() -> None:
     factories = default_harness_factories()
-    factories.register("fake", lambda harness_id, config: FakeHarnessAdapter(harness_id=harness_id))
+    factories.register(
+        "fake",
+        lambda harness_id, config: FakeHarnessAdapter(
+            harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
+        ),
+    )
 
     registry = default_adapters(
-        Config(harnesses={"custom": HarnessConfig(type="fake")}),
+        Config(harnesses={"custom": HarnessConfig(type="fake", profile="custom")}),
         harness_factories=factories,
     )
 
@@ -76,7 +86,9 @@ def test_provider_factory_registry_supports_new_provider_type_without_runtime_ch
     providers = ProviderFactoryRegistry()
     providers.register(
         "fake",
-        lambda provider_id, config: FakeProviderAdapter(provider_id=provider_id),
+        lambda provider_id, config: FakeProviderAdapter(
+            provider_identity=ProviderIdentity(provider_id, provider_id, "fake", "api")
+        ),
     )
 
     registry = default_adapters(
@@ -89,8 +101,9 @@ def test_provider_factory_registry_supports_new_provider_type_without_runtime_ch
 
 def test_factory_registry_rejects_duplicate_type_registration() -> None:
     registry = HarnessFactoryRegistry()
-    registry.register("fake", lambda harness_id, config: FakeHarnessAdapter(harness_id=harness_id))
+    factory = lambda harness_id, config: FakeHarnessAdapter(
+        harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
+    )
+    registry.register("fake", factory)
     with pytest.raises(ValueError, match="already registered"):
-        registry.register(
-            "fake", lambda harness_id, config: FakeHarnessAdapter(harness_id=harness_id)
-        )
+        registry.register("fake", factory)
