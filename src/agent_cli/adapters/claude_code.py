@@ -342,7 +342,10 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
         payload = json_object(result.stdout)
         if payload is None or payload.get("is_error") is True:
-            raise AdapterError(ErrorKind.PROVIDER_ERROR, "Claude Code returned invalid model output")
+            raise AdapterError(
+                ErrorKind.PROVIDER_ERROR,
+                "Claude Code returned invalid model output",
+            )
         text = payload.get("result")
         if not isinstance(text, str):
             raise AdapterError(ErrorKind.PROVIDER_ERROR, "Claude Code returned no model text")
