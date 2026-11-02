@@ -61,7 +61,6 @@ PIN_PHRASE = re.compile(
     re.IGNORECASE,
 )
 
-
 @dataclass(slots=True)
 class SupervisorService:
     config: ConfigService
