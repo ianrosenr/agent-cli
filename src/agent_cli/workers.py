@@ -220,6 +220,10 @@ def reconcile_orphaned_workers(store: TaskStore) -> int:
             store.update_worker(worker.id, WorkerStatus.FAILED)
             if not task.status.finished:
                 store.set_status(task.id, TaskStatus.FAILED)
+            if task.parent_id is not None:
+                parent = store.task(task.parent_id)
+                if parent is not None and not parent.status.finished:
+                    store.set_status(parent.id, TaskStatus.FAILED)
             store.add_artifact(
                 task.id,
                 "worker-summary",
