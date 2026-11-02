@@ -81,6 +81,7 @@ class HarnessConfig:
 
     enabled: bool = True
     command: str | None = None
+    version: str = constrained("latest", kind="nonempty")
 
 
 @dataclass(frozen=True, slots=True)
