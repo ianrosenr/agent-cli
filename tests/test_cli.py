@@ -170,12 +170,28 @@ def test_shell_dispatches_and_exits_cleanly_on_eof() -> None:
     assert len(output) == 4
 
 
-def test_shell_continues_after_ctrl_c() -> None:
+def test_shell_exits_on_idle_ctrl_c() -> None:
     output, write_line = recorder()
     code = cli.run_shell(build_registry(), scripted(KeyboardInterrupt, "hi"), write_line, STARTUP)
 
     assert code == 0
-    assert output == [STARTUP, cli.NO_ORCHESTRATION]
+    assert output == [STARTUP]
+
+
+def test_shell_cancels_foreground_operation_on_ctrl_c() -> None:
+    output, write_line = recorder()
+
+    def interrupted(_line: str, _context: CommandContext) -> str:
+        raise KeyboardInterrupt
+
+    original = cli.handle_input
+    cli.handle_input = interrupted
+    try:
+        code = cli.run_shell(build_registry(), scripted("run", KeyboardInterrupt), write_line, STARTUP)
+    finally:
+        cli.handle_input = original
+    assert code == 0
+    assert any("Canceled current operation" in item for item in output)
 
 
 def test_shell_exits_on_exit_command() -> None:
