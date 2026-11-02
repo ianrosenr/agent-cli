@@ -186,7 +186,6 @@ def request(tmp_path: Path, **changes: Any) -> WorkerRequest:
         "model": Selection.pin("claude-sonnet-5-5"),
         "provider": Selection.pin(SUBSCRIPTION_PROVIDER_ID),
         "harness": Selection.pin(HARNESS_ID),
-        "mode": "autopilot",
     }
     values.update(changes)
     return WorkerRequest(**values)
@@ -568,7 +567,7 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
 def test_research_authority_removes_shell_and_write_tools(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, mode=None, model=None))
+    harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, model=None))
     argv = launcher.calls[0]["argv"]
 
     assert "plan" not in argv
@@ -581,7 +580,7 @@ def test_research_authority_removes_shell_and_write_tools(tmp_path: Path) -> Non
 def test_diagnostic_authority_allows_bounded_shell_without_edit_tools(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, mode=None, model=None))
+    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, model=None))
     argv = launcher.calls[0]["argv"]
 
     assert "plan" not in argv
@@ -591,25 +590,6 @@ def test_diagnostic_authority_allows_bounded_shell_without_edit_tools(tmp_path: 
     assert "Bash(uv run pytest)" in allowed
     denied = argv[argv.index("--disallowedTools") + 1]
     assert "Edit" in denied and "Write" in denied
-
-
-def test_plan_only_uses_plan_permission_mode(tmp_path: Path) -> None:
-    launcher = FakeLauncher()
-    harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="plan-only", model=None))
-    argv = launcher.calls[0]["argv"]
-    index = argv.index("--permission-mode")
-    assert argv[index + 1] == "plan"
-    assert "--model" not in argv
-
-
-def test_checkpoint_batch_uses_auto_after_agent_cli_approves_it(tmp_path: Path) -> None:
-    launcher = FakeLauncher()
-    harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="checkpoint"))
-    argv = launcher.calls[0]["argv"]
-    index = argv.index("--permission-mode")
-    assert argv[index + 1] == "auto"
 
 
 def test_wrong_provider_pin_is_never_substituted(tmp_path: Path) -> None:
