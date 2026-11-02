@@ -25,6 +25,7 @@ from agent_cli.login import HarnessLoginService
 from agent_cli.state import TaskStateError, status_view
 from agent_cli.state.status import NO_ACTIVE_TASK
 from agent_cli.terms import ImplementationMode
+from agent_cli.config.model import Verbosity
 from agent_cli.ui import (
     blocks,
     error,
@@ -311,6 +312,37 @@ def implementation_mode(config: ConfigService) -> tuple[ImplementationMode, str]
     return mode, "defaults"
 
 
+VERBOSITY_DESCRIPTIONS: dict[Verbosity, str] = {
+    "concise": "final answers, required questions, errors, and major milestones",
+    "normal": "concise plus plans, routing choices, and meaningful progress",
+    "verbose": "full orchestration, decomposition, review, and worker detail",
+}
+VERBOSITY_USAGE = "Usage: /verbosity [concise | normal | verbose]"
+
+
+def verbosity_command(context: CommandContext, args: str) -> RenderableType:
+    if context.config is None:
+        return error(UNAVAILABLE)
+    value = args.strip().lower()
+    if not value:
+        try:
+            current = context.config.resolve().ui.verbosity
+        except ConfigError as problem:
+            return error("Cannot read configuration.", str(problem))
+        return blocks(
+            Text.assemble(("Verbosity: ", "bold"), (current, "value")),
+            fields(list(VERBOSITY_DESCRIPTIONS.items()), indent=1, label_style="command"),
+            muted("Change it with /verbosity concise, normal, or verbose."),
+        )
+    if value not in VERBOSITY_DESCRIPTIONS:
+        return error("Unrecognized verbosity.", VERBOSITY_USAGE)
+    try:
+        path = context.config.save(Layer.GLOBAL, {"ui": {"verbosity": value}})
+    except ConfigError as problem:
+        return error("Cannot save configuration.", str(problem))
+    return success(f"Verbosity set to {value} in {path}.")
+
+
 def planned(name: str, description: str, capability: str, issue: str) -> Command:
     """A placeholder command for a capability that a later roadmap issue implements."""
 
@@ -338,6 +370,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
     Command("models", "Show the model registry and role thresholds.", models_command),
     Command("budget", "Show paid-API spend, reservations, and limits.", budget_command),
     Command("autopilot", "Show or choose the implementation mode.", autopilot_command),
+    Command("verbosity", "Show or choose CLI output detail.", verbosity_command),
     Command("cancel", "Cancel the open planning question and its request.", cancel_command),
     planned(
         "diff", "Show the diff produced by delegated work.", "worktrees and worker diffs", "V1-11"
