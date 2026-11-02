@@ -256,14 +256,3 @@ class SupervisorRouter:
             verdict.complexity,
             verdict.answer,
         )
-
-
-# Compatibility aliases while V1-09.9 is still an open branch.
-RootIntent = RootAction
-RouteDecision = SupervisorDecision
-SemanticRouter = SemanticSupervisor
-ProviderRouter = ProviderSupervisor
-IntentRouter = SupervisorRouter
-FakeRouter = FakeSupervisor
-ROUTER_SYSTEM = SUPERVISOR_SYSTEM
-ROUTER_OUTPUT_TOKENS = SUPERVISOR_OUTPUT_TOKENS

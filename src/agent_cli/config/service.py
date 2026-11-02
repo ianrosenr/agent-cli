@@ -238,55 +238,6 @@ class ConfigService:
     paths: ConfigPaths
     session: RawConfig = field(default_factory=dict)
 
-    def migrate_legacy_builtin_harnesses(self) -> bool:
-        """Rewrite only legacy built-in global harness entries to the explicit descriptor schema."""
-        path = self.paths.global_file
-        source = self.source(Layer.GLOBAL)
-        try:
-            text = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return False
-        except OSError as error:
-            raise ConfigError(
-                source,
-                None,
-                f"cannot read file: {error.strerror or error}",
-            ) from error
-        try:
-            data = yaml.safe_load(text)
-        except yaml.YAMLError:
-            return False
-        if not isinstance(data, Mapping):
-            return False
-        harnesses = data.get("harnesses")
-        if not isinstance(harnesses, Mapping):
-            return False
-
-        changed = False
-        document = dict(data)
-        migrated_harnesses = dict(harnesses)
-        for harness_id in ("claude-code", "codex-cli"):
-            raw = migrated_harnesses.get(harness_id)
-            if not isinstance(raw, Mapping):
-                continue
-            migrated = dict(raw)
-            if "type" not in migrated:
-                migrated["type"] = "cli"
-                changed = True
-            if "profile" not in migrated:
-                migrated["profile"] = harness_id
-                changed = True
-            if "version" not in migrated:
-                migrated["version"] = "latest"
-                changed = True
-            migrated_harnesses[harness_id] = migrated
-
-        if not changed:
-            return False
-        document["harnesses"] = migrated_harnesses
-        write_yaml(path, document, source)
-        return True
-
     def source(self, layer: Layer) -> str:
         path = self.paths.file_for(layer)
         return f"{layer.value} config ({path})" if path else f"{layer.value} overrides"

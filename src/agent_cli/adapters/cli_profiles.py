@@ -40,7 +40,27 @@ CLAUDE_CODE = CliHarnessProfile(
         "--max-turns",
         "25",
     ),
-    worker_plan_args=("--permission-mode", "plan"),
+    worker_research_args=(
+        "--permission-mode",
+        "dontAsk",
+        "--tools",
+        "Read,Grep,Glob",
+        "--disallowedTools",
+        "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*",
+    ),
+    worker_diagnostic_args=(
+        "--permission-mode",
+        "dontAsk",
+        "--tools",
+        "Read,Grep,Glob,Bash",
+        "--allowedTools",
+        "Bash(pytest),Bash(pytest *),Bash(python -m pytest),"
+        "Bash(python -m pytest *),Bash(uv run pytest),Bash(uv run pytest *),"
+        "Bash(ruff *),Bash(uv run ruff *),Bash(git status *),"
+        "Bash(git diff *),Bash(git log *)",
+        "--disallowedTools",
+        "Edit,Write,NotebookEdit,WebFetch,WebSearch,mcp__*",
+    ),
     worker_write_args=("--permission-mode", "auto"),
     install_latest=("npm", "install", "-g", "@anthropic-ai/claude-code@latest"),
     install_exact=("npm", "install", "-g", "@anthropic-ai/claude-code@{version}"),
@@ -109,7 +129,8 @@ CODEX_CLI = CliHarnessProfile(
         "--json",
         "--ephemeral",
     ),
-    worker_plan_args=("--sandbox", "read-only"),
+    worker_research_args=None,
+    worker_diagnostic_args=("--sandbox", "read-only"),
     worker_write_args=("--sandbox", "workspace-write"),
     worker_stdin_marker="-",
     install_latest=("npm", "install", "-g", "@openai/codex@latest"),

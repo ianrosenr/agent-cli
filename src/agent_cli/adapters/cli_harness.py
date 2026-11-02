@@ -28,6 +28,7 @@ from agent_cli.adapters.domain import (
     ProviderResponse,
     ReadinessState,
     Usage,
+    WorkerAuthority,
     WorkerHandle,
     WorkerRequest,
     WorkerResult,
@@ -86,8 +87,9 @@ class CliHarnessProfile:
     env_remove: frozenset[str]
     output_protocol: OutputProtocol
     worker_base_args: tuple[str, ...]
-    worker_plan_args: tuple[str, ...]
     worker_write_args: tuple[str, ...]
+    worker_research_args: tuple[str, ...] | None = None
+    worker_diagnostic_args: tuple[str, ...] | None = None
     worker_model_flag: str = "--model"
     worker_stdin_marker: str | None = None
     install_latest: tuple[str, ...] = ()
@@ -186,6 +188,30 @@ def safe_process_diagnostic(stderr: str, *sensitive: str, limit: int = 240) -> s
     if len(text) > limit:
         text = text[: limit - 1].rstrip() + "…"
     return text
+
+
+def authority_args(profile: CliHarnessProfile, authority: WorkerAuthority) -> tuple[str, ...]:
+    """Translate generic authority to one declarative CLI profile."""
+    if authority.modify_source:
+        if not authority.execute_commands:
+            raise AdapterError(
+                ErrorKind.INCOMPATIBLE,
+                f"{profile.display_name}: source-write authority requires command execution",
+            )
+        return profile.worker_write_args
+    if authority.execute_commands:
+        if profile.worker_diagnostic_args is None:
+            raise AdapterError(
+                ErrorKind.INCOMPATIBLE,
+                f"{profile.display_name}: cannot enforce diagnostic authority",
+            )
+        return profile.worker_diagnostic_args
+    if profile.worker_research_args is None:
+        raise AdapterError(
+            ErrorKind.INCOMPATIBLE,
+            f"{profile.display_name}: cannot enforce research authority",
+        )
+    return profile.worker_research_args
 
 
 @dataclass(slots=True)
@@ -376,6 +402,10 @@ class CliHarnessAdapter(HarnessAdapter):
             raise AdapterError(ErrorKind.PROVIDER_ERROR, "harness returned no model text")
         return ProviderResponse(request.model_id, text, usage)
 
+    def check(self, request: WorkerRequest) -> None:
+        HarnessAdapter.check(self, request)
+        authority_args(self.profile, request.authority)
+
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
         blocking = self.readiness().blocking_error()
@@ -416,12 +446,8 @@ class CliHarnessAdapter(HarnessAdapter):
         return WorkerHandle(self.harness_id, token)
 
     def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        mode_args = (
-            self.profile.worker_plan_args
-            if request.mode == "plan-only"
-            else self.profile.worker_write_args
-        )
-        argv = [self.command(), *self.profile.worker_base_args, *mode_args]
+        args = authority_args(self.profile, request.authority)
+        argv = [self.command(), *self.profile.worker_base_args, *args]
         if request.model is not None:
             argv += [self.profile.worker_model_flag, request.model.id]
         if self.profile.worker_stdin_marker is not None:
@@ -704,10 +730,11 @@ def direct_model_prompt(request: ProviderRequest) -> str:
 
 
 def render_worker_prompt(request: WorkerRequest) -> str:
+    authority = request.authority
     sections = [
-        "You are a bounded implementation worker controlled by Agent CLI.",
+        "You are a bounded worker controlled by Agent CLI.",
         f"Role: {request.role}",
-        f"Mode: {request.mode or 'autopilot'}",
+        f"Authority: {authority.profile}",
         "Approved task/spec:\n" + request.spec,
     ]
     if request.repository:
@@ -719,8 +746,10 @@ def render_worker_prompt(request: WorkerRequest) -> str:
         "- Work only inside the supplied working directory.\n"
         "- Follow the approved spec exactly; do not broaden scope.\n"
         "- Preserve explicit model/provider/harness constraints.\n"
-        "- Run relevant tests when permitted by the harness.\n"
-        "- End with a concise summary of changes and verification."
+        f"- Command execution: {'allowed' if authority.execute_commands else 'not allowed'}.\n"
+        f"- Source modification: {'allowed' if authority.modify_source else 'not authorized'}.\n"
+        "- Scratch/cache files inside a disposable worker workspace are not source authority.\n"
+        "- End with a concise summary of work and verification."
     )
     return "\n\n".join(sections)
 

@@ -10,6 +10,9 @@ from typing import IO, Any
 import pytest
 
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
+    RESEARCH_AUTHORITY,
     AdapterError,
     ErrorKind,
     ProviderRequest,
@@ -183,10 +186,10 @@ def request(tmp_path: Path, **changes: Any) -> WorkerRequest:
         "working_directory": tmp_path,
         "repository": "agent-cli",
         "skills": ("testing policy", "interfaces policy"),
+        "authority": IMPLEMENTATION_AUTHORITY,
         "model": Selection.pin("gpt-5.3-codex"),
         "provider": Selection.pin(SUBSCRIPTION_PROVIDER_ID),
         "harness": Selection.pin(HARNESS_ID),
-        "mode": "autopilot",
     }
     values.update(changes)
     return WorkerRequest(**values)
@@ -509,25 +512,26 @@ def test_start_uses_stdin_context_cwd_exact_model_and_workspace_sandbox(tmp_path
     assert result.changes.files == ("new.txt", "src/example.py")
 
 
-def test_plan_only_uses_read_only_sandbox(tmp_path: Path) -> None:
+def test_diagnostic_authority_uses_read_only_sandbox(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="plan-only", model=None))
+    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, model=None))
     argv = launcher.calls[0]["argv"]
+
     index = argv.index("--sandbox")
     assert argv[index + 1] == "read-only"
-    assert "--model" not in argv
 
 
-def test_checkpoint_batch_uses_workspace_write_after_agent_cli_approves_it(
-    tmp_path: Path,
-) -> None:
+def test_research_authority_fails_closed_when_shell_cannot_be_removed(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="checkpoint"))
-    argv = launcher.calls[0]["argv"]
-    index = argv.index("--sandbox")
-    assert argv[index + 1] == "workspace-write"
+
+    with pytest.raises(AdapterError) as raised:
+        harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, model=None))
+
+    assert raised.value.kind is ErrorKind.INCOMPATIBLE
+    assert "research authority" in raised.value.message
+    assert launcher.calls == []
 
 
 def test_wrong_provider_pin_is_never_substituted(tmp_path: Path) -> None:

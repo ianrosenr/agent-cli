@@ -33,9 +33,9 @@ from agent_cli.gateway import NO_REPOSITORY
 from agent_cli.gateway.answers import CHAT_SYSTEM, REPOSITORY_SYSTEM, scrub
 from agent_cli.gateway.conversation import ROUTER_VIEW, Conversation
 from agent_cli.gateway.intent import (
-    ROUTER_SYSTEM,
-    FakeRouter,
-    IntentRouter,
+    SUPERVISOR_SYSTEM,
+    FakeSupervisor,
+    SupervisorRouter,
     Verdict,
     parse_verdict,
 )
@@ -45,12 +45,12 @@ from agent_cli.models.provider_classifier import SYSTEM as SKILL_CLASSIFIER_SYST
 from agent_cli.orchestration import (
     FakePlanner,
     FakeSpecAuthor,
-    Handoff,
     ModelOutputError,
     OrchestrationService,
     PlanningInput,
     PlanProposal,
     ProposedQuestion,
+    TaskBrief,
 )
 from agent_cli.state import TaskStore
 from agent_cli.terms import AccessKind
@@ -65,12 +65,12 @@ type Judge = Callable[[str, list[dict[str, str]], bool], dict[str, Any]]
 
 
 def judge(**routes: tuple[str, str] | str) -> Judge:
-    """Script semantic supervisor outcomes; legacy labels keep individual tests concise."""
-    legacy = {
-        "chat": ("answer", False, "trivial"),
-        "repository_question": ("answer", True, "trivial"),
-        "repository_task": ("scout", True, "trivial"),
-        "orchestration": ("ship", True, "moderate"),
+    """Script semantic supervisor outcomes using the current action vocabulary."""
+    routes_by_label = {
+        "answer": ("answer", False, "trivial"),
+        "repo_answer": ("answer", True, "trivial"),
+        "scout": ("scout", True, "trivial"),
+        "ship": ("ship", True, "moderate"),
     }
 
     def decide(message: str, conversation: list[dict[str, str]], in_repo: bool) -> dict[str, Any]:
@@ -84,7 +84,7 @@ def judge(**routes: tuple[str, str] | str) -> Judge:
                 "complexity": "moderate",
             }
         label, request = route if isinstance(route, tuple) else (route, message)
-        action, repository, complexity = legacy.get(label, (label, in_repo, "moderate"))
+        action, repository, complexity = routes_by_label.get(label, (label, in_repo, "moderate"))
         return {
             "action": action,
             "confident": True,
@@ -118,7 +118,7 @@ class ModelProvider(ProviderAdapter):
 
     def invoke(self, request: ProviderRequest) -> ProviderResponse:
         self.requests.append(request)
-        if request.system == ROUTER_SYSTEM:
+        if request.system == SUPERVISOR_SYSTEM:
             payload = json.loads(request.prompt)
             verdict = self.route(
                 payload["message"], payload["conversation"], payload["in_repository"]
@@ -127,10 +127,10 @@ class ModelProvider(ProviderAdapter):
         return ProviderResponse(request.model_id, self.answer)
 
     def routed(self) -> list[dict[str, Any]]:
-        return [json.loads(r.prompt) for r in self.requests if r.system == ROUTER_SYSTEM]
+        return [json.loads(r.prompt) for r in self.requests if r.system == SUPERVISOR_SYSTEM]
 
     def answered(self) -> list[ProviderRequest]:
-        return [r for r in self.requests if r.system != ROUTER_SYSTEM]
+        return [r for r in self.requests if r.system != SUPERVISOR_SYSTEM]
 
 
 def models() -> ModelRegistry:
@@ -139,9 +139,9 @@ def models() -> ModelRegistry:
 
 @dataclass
 class Recorder:
-    seen: list[tuple[str, Handoff | None]] = field(default_factory=list)
+    seen: list[tuple[str, TaskBrief | None]] = field(default_factory=list)
 
-    def __call__(self, text: str, handoff: Handoff | None = None) -> str:
+    def __call__(self, text: str, handoff: TaskBrief | None = None) -> str:
         self.seen.append((text, handoff))
         return f"planned: {handoff.goal if handoff else text}"
 
@@ -187,7 +187,7 @@ def no_task_state(store: TaskStore) -> bool:
 
 
 def test_write_me_a_poem_is_answered_directly(project: Path, isolated_home: Path) -> None:
-    provider = ModelProvider(route=judge(**{"write me a poem": "chat"}))
+    provider = ModelProvider(route=judge(**{"write me a poem": "answer"}))
     plans = Recorder()
     output = plain(
         gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(
@@ -201,9 +201,7 @@ def test_write_me_a_poem_is_answered_directly(project: Path, isolated_home: Path
 
 def test_improving_this_router_is_a_repository_answer(project: Path, isolated_home: Path) -> None:
     question = "How would you improve this router?"
-    provider = ModelProvider(
-        answer=IMPROVE, route=judge(**{question: ("repository_question", question)})
-    )
+    provider = ModelProvider(answer=IMPROVE, route=judge(**{question: ("repo_answer", question)}))
     plans = Recorder()
     store = TaskStore.for_repository(project)
     output = plain(
@@ -223,7 +221,7 @@ def test_improving_this_router_is_a_repository_answer(project: Path, isolated_ho
 
 def test_checking_pytest_is_a_read_only_repository_task(project: Path, isolated_home: Path) -> None:
     question = "are there any pytests failing on this feature branch"
-    provider = ModelProvider(route=judge(**{question: ("repository_task", question)}))
+    provider = ModelProvider(route=judge(**{question: ("scout", question)}))
     plans = Recorder()
 
     output = gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(
@@ -233,13 +231,13 @@ def test_checking_pytest_is_a_read_only_repository_task(project: Path, isolated_
     assert output == f"planned: {question}"
     [(text, handoff)] = plans.seen
     assert text == question
-    assert handoff == Handoff(question, "", "scout", "trivial")
+    assert handoff == TaskBrief(question, "", "scout", "trivial")
     assert provider.answered() == []
 
 
 def test_fix_this_bug_is_delegated_to_the_orchestrator(project: Path, isolated_home: Path) -> None:
     provider = ModelProvider(
-        route=judge(**{"fix this bug": ("orchestration", "Fix the retry bug in route()")})
+        route=judge(**{"fix this bug": ("ship", "Fix the retry bug in route()")})
     )
     plans = Recorder()
     output = gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(
@@ -286,7 +284,7 @@ def test_go_ahead_and_do_that_delegates_the_change_from_the_previous_answer(
     assert output == f"planned: {resolved}"
     [(text, handoff)] = plans.seen
     assert text == "go ahead and do that"
-    assert handoff == Handoff(resolved, f"User: {question}\nAssistant: {IMPROVE}")
+    assert handoff == TaskBrief(resolved, f"User: {question}\nAssistant: {IMPROVE}")
 
 
 def test_the_orchestrator_plans_the_resolved_goal_with_the_conversation_as_context(
@@ -298,7 +296,7 @@ def test_the_orchestrator_plans_the_resolved_goal_with_the_conversation_as_conte
     orchestration = OrchestrationService(
         store, config, planner=planner, spec_author=FakeSpecAuthor(), classifier=lambda *_: None
     )
-    handoff = Handoff("Cap retries in route()", f"User: improve it?\nAssistant: {IMPROVE}")
+    handoff = TaskBrief("Cap retries in route()", f"User: improve it?\nAssistant: {IMPROVE}")
 
     orchestration.handle("go ahead and do that", handoff)
 
@@ -315,9 +313,9 @@ def test_ordinary_conversation_creates_no_task_state(project: Path, isolated_hom
     provider = ModelProvider(
         route=judge(
             **{
-                "what is a daemon": "chat",
-                "how does routing work here?": "repository_question",
-                "hello": "chat",
+                "what is a daemon": "answer",
+                "how does routing work here?": "repo_answer",
+                "hello": "answer",
             }
         )
     )
@@ -354,32 +352,32 @@ def test_an_unclear_turn_outside_a_repository_is_chat(isolated_home: Path) -> No
 
 
 def test_work_without_a_concrete_request_stays_read_only() -> None:
-    router = FakeRouter([Verdict("ship", True, "", True, "moderate")])
-    decision = IntentRouter(lambda: router).route("do it", (), True)
+    router = FakeSupervisor([Verdict("ship", True, "", True, "moderate")])
+    decision = SupervisorRouter(lambda: router).route("do it", (), True)
     assert decision.action == "answer" and decision.repository
 
 
 @pytest.mark.parametrize(
     "failure",
-    [lambda: FakeRouter([ModelOutputError("bad")]), lambda: None],
+    [lambda: FakeSupervisor([ModelOutputError("bad")]), lambda: None],
     ids=["router-failed", "no-router"],
 )
 def test_routing_failures_answer_as_chat(failure: Callable[[], Any]) -> None:
-    decision = IntentRouter(failure).route("rewrite the cache layer", (), True)
+    decision = SupervisorRouter(failure).route("rewrite the cache layer", (), True)
     assert decision.action == "answer" and decision.source == "default"
 
 
 def test_routing_disabled_answers_every_turn_as_chat(project: Path, isolated_home: Path) -> None:
     config = config_for(isolated_home, project)
     config.set_session({"routing": {"supervisor": {"mode": "disabled"}}})
-    provider = ModelProvider(route=judge(**{"fix this bug": "orchestration"}))
+    provider = ModelProvider(route=judge(**{"fix this bug": "ship"}))
     plans = Recorder()
     gateway(config, provider, orchestrate=plans).handle("fix this bug")
     assert provider.routed() == [] and plans.seen == []
 
 
 def test_delegation_outside_a_repository_explains_where_to_run(isolated_home: Path) -> None:
-    provider = ModelProvider(route=judge(**{"add a health endpoint": "orchestration"}))
+    provider = ModelProvider(route=judge(**{"add a health endpoint": "ship"}))
     output = gateway(config_for(isolated_home, None), provider).handle("add a health endpoint")
     assert output == NO_REPOSITORY and provider.answered() == []
 
@@ -406,7 +404,7 @@ def test_a_pending_planning_question_takes_the_next_line_before_routing(
 
 def test_follow_up_answers_see_the_recent_conversation(isolated_home: Path) -> None:
     first, follow = "compare postgres and mongodb", "what about the other option?"
-    provider = ModelProvider(route=judge(**{first: "chat", follow: "chat"}))
+    provider = ModelProvider(route=judge(**{first: "answer", follow: "answer"}))
     service = gateway(config_for(isolated_home, None), provider)
     service.handle(first)
     service.handle(follow)
@@ -435,7 +433,7 @@ def test_greetings_need_no_model_call(isolated_home: Path) -> None:
 
 
 def test_concise_verbosity_shows_only_the_answer(project: Path, isolated_home: Path) -> None:
-    provider = ModelProvider(route=judge(**{"what color is the sky": "chat"}))
+    provider = ModelProvider(route=judge(**{"what color is the sky": "answer"}))
     config = config_for(isolated_home, project, "concise")
     output = plain(
         gateway(config, provider, orchestrate=Recorder()).handle("what color is the sky")
@@ -446,9 +444,7 @@ def test_concise_verbosity_shows_only_the_answer(project: Path, isolated_home: P
 def test_verbose_verbosity_explains_routing_and_the_resolved_request(
     project: Path, isolated_home: Path
 ) -> None:
-    provider = ModelProvider(
-        route=judge(**{"fix it": ("orchestration", "Fix the retry bug in route()")})
-    )
+    provider = ModelProvider(route=judge(**{"fix it": ("ship", "Fix the retry bug in route()")}))
     config = config_for(isolated_home, project, "verbose")
     output = plain(gateway(config, provider, orchestrate=Recorder()).handle("fix it"))
     assert "Routed as ship/moderate, repository (supervisor: supervisor@3 (tiny via" in output
@@ -477,7 +473,7 @@ def test_trivial_general_answer_finishes_in_the_supervisor_call(isolated_home: P
     )
 
     [routed] = provider.requests
-    assert routed.system == ROUTER_SYSTEM != SKILL_CLASSIFIER_SYSTEM
+    assert routed.system == SUPERVISOR_SYSTEM != SKILL_CLASSIFIER_SYSTEM
     assert routed.model_id == "tiny" and routed.max_output_tokens is not None
     assert output.strip() == ANSWER
 
@@ -487,7 +483,7 @@ def test_auto_router_uses_medium_cost_model_when_no_cheaper_router_exists(
 ) -> None:
     provider = ModelProvider(
         model_ids=("chat-model",),
-        route=judge(**{"what is a daemon": "chat"}),
+        route=judge(**{"what is a daemon": "answer"}),
     )
 
     gateway(
@@ -497,7 +493,7 @@ def test_auto_router_uses_medium_cost_model_when_no_cheaper_router_exists(
     ).handle("what is a daemon")
 
     [routed, answered] = provider.requests
-    assert routed.system == ROUTER_SYSTEM
+    assert routed.system == SUPERVISOR_SYSTEM
     assert routed.model_id == "chat-model"
     assert answered.model_id == "chat-model"
 
@@ -507,7 +503,7 @@ def test_a_selected_router_model_is_used_even_when_medium_cost(isolated_home: Pa
     config.set_session(
         {"routing": {"supervisor": {"mode": "selected", "selected_model": "chat-model"}}}
     )
-    provider = ModelProvider(route=judge(**{"what is a daemon": "chat"}))
+    provider = ModelProvider(route=judge(**{"what is a daemon": "answer"}))
     gateway(config, provider).handle("what is a daemon")
     assert provider.requests[0].model_id == "chat-model"
 
@@ -523,7 +519,7 @@ def test_an_unpriced_paid_router_path_is_filtered_by_budget(isolated_home: Path)
     # No trusted price: the paid path is filtered before dispatch, and routing falls through
     # to the next admissible model instead.
     assert paid.requests == []
-    assert free.requests[0].system == ROUTER_SYSTEM and ANSWER in output
+    assert free.requests[0].system == SUPERVISOR_SYSTEM and ANSWER in output
 
 
 @pytest.mark.parametrize(
@@ -548,10 +544,10 @@ def test_router_replies_are_parsed_strictly(reply: str, expected: Verdict) -> No
 @pytest.mark.parametrize(
     "reply",
     [
-        "chat",
+        "answer",
         '{"intent": "delete_everything", "confident": true}',
-        '{"intent": "chat", "confident": "yes"}',
-        '{"intent": "chat", "confident": true, "extra": 1}',
+        '{"intent": "answer", "confident": "yes"}',
+        '{"intent": "answer", "confident": true, "extra": 1}',
     ],
 )
 def test_malformed_router_replies_are_rejected(reply: str) -> None:
@@ -687,7 +683,7 @@ def test_private_key_blocks_are_scrubbed() -> None:
 
 
 def repository_turn(project: Path, isolated_home: Path, question: str) -> dict[str, Any]:
-    provider = ModelProvider(route=judge(**{question: "repository_question"}))
+    provider = ModelProvider(route=judge(**{question: "repo_answer"}))
     gateway(config_for(isolated_home, project), provider, orchestrate=Recorder()).handle(question)
     prompt = json.loads(provider.answered()[0].prompt)
     return {f["path"]: f for f in prompt["repository"]["files"]}
@@ -713,7 +709,7 @@ def test_the_shell_answers_chat_outside_a_repository(isolated_home: Path) -> Non
     config = config_for(isolated_home, None)
     provider = ModelProvider(
         model_ids=("claude-sonnet-5-5",),
-        route=judge(**{"what color is the sky": "chat", "add a health endpoint": "orchestration"}),
+        route=judge(**{"what color is the sky": "answer", "add a health endpoint": "ship"}),
     )
     respond = cli.gateway(config, AdapterRegistry(providers=[provider]), None)
     assert respond is not None

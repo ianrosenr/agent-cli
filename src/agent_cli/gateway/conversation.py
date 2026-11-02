@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agent_cli.gateway.intent import RootIntent
+from agent_cli.gateway.intent import RootAction
 
 
 @dataclass(frozen=True, slots=True)
 class Turn:
     user: str
     assistant: str
-    intent: RootIntent
+    intent: RootAction
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,7 @@ def clip(text: str, limit: int) -> str:
 class Conversation:
     turns: list[Turn] = field(default_factory=list)
 
-    def add(self, user: str, assistant: str, intent: RootIntent) -> None:
+    def add(self, user: str, assistant: str, intent: RootAction) -> None:
         self.turns.append(Turn(user, assistant, intent))
         del self.turns[:-KEPT_TURNS]
 

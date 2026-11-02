@@ -156,9 +156,6 @@ REPOSITORY_ANSWER_POLICY = AnswerPolicy(
 SUPERVISOR_POLICY = AnswerPolicy("supervisor", C.REASONING, FLOOR_SCORES["low"])
 """Root supervisor intake: prefer the cheapest adequate reachable model."""
 
-ROUTER_POLICY = SUPERVISOR_POLICY
-"""Compatibility alias for the pre-supervisor name."""
-
 
 @dataclass(frozen=True, slots=True)
 class AnswerCandidate:

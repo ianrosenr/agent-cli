@@ -119,4 +119,20 @@ def task_line(store: TaskStore, task: Task) -> Text:
     spec = store.latest_spec(task.id)
     if spec is not None:
         parts.append(Text(f"spec v{spec.version} {spec.approval}"))
+    workers = store.workers(task.id)
+    if workers:
+        latest = workers[-1]
+        route = " / ".join(value for value in (latest.model, latest.harness) if value)
+        label = f"worker {latest.status}" + (f" via {route}" if route else "")
+        parts.append(Text(label))
+    summaries = [
+        artifact.metadata.get("summary", "")
+        for artifact in store.artifacts(task.id)
+        if artifact.kind == "worker-summary"
+    ]
+    if summaries and summaries[-1]:
+        summary = " ".join(summaries[-1].split())
+        if len(summary) > 240:
+            summary = summary[:237] + "..."
+        parts.append(Text("result: " + summary))
     return Text(" · ", style="muted").join(parts)

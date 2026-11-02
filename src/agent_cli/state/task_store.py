@@ -4,8 +4,8 @@ Only the orchestrator writes here (see docs/MEMORY.md). Records are append-frien
 requirements, decisions, pins, and spec versions are kept and linked to their replacements, and
 every change appends an event. Nothing here interprets requests, plans work, or routes it.
 
-The database is never deleted or recreated by Agent CLI. If it is corrupt, newer than this code,
-or cannot be migrated, opening it fails with ``TaskStateError`` and the file is left untouched.
+The database is never silently deleted or recreated. Unsupported development schemas, corruption,
+or invalid state fail with ``TaskStateError``.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any, cast
 
 from agent_cli.adapters import WorkerStatus
@@ -87,6 +88,8 @@ class TaskStore:
         self._migrations = migrations
         self._clock = clock
         self._connection: sqlite3.Connection | None = None
+        self._lock = RLock()
+        """Serialize one connection across foreground and background worker threads."""
 
     @classmethod
     def for_repository(cls, root: Path) -> TaskStore:
@@ -97,20 +100,27 @@ class TaskStore:
         return self.path.is_file()
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     @property
     def _db(self) -> sqlite3.Connection:
-        if self._connection is None:
-            self._connection = self._open()
-        return self._connection
+        with self._lock:
+            if self._connection is None:
+                self._connection = self._open()
+            return self._connection
 
     def _open(self) -> sqlite3.Connection:
         try:
             ensure_private_dir(self.path.parent)
-            connection = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT, isolation_level=None)
+            connection = sqlite3.connect(
+                self.path,
+                timeout=BUSY_TIMEOUT,
+                isolation_level=None,
+                check_same_thread=False,
+            )
         except (OSError, sqlite3.Error) as error:
             raise TaskStateError(f"cannot open task state at {self.path}: {error}") from error
         connection.row_factory = sqlite3.Row
@@ -124,26 +134,28 @@ class TaskStore:
 
     @contextmanager
     def _write(self) -> Iterator[sqlite3.Connection]:
-        db = self._db
-        try:
-            db.execute("BEGIN IMMEDIATE")
-        except sqlite3.Error as error:
-            raise TaskStateError(f"cannot update task state: {error}") from error
-        try:
-            yield db
-            db.execute("COMMIT")
-        except sqlite3.Error as error:
-            rollback(db)
-            raise TaskStateError(f"cannot update task state: {error}") from error
-        except BaseException:
-            rollback(db)
-            raise
+        with self._lock:
+            db = self._db
+            try:
+                db.execute("BEGIN IMMEDIATE")
+            except sqlite3.Error as error:
+                raise TaskStateError(f"cannot update task state: {error}") from error
+            try:
+                yield db
+                db.execute("COMMIT")
+            except sqlite3.Error as error:
+                rollback(db)
+                raise TaskStateError(f"cannot update task state: {error}") from error
+            except BaseException:
+                rollback(db)
+                raise
 
     def _read(self, sql: str, *params: Any) -> list[sqlite3.Row]:
-        try:
-            return self._db.execute(sql, params).fetchall()
-        except sqlite3.Error as error:
-            raise TaskStateError(f"cannot read task state: {error}") from error
+        with self._lock:
+            try:
+                return self._db.execute(sql, params).fetchall()
+            except sqlite3.Error as error:
+                raise TaskStateError(f"cannot read task state: {error}") from error
 
     def _event(
         self,
@@ -244,30 +256,22 @@ class TaskStore:
         )
         if parent_id is not None and self._session_of(db, parent_id) != session_id:
             raise TaskStateError(f"parent task {parent_id} belongs to another session")
-        if kind is None and complexity is None:
-            # Keep test/upgrade helpers able to seed an older migration intentionally.
-            db.execute(
-                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task.id, session_id, parent_id, goal, task.status, role, now, now),
-            )
-        else:
-            db.execute(
-                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-                "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task.id,
-                    session_id,
-                    parent_id,
-                    goal,
-                    task.status,
-                    role,
-                    now,
-                    now,
-                    kind,
-                    complexity,
-                ),
-            )
+        db.execute(
+            "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+            "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                task.id,
+                session_id,
+                parent_id,
+                goal,
+                task.status,
+                role,
+                now,
+                now,
+                kind,
+                complexity,
+            ),
+        )
         self._event(
             db,
             session_id,

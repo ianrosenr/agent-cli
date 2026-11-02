@@ -18,7 +18,7 @@ from pathlib import Path
 
 from rich.console import RenderableType
 
-from agent_cli.adapters import AdapterRegistry
+from agent_cli.adapters import DIAGNOSTIC_AUTHORITY, AdapterRegistry
 from agent_cli.budget import NO_PRICING, BudgetGuard, CostEstimator, SpendLedger
 from agent_cli.config import Config, ConfigError, ConfigService
 from agent_cli.models import (
@@ -32,12 +32,12 @@ from agent_cli.models import (
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
-    Handoff,
     PlanningInput,
     PlanProposal,
     PlanRejected,
     PriorDecision,
     RepositoryContext,
+    TaskBrief,
     UserText,
     ValidatedPlan,
     WorkItem,
@@ -60,7 +60,8 @@ from agent_cli.orchestration.spec_author import (
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
 from agent_cli.state import PinKind, Task, TaskStateError, TaskStore
-from agent_cli.ui import error
+from agent_cli.ui import error, info
+from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
 
@@ -88,9 +89,11 @@ class OrchestrationService:
     home: Path | None = None
     login_harnesses: LoginHarnesses | None = None
     """Interactive native-login callback supplied by the shell; absent in noninteractive uses."""
+    worker_notify: Callable[[str], None] | None = None
+    """Optional shell-safe notification sink for background worker completion."""
     _index: RepositoryIndex | None = None
 
-    def handle(self, text: str, handoff: Handoff | None = None) -> RenderableType:
+    def handle(self, text: str, handoff: TaskBrief | None = None) -> RenderableType:
         """Plan ``text`` as a new request, or take it as the answer to a pending question.
 
         A ``handoff`` carries the request as the root-prompt router resolved it: its goal
@@ -123,7 +126,7 @@ class OrchestrationService:
         except TaskStateError as problem:
             return error("Cannot use task state.", str(problem))
 
-    def prepare_single_task(self, root: Task, handoff: Handoff) -> RenderableType:
+    def prepare_single_task(self, root: Task, handoff: TaskBrief) -> RenderableType:
         """Persist one bounded worker task without paying for a decomposition model call."""
         try:
             config = self.config.resolve()
@@ -157,8 +160,9 @@ class OrchestrationService:
                 ),
                 planning,
             )
-            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-            auth.ensure_any_ready()
+            if handoff.kind == "ship":
+                auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+                auth.ensure_any_ready()
             ids = self.store.persist_plan(plan.write(root.id))
         except (PlanRejected, TaskStateError) as error:
             return self.stop(root, f"the direct task could not be saved: {error}")
@@ -167,6 +171,33 @@ class OrchestrationService:
         problems = self.route_skills(config, guard, registry, items, facts)
         if problems:
             self.block([root.id], "task preparation is incomplete: " + "; ".join(problems))
+
+        if handoff.kind == "scout" and not problems:
+            child = self.store.task(ids[item.id])
+            project_root = self.config.paths.project_root
+            if child is not None and project_root is not None:
+                try:
+                    started = WorkerExecutor(
+                        self.store,
+                        self.adapters,
+                        registry,
+                        config,
+                        project_root,
+                        notify=self.worker_notify,
+                    ).launch(child, "scout", handoff.complexity, child.goal, DIAGNOSTIC_AUTHORITY)
+                    return info("Scout started.", started)
+                except WorkerLaunchError as problem:
+                    return render_plan(
+                        self.store,
+                        root.id,
+                        plan.proposal.summary,
+                        plan.unpinned,
+                        (f"Scout prepared but could not start: {problem}",),
+                        (),
+                        config.ui.verbosity,
+                        ready="Scout prepared but not started.",
+                    )
+
         return render_plan(
             self.store,
             root.id,

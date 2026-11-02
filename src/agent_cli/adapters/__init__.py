@@ -6,6 +6,9 @@ vendor-specific code lives in individual adapter implementations.
 """
 
 from agent_cli.adapters.domain import (
+    DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
+    RESEARCH_AUTHORITY,
     AdapterError,
     Capability,
     Changes,
@@ -23,6 +26,7 @@ from agent_cli.adapters.domain import (
     ReadinessState,
     Selection,
     Usage,
+    WorkerAuthority,
     WorkerHandle,
     WorkerRequest,
     WorkerResult,
@@ -35,6 +39,9 @@ from agent_cli.adapters.registry import AdapterRegistry
 from agent_cli.adapters.status import adapter_status, providers_view
 
 __all__ = [
+    "DIAGNOSTIC_AUTHORITY",
+    "IMPLEMENTATION_AUTHORITY",
+    "RESEARCH_AUTHORITY",
     "AdapterError",
     "AdapterRegistry",
     "Capability",
@@ -56,6 +63,7 @@ __all__ = [
     "ReadinessState",
     "Selection",
     "Usage",
+    "WorkerAuthority",
     "WorkerHandle",
     "WorkerRequest",
     "WorkerResult",

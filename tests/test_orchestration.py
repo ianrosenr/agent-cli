@@ -14,6 +14,7 @@ from rich.console import RenderableType
 
 from agent_cli import cli
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     ErrorKind,
@@ -26,8 +27,9 @@ from agent_cli.adapters import (
     ProviderResponse,
     ReadinessState,
     Usage,
+    WorkerStatus,
 )
-from agent_cli.adapters.fake import FakeHarnessAdapter
+from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.adapters.provider import ProviderAdapter
 from agent_cli.budget import (
     BudgetGuard,
@@ -39,7 +41,7 @@ from agent_cli.budget import (
 )
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import ConfigPaths, ConfigService, Layer
-from agent_cli.gateway.intent import ROUTER_SYSTEM
+from agent_cli.gateway.intent import SUPERVISOR_SYSTEM
 from agent_cli.models import ModelRegistry, runtime_paths
 from agent_cli.orchestration import (
     DELEGATED_ROLES,
@@ -221,6 +223,52 @@ def test_trivial_task_brief_bypasses_planner(
     assert child.role == role
     assert store.latest_spec(child.id) is None
     assert f"Single {kind} task" in output
+
+
+def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
+    store: TaskStore, config: ConfigService, project: Path
+) -> None:
+    planner = FakePlanner([])
+    provider = FakeProviderAdapter(
+        ProviderIdentity("sub", "Subscription", "fake", "subscription"),
+        ProviderReadiness(ReadinessState.READY),
+        (ModelDescriptor("sub", "small"),),
+    )
+    harness = FakeHarnessAdapter(auto_finish=False)
+    models = registry(model("small", cost="low", latency="fast"))
+    orchestration = OrchestrationService(
+        store,
+        config,
+        AdapterRegistry([harness], [provider]),
+        planner=planner,
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "are there any pytests failing?",
+            TaskBrief(
+                "Run pytest and report whether tests fail",
+                "",
+                "scout",
+                "trivial",
+            ),
+        )
+    )
+
+    assert planner.inputs == []
+    assert "Scout started" in output
+    assert "Ready for worker execution" not in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    [worker] = store.workers(child.id)
+    assert worker.status is WorkerStatus.RUNNING
+    [running] = harness.workers.values()
+    assert running.request.authority == DIAGNOSTIC_AUTHORITY
+    assert running.request.working_directory != project
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
@@ -1172,7 +1220,7 @@ class ScriptedProvider(ProviderAdapter):
         if self.failure is not None:
             raise AdapterError(self.failure, "scripted provider failed")
         payload = json.loads(request.prompt)
-        if request.system == ROUTER_SYSTEM:
+        if request.system == SUPERVISOR_SYSTEM:
             verdict = {
                 "action": "ship",
                 "confident": True,
@@ -1524,7 +1572,7 @@ def test_the_shell_routes_requested_work_to_orchestration(
     adapters = AdapterRegistry(providers=[provider])
     cli.run_shell(build_registry(), read_line, write_line, "", config, adapters, store)
 
-    assert provider.requests[0].system == ROUTER_SYSTEM
+    assert provider.requests[0].system == SUPERVISOR_SYSTEM
     assert provider.requests[1].system == planner_module.SYSTEM
     assert "Add TTL expiration to CacheStore." in output[1]
     assert "role: orchestrator" in output[2]

@@ -10,6 +10,9 @@ from typing import IO, Any
 import pytest
 
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
+    RESEARCH_AUTHORITY,
     AdapterError,
     ErrorKind,
     ProviderRequest,
@@ -179,10 +182,10 @@ def request(tmp_path: Path, **changes: Any) -> WorkerRequest:
         "working_directory": tmp_path,
         "repository": "agent-cli",
         "skills": ("testing policy", "interfaces policy"),
+        "authority": IMPLEMENTATION_AUTHORITY,
         "model": Selection.pin("claude-sonnet-5-5"),
         "provider": Selection.pin(SUBSCRIPTION_PROVIDER_ID),
         "harness": Selection.pin(HARNESS_ID),
-        "mode": "autopilot",
     }
     values.update(changes)
     return WorkerRequest(**values)
@@ -561,23 +564,32 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
     assert result.changes.files == ("new.txt", "src/example.py")
 
 
-def test_plan_only_uses_plan_permission_mode(tmp_path: Path) -> None:
+def test_research_authority_removes_shell_and_write_tools(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="plan-only", model=None))
+    harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, model=None))
     argv = launcher.calls[0]["argv"]
-    index = argv.index("--permission-mode")
-    assert argv[index + 1] == "plan"
-    assert "--model" not in argv
+
+    assert "plan" not in argv
+    tools = argv[argv.index("--tools") + 1]
+    denied = argv[argv.index("--disallowedTools") + 1]
+    assert tools == "Read,Grep,Glob"
+    assert "Bash" in denied and "Edit" in denied and "Write" in denied
 
 
-def test_checkpoint_batch_uses_auto_after_agent_cli_approves_it(tmp_path: Path) -> None:
+def test_diagnostic_authority_allows_bounded_shell_without_edit_tools(tmp_path: Path) -> None:
     launcher = FakeLauncher()
     harness = adapter(launcher=launcher)
-    harness.start(request(tmp_path, mode="checkpoint"))
+    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, model=None))
     argv = launcher.calls[0]["argv"]
-    index = argv.index("--permission-mode")
-    assert argv[index + 1] == "auto"
+
+    assert "plan" not in argv
+    assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
+    assert "Bash" in argv[argv.index("--tools") + 1]
+    allowed = argv[argv.index("--allowedTools") + 1]
+    assert "Bash(uv run pytest)" in allowed
+    denied = argv[argv.index("--disallowedTools") + 1]
+    assert "Edit" in denied and "Write" in denied
 
 
 def test_wrong_provider_pin_is_never_substituted(tmp_path: Path) -> None:

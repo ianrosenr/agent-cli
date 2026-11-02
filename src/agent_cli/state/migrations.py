@@ -1,11 +1,8 @@
 """Schema migrations for the canonical task-state database.
 
-The schema version lives in SQLite's ``user_version`` header field. Each migration is a small,
-deterministic list of statements that moves the schema up exactly one version; all pending
-migrations run in one transaction, so a failure leaves the database exactly as it was.
-
-Never edit a released migration. Add a new one instead: canonical task state must survive every
-upgrade, and a newer schema is never created by dropping an older one.
+The schema version lives in SQLite's ``user_version`` header field. Agent CLI is unreleased, so
+task state has one current schema rather than compatibility migrations for historical development
+formats. Old development databases are intentionally rejected instead of upgraded.
 """
 
 from __future__ import annotations
@@ -33,7 +30,11 @@ V1 = (
         status TEXT NOT NULL,
         role TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        kind TEXT CHECK (kind IS NULL OR kind IN ('scout', 'ship')),
+        complexity TEXT CHECK (
+            complexity IS NULL OR complexity IN ('trivial', 'moderate', 'complex')
+        )
     )
     """,
     "CREATE INDEX tasks_by_session ON tasks (session_id)",
@@ -179,9 +180,6 @@ V1 = (
     )
     """,
     "CREATE INDEX events_by_task ON events (task_id)",
-)
-
-V2 = (
     """
     CREATE TABLE skill_routings (
         id TEXT PRIMARY KEY,
@@ -205,10 +203,6 @@ V2 = (
     )
     """,
     "CREATE INDEX skill_routings_by_task ON skill_routings (task_id)",
-)
-"""Skill-routing decisions and escalations (V1-06): append-only, JSON arrays for detail."""
-
-V3 = (
     """
     CREATE TABLE planning_questions (
         id TEXT PRIMARY KEY,
@@ -239,18 +233,9 @@ V3 = (
     """,
     "CREATE INDEX scoped_pins_by_root ON scoped_pins (root_task_id)",
 )
-"""Planning questions (at most one pending per root task) and scoped user pins (V1-09)."""
 
-V4 = (
-    "ALTER TABLE tasks ADD COLUMN kind TEXT CHECK (kind IS NULL OR kind IN ('scout', 'ship'))",
-    "ALTER TABLE tasks ADD COLUMN complexity TEXT "
-    "CHECK (complexity IS NULL OR complexity IN ('trivial', 'moderate', 'complex'))",
-)
-"""Persist supervisor task shape on root tasks for restart-safe dispatch."""
-
-
-MIGRATIONS: tuple[Migration, ...] = (V1, V2, V3, V4)
-"""``MIGRATIONS[n]`` upgrades the schema from version ``n`` to ``n + 1``."""
+MIGRATIONS: tuple[Migration, ...] = (V1,)
+"""The one current unreleased task-state schema."""
 
 
 class MigrationError(Exception):

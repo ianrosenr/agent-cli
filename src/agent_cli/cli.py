@@ -28,7 +28,7 @@ from agent_cli.ui import blocks, error, home, info, is_unicode, make_console
 if TYPE_CHECKING:
     from agent_cli.gateway.service import SupervisorService
     from agent_cli.orchestration import OrchestrationService
-    from agent_cli.orchestration.domain import Handoff
+    from agent_cli.orchestration.domain import TaskBrief
 
 PROMPT = "> "
 NO_ORCHESTRATION = NO_REPOSITORY
@@ -96,13 +96,13 @@ def orchestrator(
     tasks: TaskStore | None,
     read_line: ReadLine | None = None,
     write_line: WriteLine | None = None,
-) -> Callable[[str, Handoff | None], RenderableType] | None:
+) -> Callable[[str, TaskBrief | None], RenderableType] | None:
     """The orchestration entry point, built on first use so planning stays out of startup."""
     if config is None or tasks is None:
         return None
     service: OrchestrationService | None = None
 
-    def orchestrate(text: str, handoff: Handoff | None = None) -> RenderableType:
+    def orchestrate(text: str, handoff: TaskBrief | None = None) -> RenderableType:
         nonlocal service
         if service is None:
             from agent_cli.orchestration import OrchestrationService
@@ -123,12 +123,18 @@ def orchestrator(
                         harness_ids
                     )
 
+            worker_notify = (
+                (lambda message: write_line(info("Background work finished.", message)))
+                if write_line is not None
+                else None
+            )
             service = OrchestrationService(
                 tasks,
                 config,
                 registry,
                 estimator=provider_estimators(registry),
                 login_harnesses=login_harnesses,
+                worker_notify=worker_notify,
             )
         return service.handle(text, handoff)
 
@@ -200,15 +206,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = make_console()
     try:
         registry = build_registry()
-        migrated = config.migrate_legacy_builtin_harnesses()
-        migration = (
-            info("Updated legacy Claude/Codex harness config to the current format.")
-            if migrated
-            else None
-        )
         problem = blocks(config_problem(config), adapter_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
+        recovery = None
+        if tasks is not None:
+            from agent_cli.workers import reconcile_orphaned_workers
+
+            reconciled = reconcile_orphaned_workers(tasks)
+            if reconciled:
+                recovery = info(
+                    f"Recovered {reconciled} interrupted background worker(s).",
+                    "They were marked failed and were not replayed.",
+                )
         adapters = session_adapters(config)
         interactive = sys.stdin.isatty()
         first_run = needs_onboarding(config, interactive)
@@ -223,8 +233,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             ).refresh_latest()
         startup = blocks(
             home(registry, unicode=is_unicode(console)),
-            migration,
             problem,
+            recovery,
             maintenance,
         )
         return run_shell(
@@ -305,6 +315,7 @@ def terminal_reader(registry: CommandRegistry) -> ReadLine:
         return input
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
 
     from agent_cli.commands.completion import CommandCompleter, command_key_bindings
@@ -318,6 +329,7 @@ def terminal_reader(registry: CommandRegistry) -> ReadLine:
         shell = prompt == PROMPT
         session.completer = completer if shell else None
         session.key_bindings = bindings if shell else None
-        return session.prompt(FormattedText(prompt_fragments(prompt)))
+        with patch_stdout():
+            return session.prompt(FormattedText(prompt_fragments(prompt)))
 
     return read_line

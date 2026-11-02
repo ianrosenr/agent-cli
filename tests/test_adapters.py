@@ -11,6 +11,7 @@ import yaml
 
 from agent_cli import cli
 from agent_cli.adapters import (
+    IMPLEMENTATION_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     Capability,
@@ -58,6 +59,7 @@ def request(
         "implementer",
         "Add cache expiry.",
         Path("/work"),
+        authority=IMPLEMENTATION_AUTHORITY,
         model=model,
         provider=provider,
         harness=harness,

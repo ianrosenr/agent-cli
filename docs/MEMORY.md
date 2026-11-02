@@ -40,7 +40,7 @@ Canonical task state lives in:
 <repo>/.agent-cli/state/tasks.sqlite
 ```
 
-This SQLite database is durable source-of-truth state and is git-ignored. It carries an explicit schema version and uses deterministic migrations. A migration failure must preserve the existing database; canonical task state is never silently deleted or rebuilt because analyzer/repository-cache versions changed.
+This SQLite database is durable source-of-truth state and is git-ignored. Before the first release, task state has one current schema. Unsupported development schemas are rejected rather than upgraded; canonical state is never silently deleted or rebuilt.
 
 Repository-derived indexes are separate rebuildable state. See [REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md).
 
@@ -53,8 +53,8 @@ V1 uses local stores only; no vector database.
 `agent_cli.state` implements this contract (V1-05):
 
 - `TaskStore` is the only way to read or write `tasks.sqlite`. Every change appends an `events` row; superseded requirements, decisions, pins, and spec versions are kept and linked to their replacements.
-- Schema migrations live in `state/migrations.py`, tracked by SQLite's `user_version`. All pending migrations run in one transaction. A corrupt, foreign, or newer database, or a failed migration, raises `TaskStateError` and leaves the file untouched.
+- The current task schema lives in `state/migrations.py` and is tagged with SQLite's `user_version`. Before release, an old development schema, corrupt database, foreign database, or newer schema raises `TaskStateError`; Agent CLI does not carry upgrade shims for development formats.
 - Execution pins are stored per task as normalized IDs and convert to the adapter `Selection` type. They are not inherited by subtasks; V1-09 explicitly propagates user-scoped all-child pins while persisting the plan.
-- V1-09 adds typed planning-question state and an atomic validated-plan write so malformed planner output cannot leave a half-created child graph. `planning_questions` (schema v3) holds each question with its status, answer, linked user `Decision`, and blocker (`/cancel` marks it canceled and cancels its root task); a partial unique index allows at most one pending question per root task. `TaskStore.persist_plan` writes children, roles, dependencies, assumptions, and user pins in one transaction. `scoped_pins` keeps `all`/role-scoped user pins, each linked to the user requirement quoting the instruction, for children created later.
+- V1-09 adds typed planning-question state and an atomic validated-plan write so malformed planner output cannot leave a half-created child graph. `planning_questions` holds each question with its status, answer, linked user `Decision`, and blocker (`/cancel` marks it canceled and cancels its root task); a partial unique index allows at most one pending question per root task. `TaskStore.persist_plan` writes children, roles, dependencies, assumptions, and user pins in one transaction. `scoped_pins` keeps `all`/role-scoped user pins, each linked to the user requirement quoting the instruction, for children created later.
 - `/status` renders the latest session's task tree, roles, pins, role-scoped pins, latest spec approval, and open blockers through `status_view`. With no persisted state it prints `No active task.` and creates nothing.
 - The state directory contains a `.gitignore` of `*`, so it stays ignored even in repositories whose own ignore rules do not mention it.

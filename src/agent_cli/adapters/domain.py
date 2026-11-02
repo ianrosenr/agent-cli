@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from agent_cli.terms import AccessKind, ImplementationMode
+from agent_cli.terms import AccessKind
 
 # -- Errors ------------------------------------------------------------------------------------
 
@@ -199,6 +199,25 @@ class Selection:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerAuthority:
+    """Execution powers granted to one worker, independent of its role or skills."""
+
+    execute_commands: bool = False
+    modify_source: bool = False
+
+    @property
+    def profile(self) -> str:
+        if self.modify_source:
+            return "implementation"
+        return "diagnostic" if self.execute_commands else "research"
+
+
+RESEARCH_AUTHORITY = WorkerAuthority()
+DIAGNOSTIC_AUTHORITY = WorkerAuthority(execute_commands=True)
+IMPLEMENTATION_AUTHORITY = WorkerAuthority(execute_commands=True, modify_source=True)
+
+
+@dataclass(frozen=True, slots=True)
 class WorkerRequest:
     """Everything a harness needs to run one unit of work. Holds no conversation history."""
 
@@ -208,6 +227,8 @@ class WorkerRequest:
     """The task or spec text, or a reference to it."""
     working_directory: Path
     """The directory or worktree the worker runs in."""
+    authority: WorkerAuthority
+    """Technically enforced execution powers. Skills and role never expand these."""
     repository: str | None = None
     """The targeted repository context, such as its root or a short description."""
     skills: tuple[str, ...] = ()
@@ -217,7 +238,6 @@ class WorkerRequest:
     """The provider/access path."""
     harness: Selection | None = None
     """The harness routing chose. The adapter receiving the request must be this harness."""
-    mode: ImplementationMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
