@@ -209,6 +209,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         problem = blocks(config_problem(config), adapter_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
+        recovery = None
+        if tasks is not None:
+            from agent_cli.workers import reconcile_orphaned_workers
+
+            reconciled = reconcile_orphaned_workers(tasks)
+            if reconciled:
+                recovery = info(
+                    f"Recovered {reconciled} interrupted background worker(s).",
+                    "They were marked failed and were not replayed.",
+                )
         adapters = session_adapters(config)
         interactive = sys.stdin.isatty()
         first_run = needs_onboarding(config, interactive)
@@ -225,6 +235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             home(registry, unicode=is_unicode(console)),
             migration,
             problem,
+            recovery,
             maintenance,
         )
         return run_shell(
