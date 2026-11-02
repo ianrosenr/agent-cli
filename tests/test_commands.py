@@ -24,6 +24,7 @@ REQUIRED_COMMANDS = {
     "exit",
     "startup",
     "login",
+    "reload",
     "status",
     "budget",
     "skills",
