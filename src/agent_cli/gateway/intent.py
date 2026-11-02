@@ -41,7 +41,9 @@ class SupervisorDecision:
     complexity: Complexity = "trivial"
     """Estimated work complexity; used by downstream dispatch, not as authority."""
     answer: str = ""
-    """Inline answer for a trivial non-repository turn; empty when downstream answering is needed."""
+    """Inline answer for a trivial non-repository turn; empty when downstream answering is
+    needed."""
+
 
     def describe(self) -> str:
         context = ", repository" if self.repository else ""
