@@ -18,6 +18,7 @@ from agent_cli.adapters import (
     WorkerRequest,
     WorkerStatus,
 )
+from agent_cli.adapters.cli_harness import CliHarnessAdapter
 from agent_cli.adapters.claude_code import (
     BILLING_OVERRIDE_ENV,
     HARNESS_ID,
@@ -630,13 +631,13 @@ def test_custom_command_is_used_for_detection_and_launch(
 
 def test_runtime_registers_claude_code_without_persisting_auth() -> None:
     harness = default_adapters(Config()).harness(HARNESS_ID)
-    assert isinstance(harness, ClaudeCodeHarnessAdapter)
+    assert isinstance(harness, CliHarnessAdapter)
 
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(Config(harnesses={"claude-code": HarnessConfig()}))
     harness = registry.harness("claude-code")
-    assert isinstance(harness, ClaudeCodeHarnessAdapter)
+    assert isinstance(harness, CliHarnessAdapter)
     harness.runner = FakeCommands()
 
     provider = registry.provider("claude-subscription")
