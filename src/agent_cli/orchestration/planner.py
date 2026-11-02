@@ -51,7 +51,8 @@ semantics. When unsure whether a choice is consequential, ask. Ask at most one q
 that most changes the plan. When you ask, work_items may be empty.
 - Record safe, reversible, implementation-local choices as assumptions. Never present an \
 assumption as a fact.
-- Keep every work item goal under 200 characters. Put detailed context in why, not goal.\n- Plan the smallest useful graph. Make a separate work item only for a distinct responsibility, \
+- Keep every work item goal under 200 characters. Put detailed context in why, not goal.
+- Plan the smallest useful graph. Make a separate work item only for a distinct responsibility, \
 authority, dependency boundary, or independently reviewable unit; never one per file, never to \
 fill parallel workers. Make items sequential when they change the same contract.
 - Each work item has exactly one role from roles, and cites the requirement IDs it serves. Add \
