@@ -629,7 +629,7 @@ class TaskStore:
         """Append one authorization decision, voiding any earlier active decision."""
         with self._write() as db:
             self._void_authorizations_in(db, (task_id,), "superseded")
-            return self._insert_authorization(
+            record = self._insert_authorization(
                 db,
                 task_id,
                 mode,
@@ -639,6 +639,13 @@ class TaskStore:
                 spec_version=spec_version,
                 decided_by=decided_by,
             )
+            if status is Approval.APPROVED and spec_version is not None:
+                db.execute(
+                    "UPDATE spec_versions SET approval = 'approved' "
+                    "WHERE task_id = ? AND version = ?",
+                    (task_id, spec_version),
+                )
+            return record
 
     def request_authorization(
         self,
