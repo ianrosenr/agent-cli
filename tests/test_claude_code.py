@@ -20,7 +20,12 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.cli_harness import (
     CliHarnessAdapter,
+    CommandRunner,
+    DirectModelRunner,
+    GitRunner,
+    InteractiveRunner,
     Process,
+    ProcessLauncher,
     launch_process,
     run_command,
     run_direct_model,
@@ -146,12 +151,12 @@ class FakeGit:
 
 def claude_harness(
     config: HarnessConfig | None = None,
-    runner=run_command,
-    launcher=launch_process,
-    git_runner=run_git,
+    runner: CommandRunner = run_command,
+    launcher: ProcessLauncher = launch_process,
+    git_runner: GitRunner = run_git,
     environ: Mapping[str, str] | None = None,
-    interactive_runner=run_interactive,
-    direct_model_runner=run_direct_model,
+    interactive_runner: InteractiveRunner = run_interactive,
+    direct_model_runner: DirectModelRunner = run_direct_model,
 ) -> CliHarnessAdapter:
     return CliHarnessAdapter(
         HARNESS_ID,
