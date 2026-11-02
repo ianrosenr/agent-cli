@@ -220,7 +220,8 @@ class WorktreeManager:
                 raise WorkerLaunchError("missing or unsafe predecessor worktree")
             ancestor = subprocess.run(
                 ("git", "merge-base", "--is-ancestor", baseline, "HEAD"),
-                cwd=source, capture_output=True,
+                cwd=source,
+                capture_output=True,
             )
             if ancestor.returncode:
                 raise WorkerLaunchError("predecessor does not share the integration baseline")
@@ -231,22 +232,27 @@ class WorktreeManager:
                 raise WorkerLaunchError("cannot collect predecessor changes")
             if changed.stdout:
                 verified = subprocess.run(
-                    ("git", "apply", "--check", "-"), cwd=target,
-                    input=changed.stdout, capture_output=True,
+                    ("git", "apply", "--check", "-"),
+                    cwd=target,
+                    input=changed.stdout,
+                    capture_output=True,
                 )
                 if verified.returncode:
                     raise WorkerLaunchError(
                         "predecessor changes conflict; manual integration required"
                     )
                 applied = subprocess.run(
-                    ("git", "apply", "-"), cwd=target,
-                    input=changed.stdout, capture_output=True,
+                    ("git", "apply", "-"),
+                    cwd=target,
+                    input=changed.stdout,
+                    capture_output=True,
                 )
                 if applied.returncode:
                     raise WorkerLaunchError("predecessor patch could not be applied")
             untracked = subprocess.run(
                 ("git", "ls-files", "--others", "--exclude-standard", "-z"),
-                cwd=source, capture_output=True,
+                cwd=source,
+                capture_output=True,
             )
             if untracked.returncode:
                 raise WorkerLaunchError("cannot inspect predecessor untracked files")
