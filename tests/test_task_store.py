@@ -6,7 +6,14 @@ from pathlib import Path
 import pytest
 
 from agent_cli.adapters import Selection, WorkerStatus
-from agent_cli.state import (\n    Approval,\n    AuthorizationStatus,\n    TaskStateError,\n    TaskStatus,\n    TaskStore,\n    status_lines,\n)
+from agent_cli.state import (
+    Approval,
+    AuthorizationStatus,
+    TaskStateError,
+    TaskStatus,
+    TaskStore,
+    status_lines,
+)
 from agent_cli.state.task_store import TASKS_FILE
 from gitrepo import locked
 
