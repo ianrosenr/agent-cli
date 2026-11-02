@@ -87,7 +87,7 @@ class SupervisorService:
         return self.config.paths.project_root
 
     def handle(self, text: str) -> RenderableType:
-        if self.orchestrate is not None and self.pending_question():
+        if self.orchestrate is not None and self.pending_user_gate():
             self.conversation.add(text, ANSWERED_QUESTION, "ship")
             return self.orchestrate(text, None)
         try:
@@ -156,7 +156,7 @@ class SupervisorService:
             self._calls = AnswerCalls(self.adapters, registry, ledger, self.estimator)
         return self._calls
 
-    def pending_question(self) -> bool:
+    def pending_user_gate(self) -> bool:
         store = self.store
         if store is None:
             return False
@@ -167,7 +167,10 @@ class SupervisorService:
             return (
                 session is not None
                 and session.open
-                and store.pending_planning_question(session.id) is not None
+                and (
+                    store.pending_authorization(session.id) is not None
+                    or store.pending_planning_question(session.id) is not None
+                )
             )
         except TaskStateError:
             return True  # let orchestration report the broken state
