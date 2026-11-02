@@ -33,7 +33,7 @@ from agent_cli.adapters.domain import (
     WorkerResult,
     WorkerStatus,
 )
-from agent_cli.adapters.harness import HarnessAdapter
+from agent_cli.adapters.harness import HarnessAdapter, version_matches
 from agent_cli.config.model import HarnessConfig
 
 HARNESS_ID = "claude-code"
@@ -179,6 +179,12 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         self._version = (
             first_line(version.stdout) or first_line(version.stderr) or "unknown version"
         )
+        if not version_matches(self.config.version, self._version):
+            return HarnessReadiness(
+                ReadinessState.MISCONFIGURED,
+                f"configured version {self.config.version!r} does not match detected "
+                f"{self._version!r}",
+            )
 
         try:
             auth = self.runner((command, "auth", "status", "--json"), env, READINESS_TIMEOUT_S)
