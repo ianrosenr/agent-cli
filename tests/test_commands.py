@@ -47,10 +47,8 @@ def run(context: CommandContext, line: str, width: int = 200) -> str:
     """Dispatch ``line`` and render the response as plain text."""
     return plain(context.registry.dispatch(line, context), width)
 
-
 def test_registry_contains_every_required_command() -> None:
     assert {command.name for command in build_registry()} == REQUIRED_COMMANDS
-
 
 def test_help_lists_every_registered_command_and_description(context: CommandContext) -> None:
     output = run(context, "/help")
@@ -58,14 +56,12 @@ def test_help_lists_every_registered_command_and_description(context: CommandCon
         line = next(line for line in output.splitlines() if line.startswith(f"  /{command.name} "))
         assert command.description in line
 
-
 def test_help_explains_how_to_use_the_cli_before_listing_commands(
     context: CommandContext,
 ) -> None:
     output = run(context, "/help")
     assert output.startswith("Agent CLI help")
     assert output.index("> prompt") < output.index("\nCommands\n")
-
 
 def test_help_separates_working_commands_from_planned_ones(context: CommandContext) -> None:
     output = run(context, "/help")
@@ -79,18 +75,15 @@ def test_help_separates_working_commands_from_planned_ones(context: CommandConte
             )
             assert line.endswith(f"  {command.planned_in}")
 
-
 def test_help_omits_planned_section_when_nothing_is_planned() -> None:
     registry = CommandRegistry()
     registry.register(Command("help", "Help.", help_command))
     context = CommandContext(registry=registry)
     assert "Coming in later issues" not in plain(registry.dispatch("/help", context))
 
-
 def test_help_reflects_newly_registered_commands(context: CommandContext) -> None:
     context.registry.register(Command("extra", "An extra command.", lambda ctx, args: ""))
     assert "/extra" in run(context, "/help")
-
 
 def test_dispatch_calls_handler_with_args() -> None:
     calls: list[str] = []
@@ -145,11 +138,9 @@ def test_implemented_commands_are_not_placeholders(context: CommandContext, name
     command = context.registry.get(name)
     assert command is not None and command.planned_in is None
 
-
 def test_startup_is_listed_as_available_in_help(context: CommandContext) -> None:
     available = run(context, "/help").split("Coming in later issues")[0]
     assert "/startup" in available
-
 
 def test_verbosity_defaults_to_concise_and_can_be_saved(
     context: CommandContext, paths: ConfigPaths
@@ -164,13 +155,11 @@ def test_verbosity_defaults_to_concise_and_can_be_saved(
     assert "Verbosity set to verbose" in output
     assert service.resolve().ui.verbosity == "verbose"
 
-
 def test_verbosity_rejects_unknown_value(context: CommandContext, paths: ConfigPaths) -> None:
     output = run(replace(context, config=ConfigService(paths)), "/verbosity noisy")
 
     assert output.startswith("Error  Unrecognized verbosity.")
     assert "/verbosity [concise | normal | verbose]" in output
-
 
 def test_status_without_task_state_reports_no_active_task(
     context: CommandContext, tmp_path: Path
@@ -180,7 +169,6 @@ def test_status_without_task_state_reports_no_active_task(
     with_store = replace(context, tasks=store)
     assert run(with_store, "/status") == "No active task."
     assert not store.exists()
-
 
 def test_status_shows_the_persisted_task_tree_pins_and_blockers(
     context: CommandContext, tmp_path: Path
@@ -207,7 +195,6 @@ def test_status_shows_the_persisted_task_tree_pins_and_blockers(
     assert lines[-2:] == ["Blockers:", f"  {child.id}: Choose the default TTL (waiting on user)"]
     assert not any("session_started" in line for line in lines)
 
-
 def test_status_reports_unreadable_task_state(context: CommandContext, tmp_path: Path) -> None:
     path = tmp_path / "tasks.sqlite"
     path.write_bytes(b"garbage" * 100)
@@ -215,7 +202,6 @@ def test_status_reports_unreadable_task_state(context: CommandContext, tmp_path:
     output = run(broken, "/status")
     assert output.startswith("Error  Cannot read task state.")
     assert path.read_bytes() == b"garbage" * 100
-
 
 def test_skills_lists_the_catalog_without_task_state(context: CommandContext) -> None:
     lines = run(context, "/skills").splitlines()
@@ -228,7 +214,6 @@ def test_skills_lists_the_catalog_without_task_state(context: CommandContext) ->
     assert cells[2:4] == ["1.0.0", "auto"]
     assert "Routing" not in lines
     assert not any("trust boundar" in line.lower() for line in lines[3:])  # no skill bodies
-
 
 def test_skills_shows_effective_source_activation_and_routing(
     context: CommandContext, paths: ConfigPaths, tmp_path: Path
@@ -265,7 +250,6 @@ def test_skills_shows_effective_source_activation_and_routing(
     assert "    - data — activation: explicit" in routing
     assert routing[-1] == "    signals — escalation: schema"
 
-
 def test_skills_warns_about_unknown_activation_names(
     context: CommandContext, paths: ConfigPaths
 ) -> None:
@@ -276,7 +260,6 @@ def test_skills_warns_about_unknown_activation_names(
     assert "Warning  Ignored skills.activation entries (no such skill).\n" in output
     assert "securty" in output
 
-
 def test_skills_reports_invalid_skill_packages(context: CommandContext, tmp_path: Path) -> None:
     bad = Path.home() / ".agent-cli" / "skills" / "bad" / "SKILL.md"
     bad.parent.mkdir(parents=True)
@@ -284,11 +267,9 @@ def test_skills_reports_invalid_skill_packages(context: CommandContext, tmp_path
     output = run(context, "/skills")
     assert output.startswith("Error  Cannot load skills.") and "missing metadata" in output
 
-
 def test_exit_command_signals_shell_exit(context: CommandContext) -> None:
     with pytest.raises(ExitShell):
         run(context, "/exit")
-
 
 def test_duplicate_registration_is_rejected() -> None:
     registry = CommandRegistry()
@@ -302,16 +283,13 @@ def test_invalid_command_names_are_rejected(name: str) -> None:
     with pytest.raises(ValueError, match="Invalid command name"):
         Command(name, "Bad.", lambda ctx, args: "")
 
-
 def test_parse_command_splits_name_and_args() -> None:
     parsed = parse_command("/review  --strict now")
     assert (parsed.name, parsed.args) == ("review", "--strict now")
 
-
 def test_parse_command_rejects_non_command_input() -> None:
     with pytest.raises(ValueError):
         parse_command("help")
-
 
 
 def test_cancel_rejects_pending_authorization_and_cancels_request(
