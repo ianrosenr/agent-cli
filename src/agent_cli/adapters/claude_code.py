@@ -231,6 +231,8 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             frozenset(
                 {
                     Capability.START_WORKER,
+                    Capability.INSTALL,
+                    Capability.UPDATE,
                     Capability.LOGIN,
                     Capability.INTERRUPT,
                     Capability.MODEL_SELECTION,
@@ -386,6 +388,43 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         for name in BILLING_OVERRIDE_ENV:
             env.pop(name, None)
         return env
+
+    def install(self) -> HarnessReadiness:
+        if not self.config.enabled:
+            raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
+        target = (
+            "@anthropic-ai/claude-code@latest"
+            if self.config.version == "latest"
+            else f"@anthropic-ai/claude-code@{self.config.version}"
+        )
+        self.run_lifecycle(("npm", "install", "-g", target), "install Claude Code")
+        return self.readiness()
+
+    def update(self) -> HarnessReadiness:
+        if not self.config.enabled:
+            raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
+        if self.config.version == "latest":
+            self.run_lifecycle((self.command(), "update"), "update Claude Code")
+        else:
+            target = f"@anthropic-ai/claude-code@{self.config.version}"
+            self.run_lifecycle(("npm", "install", "-g", target), "pin Claude Code")
+        return self.readiness()
+
+    def run_lifecycle(self, argv: tuple[str, ...], action: str) -> None:
+        try:
+            result = self.interactive_runner(argv, dict(self.environ))
+        except FileNotFoundError:
+            raise AdapterError(
+                ErrorKind.NOT_FOUND,
+                f"cannot {action}: required command {argv[0]!r} is not installed",
+            ) from None
+        except OSError as error:
+            raise AdapterError(
+                ErrorKind.HARNESS_ERROR,
+                f"cannot {action} ({type(error).__name__})",
+            ) from None
+        if result.returncode != 0:
+            raise AdapterError(ErrorKind.HARNESS_ERROR, f"{action} did not complete")
 
     def login(self) -> HarnessReadiness:
         if not self.config.enabled:
