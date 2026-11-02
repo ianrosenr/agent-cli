@@ -1236,9 +1236,7 @@ def test_automatic_planning_falls_back_after_runtime_provider_failure(
 def test_runtime_fallback_never_crosses_a_pinned_provider(
     store: TaskStore, config: ConfigService
 ) -> None:
-    failing = ScriptedProvider(
-        "subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR
-    )
+    failing = ScriptedProvider("subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR)
     working = ScriptedProvider("subscription", id="b-working")
     orchestrator = provider_service(
         store,
