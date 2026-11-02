@@ -14,9 +14,12 @@ from agent_cli.adapters import (
     AdapterError,
     AdapterRegistry,
     Capability,
+    DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     ErrorKind,
     Failure,
     Selection,
+    WorkerAuthority,
     WorkerHandle,
     WorkerRequest,
     WorkerResult,
@@ -250,6 +253,7 @@ class WorkerExecutor:
         kind: TaskKind,
         complexity: TaskComplexity,
         spec: str,
+        authority: WorkerAuthority | None = None,
     ) -> str:
         pins = self._pins(task)
         dispatch = WorkerDispatcher(self.adapters, self.registry, self.config).choose(
@@ -260,7 +264,10 @@ class WorkerExecutor:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
         workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
-        mode = "plan-only" if kind == "scout" else self.config.implementation.mode
+        selected_authority = authority or (
+            DIAGNOSTIC_AUTHORITY if kind == "scout" else IMPLEMENTATION_AUTHORITY
+        )
+        mode = None if kind == "scout" else self.config.implementation.mode
         skills = self._skill_context(task.id)
         request = WorkerRequest(
             task.id,
@@ -269,6 +276,7 @@ class WorkerExecutor:
             workspace,
             repository=str(self.root),
             skills=skills,
+            authority=selected_authority,
             model=Selection(dispatch.model_id, pinned="model" in pins),
             provider=Selection(dispatch.provider_id, pinned="provider" in pins),
             harness=Selection(dispatch.harness_id, pinned="harness" in pins),
@@ -408,6 +416,29 @@ class WorkerExecutor:
         *,
         notify: bool,
     ) -> None:
+        worker = self.store.workers(task_id)
+        recorded = next((item for item in worker if item.id == worker_id), None)
+        authority = DIAGNOSTIC_AUTHORITY if kind == "scout" else IMPLEMENTATION_AUTHORITY
+        if (
+            not authority.modify_source
+            and result.status is WorkerStatus.COMPLETED
+            and result.changes is not None
+            and result.changes.diff
+            and result.changes.diff.strip()
+        ):
+            result = WorkerResult(
+                WorkerStatus.FAILED,
+                summary=(
+                    "Worker modified tracked source despite read-only source authority; "
+                    "the disposable workspace was discarded."
+                ),
+                changes=result.changes,
+                usage=result.usage,
+                error=Failure(
+                    ErrorKind.HARNESS_ERROR,
+                    "worker exceeded source-modification authority",
+                ),
+            )
         self.store.update_worker(worker_id, result.status)
         summary = result.summary or (
             f"Worker failed: {result.error}" if result.error is not None else ""
