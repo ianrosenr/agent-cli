@@ -76,8 +76,8 @@ class HarnessConfig:
     """A configured external harness.
 
     `type` chooses a reusable adapter protocol. `profile` chooses declarative behavior for
-    that protocol; when omitted, the harness config key is used as the profile for backwards
-    compatibility. Runtime facts are never stored here.
+    that protocol. Both are required in persisted harness entries. Runtime facts are never
+    stored here.
     """
 
     type: str = constrained("", kind="required")
@@ -85,6 +85,7 @@ class HarnessConfig:
     enabled: bool = True
     command: str | None = None
     version: str = constrained("latest", kind="nonempty")
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
