@@ -133,7 +133,10 @@ class HarnessLifecycleService:
     def _yes_no(self, prompt: str) -> bool:
         assert self.read_line is not None
         while True:
-            answer = self.read_line(prompt).strip().lower()
+            try:
+                answer = self.read_line(prompt).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                return False
             if answer in {"", "y", "yes"}:
                 return True
             if answer in {"n", "no"}:
