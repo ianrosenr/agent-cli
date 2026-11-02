@@ -11,8 +11,10 @@ import pytest
 
 from agent_cli.adapters import (
     AdapterError,
+    DIAGNOSTIC_AUTHORITY,
     ErrorKind,
     ProviderRequest,
+    RESEARCH_AUTHORITY,
     ReadinessState,
     Selection,
     WorkerRequest,
@@ -559,6 +561,34 @@ def test_start_uses_stdin_context_cwd_and_exact_selections(
     assert result.usage.reference == "session-123"
     assert result.changes is not None
     assert result.changes.files == ("new.txt", "src/example.py")
+
+
+def test_research_authority_removes_shell_and_write_tools(tmp_path: Path) -> None:
+    launcher = FakeLauncher()
+    harness = adapter(launcher=launcher)
+    harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, mode=None, model=None))
+    argv = launcher.calls[0]["argv"]
+
+    assert "plan" not in argv
+    tools = argv[argv.index("--tools") + 1]
+    denied = argv[argv.index("--disallowedTools") + 1]
+    assert tools == "Read,Grep,Glob"
+    assert "Bash" in denied and "Edit" in denied and "Write" in denied
+
+
+def test_diagnostic_authority_allows_bounded_shell_without_edit_tools(tmp_path: Path) -> None:
+    launcher = FakeLauncher()
+    harness = adapter(launcher=launcher)
+    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, mode=None, model=None))
+    argv = launcher.calls[0]["argv"]
+
+    assert "plan" not in argv
+    assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
+    assert "Bash" in argv[argv.index("--tools") + 1]
+    allowed = argv[argv.index("--allowedTools") + 1]
+    assert "Bash(uv run pytest)" in allowed
+    denied = argv[argv.index("--disallowedTools") + 1]
+    assert "Edit" in denied and "Write" in denied
 
 
 def test_plan_only_uses_plan_permission_mode(tmp_path: Path) -> None:
