@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agent_cli.adapters import AdapterRegistry
+from agent_cli.adapters import (
+    AdapterRegistry,
+    Capability,
+    HarnessBackedProviderAdapter,
+)
 from agent_cli.adapters.anthropic import PROVIDER_ID as ANTHROPIC
 from agent_cli.adapters.anthropic import AnthropicProviderAdapter, ClientFactory, sdk_client
 from agent_cli.adapters.claude_code import HARNESS_ID as CLAUDE_CODE
@@ -49,6 +53,10 @@ def default_adapters(
             CodexCliHarnessAdapter(codex_config),
         ]
     )
+    for harness in registry.harnesses().values():
+        if harness.capabilities().supports(Capability.DIRECT_MODEL):
+            registry.register_provider(HarnessBackedProviderAdapter(harness))
+
     entry = config.providers.get(ANTHROPIC)
     if entry is not None:
         registry.register_provider(AnthropicProviderAdapter(entry, credentials, anthropic_client))
