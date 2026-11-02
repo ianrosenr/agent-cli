@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
     AdapterRegistry,
     Changes,
-    DIAGNOSTIC_AUTHORITY,
     HarnessIdentity,
     ModelDescriptor,
     ProviderIdentity,
