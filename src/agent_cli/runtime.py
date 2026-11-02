@@ -40,7 +40,9 @@ def default_adapters(
 ) -> AdapterRegistry:
     """Build adapters from config through reusable type/profile factories."""
     harness_factories = (
-        default_harness_factories() if harness_factories is None else harness_factories
+        default_harness_factories(config.harness_profiles)
+        if harness_factories is None
+        else harness_factories
     )
     provider_factories = (
         default_provider_factories(credentials, anthropic_client)
