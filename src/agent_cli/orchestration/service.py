@@ -234,7 +234,9 @@ class OrchestrationService:
     ) -> RenderableType:
         """Grant, checkpoint, or block implementation authority for one prepared ship."""
         spec = self.store.latest_spec(task.id)
-        decision = decide_authorization(config, complexity, spec)
+        routing = self.store.latest_skill_routing(task.id)
+        risk_signals = () if routing is None else tuple(signal.signal for signal in routing.signals)
+        decision = decide_authorization(config, complexity, spec, risk_signals)
         version = None if spec is None else spec.version
         if decision.action == "block":
             authorization = self.store.add_authorization(
