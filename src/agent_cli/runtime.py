@@ -12,7 +12,7 @@ orchestration, routing, or budget policy.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from agent_cli.adapters import AdapterRegistry, Capability, HarnessBackedProviderAdapter
 from agent_cli.adapters.anthropic import ClientFactory, sdk_client
