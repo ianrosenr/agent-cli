@@ -215,6 +215,11 @@ class WorktreeManager:
         if base.returncode:
             raise WorkerLaunchError("cannot determine integration baseline")
         baseline = base.stdout.strip()
+        target_head = subprocess.run(
+            ("git", "rev-parse", "HEAD"), cwd=target, text=True, capture_output=True
+        )
+        if target_head.returncode or target_head.stdout.strip() != baseline:
+            raise WorkerLaunchError("target worktree has a different integration baseline")
         for source in upstream:
             if source.resolve() == self.root.resolve() or not source.is_dir():
                 raise WorkerLaunchError("missing or unsafe predecessor worktree")
