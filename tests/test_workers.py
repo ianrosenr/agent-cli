@@ -113,6 +113,7 @@ def task(store: TaskStore) -> Task:
     )
     return child
 
+
 def test_trivial_dispatch_prefers_cheaper_adequate_model(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
@@ -124,6 +125,7 @@ def test_trivial_dispatch_prefers_cheaper_adequate_model(tmp_path: Path) -> None
     )
 
     assert (choice.model_id, choice.provider_id, choice.harness_id) == ("small", "sub", "crew")
+
 
 def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_path: Path) -> None:
     root = repository(tmp_path)
@@ -149,6 +151,7 @@ def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_pat
     assert worker.request.working_directory.is_dir()
     assert git(root, "diff", "--name-only") == ""
 
+
 def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
@@ -163,6 +166,7 @@ def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
     assert recorded.status is WorkerStatus.COMPLETED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
     assert summary.metadata["summary"] == "pytest: 42 passed"
+
 
 def test_background_completion_notifies_and_finishes_parent(tmp_path: Path) -> None:
     root = repository(tmp_path)
@@ -196,6 +200,7 @@ def test_background_completion_notifies_and_finishes_parent(tmp_path: Path) -> N
     [recorded] = store.workers(child.id)
     assert recorded.worktree is not None and not Path(recorded.worktree).exists()
 
+
 def test_worker_concurrency_limit_is_enforced_before_second_launch(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
@@ -216,6 +221,7 @@ def test_worker_concurrency_limit_is_enforced_before_second_launch(tmp_path: Pat
     with pytest.raises(WorkerLaunchError, match="concurrency limit"):
         executor.launch(second, "scout", "trivial", second.goal, DIAGNOSTIC_AUTHORITY)
     assert store.workers(second.id) == []
+
 
 def test_restart_reconciliation_never_replays_active_worker(tmp_path: Path) -> None:
     root = repository(tmp_path)
@@ -238,6 +244,7 @@ def test_restart_reconciliation_never_replays_active_worker(tmp_path: Path) -> N
     updated = store.task(child.id)
     assert updated is not None and updated.status is TaskStatus.FAILED
     assert reconcile_orphaned_workers(store) == 0
+
 
 def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_path: Path) -> None:
     root = repository(tmp_path)
@@ -272,6 +279,7 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     assert updated is not None and updated.status is TaskStatus.FAILED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
     assert "modified tracked source" in summary.metadata["summary"]
+
 
 
 def test_write_worker_requires_current_approved_authorization(tmp_path: Path) -> None:
@@ -318,6 +326,7 @@ def test_write_worker_requires_current_approved_authorization(tmp_path: Path) ->
     )
 
     assert "completed" in started
+
 
 
 def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) -> None:
