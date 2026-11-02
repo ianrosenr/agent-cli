@@ -26,6 +26,7 @@ from agent_cli.adapters import (
     ProviderResponse,
     ReadinessState,
     Usage,
+    WorkerStatus,
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.adapters.provider import ProviderAdapter
