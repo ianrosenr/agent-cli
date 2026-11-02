@@ -165,9 +165,7 @@ def test_verbosity_defaults_to_concise_and_can_be_saved(
     assert service.resolve().ui.verbosity == "verbose"
 
 
-def test_verbosity_rejects_unknown_value(
-    context: CommandContext, paths: ConfigPaths
-) -> None:
+def test_verbosity_rejects_unknown_value(context: CommandContext, paths: ConfigPaths) -> None:
     output = run(replace(context, config=ConfigService(paths)), "/verbosity noisy")
 
     assert output.startswith("Error  Unrecognized verbosity.")
