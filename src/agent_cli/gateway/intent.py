@@ -256,4 +256,3 @@ class SupervisorRouter:
             verdict.complexity,
             verdict.answer,
         )
-
