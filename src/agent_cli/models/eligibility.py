@@ -160,7 +160,6 @@ ROUTER_POLICY = SUPERVISOR_POLICY
 """Compatibility alias for the pre-supervisor name."""
 
 
-
 @dataclass(frozen=True, slots=True)
 class AnswerCandidate:
     model_id: str
