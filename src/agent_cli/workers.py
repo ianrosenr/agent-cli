@@ -186,6 +186,14 @@ class WorktreeManager:
         base.mkdir(parents=True, exist_ok=True)
         target = base / task_id
         if target.exists():
+            status = subprocess.run(
+                ("git", "status", "--porcelain"),
+                cwd=target,
+                text=True,
+                capture_output=True,
+            )
+            if status.returncode or (kind == "ship" and status.stdout.strip()):
+                raise WorkerLaunchError("existing worker worktree is not clean")
             return target
         command = ["git", "worktree", "add", "--detach", str(target), "HEAD"]
         result = subprocess.run(
@@ -355,6 +363,8 @@ class WorkerExecutor:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
         with _LAUNCH_LOCK:
+            if self.store.workers(task.id):
+                raise WorkerLaunchError("task has an existing worker record; refusing replay")
             active = self._active_worker_count(task.session_id)
             if active >= self.config.workers.max_concurrency:
                 raise WorkerLaunchError(
