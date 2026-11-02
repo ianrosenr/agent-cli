@@ -665,12 +665,17 @@ def test_runtime_registers_codex_without_persisting_auth() -> None:
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(Config(harnesses={"codex-cli": HarnessConfig()}))
+    harness = registry.harness("codex-cli")
+    assert isinstance(harness, CodexCliHarnessAdapter)
+    harness.runner = FakeCommands()
 
     provider = registry.provider("openai-subscription")
 
     assert provider is not None
     assert provider.identity().access == "subscription"
     assert provider.identity().id == "openai-subscription"
+    assert provider.readiness().ready
+    assert [model.model_id for model in provider.list_models()] == ["gpt-6-sol"]
 
 
 def test_runtime_does_not_bridge_unconfigured_harness() -> None:
