@@ -6,6 +6,8 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+from rich.console import RenderableType
+
 import pytest
 
 from agent_cli import cli
@@ -181,7 +183,7 @@ def test_shell_exits_on_idle_ctrl_c() -> None:
 def test_shell_cancels_foreground_operation_on_ctrl_c() -> None:
     output, write_line = recorder()
 
-    def interrupted(_line: str, _context: CommandContext) -> cli.RenderableType | None:
+    def interrupted(_line: str, _context: CommandContext) -> RenderableType | None:
         raise KeyboardInterrupt
 
     original = cli.handle_input
