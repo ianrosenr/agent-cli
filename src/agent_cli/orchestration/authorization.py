@@ -147,7 +147,10 @@ def render_authorization_request(
     return blocks(
         requested,
         details,
-        muted("Approve or reject this bounded implementation. The next line is treated as your answer."),
+        muted(
+            "Approve or reject this bounded implementation. "
+            "The next line is treated as your answer."
+        ),
     )
 
 
