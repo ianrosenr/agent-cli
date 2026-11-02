@@ -101,9 +101,11 @@ class HarnessLoginService:
 
         names = ", ".join(adapter.identity().display_name for adapter in pending)
         while True:
-            answer = self.read_line(
-                f"{names} authentication expired. Reauthenticate now? (Y/n): "
-            ).strip().lower()
+            answer = (
+                self.read_line(f"{names} authentication expired. Reauthenticate now? (Y/n): ")
+                .strip()
+                .lower()
+            )
             if answer in {"n", "no"}:
                 return False
             if answer in {"", "y", "yes"}:
