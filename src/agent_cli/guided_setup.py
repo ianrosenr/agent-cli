@@ -633,10 +633,14 @@ class GuidedSetup:
         what the project would inherit from global config, and removes project overrides that
         were set back to the inherited value, so the project keeps following global changes.
         """
-        changes: RawConfig = merge({}, HARNESS_METADATA)
+        changes: RawConfig = {}
         removals: list[str] = []
         for key, value in answers.items():
             if target is Layer.GLOBAL or value != lookup(inherited, key):
+                if key.startswith("harnesses."):
+                    harness_id = key.split(".", 2)[1]
+                    metadata = HARNESS_METADATA["harnesses"][harness_id]
+                    changes = merge(changes, {"harnesses": {harness_id: metadata}})
                 changes = merge(changes, nested(key, value))
             elif contains(layer_data, key):
                 removals.append(key)
