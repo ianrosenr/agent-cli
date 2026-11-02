@@ -394,7 +394,7 @@ def test_subscription_login_is_ready() -> None:
     readiness = harness.readiness()
 
     assert readiness.state is ReadinessState.READY
-    assert "subscription auth (Max)" in readiness.reason
+    assert "Claude subscription auth" in readiness.reason
     assert harness.identity().version == "2.1.307 (Claude Code)"
     assert len(commands.calls) == 2
 
@@ -479,7 +479,7 @@ def test_oauth_with_subscription_metadata_is_ready() -> None:
     )
     readiness = adapter(commands=commands).readiness()
     assert readiness.state is ReadinessState.READY
-    assert "subscription auth (Pro)" in readiness.reason
+    assert "Claude subscription auth" in readiness.reason
 
 
 def test_signed_out_is_auth_required() -> None:
