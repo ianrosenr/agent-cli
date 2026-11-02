@@ -201,9 +201,7 @@ def test_write_me_a_poem_is_answered_directly(project: Path, isolated_home: Path
 
 def test_improving_this_router_is_a_repository_answer(project: Path, isolated_home: Path) -> None:
     question = "How would you improve this router?"
-    provider = ModelProvider(
-        answer=IMPROVE, route=judge(**{question: ("repo_answer", question)})
-    )
+    provider = ModelProvider(answer=IMPROVE, route=judge(**{question: ("repo_answer", question)}))
     plans = Recorder()
     store = TaskStore.for_repository(project)
     output = plain(
@@ -446,9 +444,7 @@ def test_concise_verbosity_shows_only_the_answer(project: Path, isolated_home: P
 def test_verbose_verbosity_explains_routing_and_the_resolved_request(
     project: Path, isolated_home: Path
 ) -> None:
-    provider = ModelProvider(
-        route=judge(**{"fix it": ("ship", "Fix the retry bug in route()")})
-    )
+    provider = ModelProvider(route=judge(**{"fix it": ("ship", "Fix the retry bug in route()")}))
     config = config_for(isolated_home, project, "verbose")
     output = plain(gateway(config, provider, orchestrate=Recorder()).handle("fix it"))
     assert "Routed as ship/moderate, repository (supervisor: supervisor@3 (tiny via" in output
