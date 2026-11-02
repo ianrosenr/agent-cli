@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from agent_cli.config.model import Verbosity
-
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from agent_cli.config.model import Verbosity
 from agent_cli.state import PIN_KINDS, PlanningQuestion, Task, TaskStore
 from agent_cli.state.status import pins_for_later_roles
 from agent_cli.ui import blocks, bullets, error, fields, heading, muted, section, styled, warning
