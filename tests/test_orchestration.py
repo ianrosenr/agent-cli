@@ -27,7 +27,7 @@ from agent_cli.adapters import (
     ReadinessState,
     Usage,
 )
-from agent_cli.adapters.fake import FakeHarnessAdapter
+from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.adapters.provider import ProviderAdapter
 from agent_cli.budget import (
     BudgetGuard,
@@ -221,6 +221,52 @@ def test_trivial_task_brief_bypasses_planner(
     assert child.role == role
     assert store.latest_spec(child.id) is None
     assert f"Single {kind} task" in output
+
+
+def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
+    store: TaskStore, config: ConfigService, project: Path
+) -> None:
+    planner = FakePlanner([])
+    provider = FakeProviderAdapter(
+        ProviderIdentity("sub", "Subscription", "fake", "subscription"),
+        ProviderReadiness(ReadinessState.READY),
+        (ModelDescriptor("sub", "small"),),
+    )
+    harness = FakeHarnessAdapter(auto_finish=False)
+    models = registry(model("small", cost="low", latency="fast"))
+    orchestration = OrchestrationService(
+        store,
+        config,
+        AdapterRegistry([harness], [provider]),
+        planner=planner,
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "are there any pytests failing?",
+            TaskBrief(
+                "Run pytest and report whether tests fail",
+                "",
+                "scout",
+                "trivial",
+            ),
+        )
+    )
+
+    assert planner.inputs == []
+    assert "Scout started" in output
+    assert "Ready for worker execution" not in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    [worker] = store.workers(child.id)
+    assert worker.status is WorkerStatus.RUNNING
+    [running] = harness.workers.values()
+    assert running.request.mode == "plan-only"
+    assert running.request.working_directory != project
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
