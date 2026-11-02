@@ -354,36 +354,6 @@ class WorkerExecutor:
         if harness is None:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
-        manager = WorktreeManager(self.root, self.config)
-        workspace = manager.create(task.id, kind)
-        if kind == "ship":
-            predecessors = self.store.dependencies(task.id)
-            sources: list[Path] = []
-            for predecessor in predecessors:
-                original = self.store.task(predecessor)
-                if original is None or original.status is not TaskStatus.COMPLETED:
-                    raise WorkerLaunchError("cannot launch until all predecessors finish")
-                records = self.store.workers(predecessor)
-                if original.role != "implementer":
-                    continue
-                if records and records[-1].worktree:
-                    sources.append(Path(records[-1].worktree))
-                else:
-                    raise WorkerLaunchError("predecessor has no integration workspace")
-            manager.inherit(workspace, sources)
-        skills = self._skill_context(task.id)
-        request = WorkerRequest(
-            task.id,
-            task.role or "research_investigator",
-            spec,
-            workspace,
-            repository=str(self.root),
-            skills=skills,
-            authority=authority,
-            model=Selection(dispatch.model_id, pinned="model" in pins),
-            provider=Selection(dispatch.provider_id, pinned="provider" in pins),
-            harness=Selection(dispatch.harness_id, pinned="harness" in pins),
-        )
         with _LAUNCH_LOCK:
             active = self._active_worker_count(task.session_id)
             if active >= self.config.workers.max_concurrency:
@@ -391,6 +361,36 @@ class WorkerExecutor:
                     f"worker concurrency limit reached ({active}/"
                     f"{self.config.workers.max_concurrency})"
                 )
+            manager = WorktreeManager(self.root, self.config)
+            workspace = manager.create(task.id, kind)
+            if kind == "ship":
+                predecessors = self.store.dependencies(task.id)
+                sources: list[Path] = []
+                for predecessor in predecessors:
+                    original = self.store.task(predecessor)
+                    if original is None or original.status is not TaskStatus.COMPLETED:
+                        raise WorkerLaunchError("cannot launch until all predecessors finish")
+                    records = self.store.workers(predecessor)
+                    if original.role != "implementer":
+                        continue
+                    if records and records[-1].worktree:
+                        sources.append(Path(records[-1].worktree))
+                    else:
+                        raise WorkerLaunchError("predecessor has no integration workspace")
+                manager.inherit(workspace, sources)
+            skills = self._skill_context(task.id)
+            request = WorkerRequest(
+                task.id,
+                task.role or "research_investigator",
+                spec,
+                workspace,
+                repository=str(self.root),
+                skills=skills,
+                authority=authority,
+                model=Selection(dispatch.model_id, pinned="model" in pins),
+                provider=Selection(dispatch.provider_id, pinned="provider" in pins),
+                harness=Selection(dispatch.harness_id, pinned="harness" in pins),
+            )
             recorded = self.store.record_worker(
                 task.id,
                 request.role,
