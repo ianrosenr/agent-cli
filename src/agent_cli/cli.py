@@ -206,12 +206,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = make_console()
     try:
         registry = build_registry()
-        migrated = config.migrate_legacy_builtin_harnesses()
-        migration = (
-            info("Updated legacy Claude/Codex harness config to the current format.")
-            if migrated
-            else None
-        )
         problem = blocks(config_problem(config), adapter_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
@@ -239,7 +233,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             ).refresh_latest()
         startup = blocks(
             home(registry, unicode=is_unicode(console)),
-            migration,
             problem,
             recovery,
             maintenance,
