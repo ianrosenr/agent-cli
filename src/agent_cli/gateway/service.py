@@ -246,4 +246,3 @@ def render_answer(answer: Answer, decision: SupervisorDecision, config: Config) 
     if verbosity == "verbose" and answer.context:
         notes.append("Repository context: " + ", ".join(answer.context) + ".")
     return blocks(body, Group(*(muted(note) for note in notes)))
-
