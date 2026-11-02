@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import pytest
 
 from agent_cli.adapters import (
     DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     AdapterRegistry,
     Changes,
     HarnessIdentity,
@@ -22,9 +24,9 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
-from agent_cli.config.model import WorkersConfig
+from agent_cli.config.model import ImplementationConfig, WorkersConfig
 from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
-from agent_cli.state import Task, TaskStatus, TaskStore
+from agent_cli.state import AuthorizationStatus, Task, TaskStatus, TaskStore
 from agent_cli.workers import (
     WorkerDispatcher,
     WorkerExecutor,
@@ -278,3 +280,147 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     assert updated is not None and updated.status is TaskStatus.FAILED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
     assert "modified tracked source" in summary.metadata["summary"]
+
+
+def test_write_worker_requires_current_approved_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Fix the typo",
+        kind="ship",
+        complexity="trivial",
+    )
+    child = store.create_task(
+        session.id,
+        "Fix the bounded typo",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    executor = WorkerExecutor(store, adapters, registry(), Config(), root)
+
+    with pytest.raises(WorkerLaunchError, match="no approved implementation authorization"):
+        executor.launch(
+            child,
+            "ship",
+            "trivial",
+            child.goal,
+            IMPLEMENTATION_AUTHORITY,
+        )
+
+    store.add_authorization(
+        child.id,
+        "autopilot",
+        AuthorizationStatus.APPROVED,
+        "bounded trivial ship",
+        decided_by="policy:autopilot",
+    )
+    started = executor.launch(
+        child,
+        "ship",
+        "trivial",
+        child.goal,
+        IMPLEMENTATION_AUTHORITY,
+    )
+
+    assert "completed" in started
+
+
+def test_mode_change_invalidates_previous_write_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(session.id, "Fix the typo", kind="ship", complexity="trivial")
+    child = store.create_task(
+        session.id, "Fix the bounded typo", parent_id=parent.id, role="implementer"
+    )
+    store.add_authorization(
+        child.id,
+        "autopilot",
+        AuthorizationStatus.APPROVED,
+        "prior mode",
+        decided_by="policy:autopilot",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    current = replace(Config(), implementation=ImplementationConfig(mode="checkpoint"))
+    executor = WorkerExecutor(store, adapters, registry(), current, root)
+    with pytest.raises(WorkerLaunchError, match="not current mode checkpoint"):
+        executor.launch(child, "ship", "trivial", child.goal, IMPLEMENTATION_AUTHORITY)
+
+
+def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Change cache behavior",
+        kind="ship",
+        complexity="moderate",
+    )
+    child = store.create_task(
+        session.id,
+        "Change cache behavior",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    first = store.add_spec_version(child.id, "Bounded spec v1")
+    store.add_authorization(
+        child.id,
+        "autopilot",
+        AuthorizationStatus.APPROVED,
+        "bounded",
+        spec_version=first.version,
+        decided_by="policy:autopilot",
+    )
+    store.add_spec_version(child.id, "Bounded spec v2")
+    adapters, _ = runtime(auto_finish=True)
+    executor = WorkerExecutor(store, adapters, registry(), Config(), root)
+
+    with pytest.raises(WorkerLaunchError, match="no approved implementation authorization"):
+        executor.launch(
+            child,
+            "ship",
+            "moderate",
+            "Bounded spec v2",
+            IMPLEMENTATION_AUTHORITY,
+        )
+
+
+def test_current_plan_only_overrides_previous_write_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Fix the typo",
+        kind="ship",
+        complexity="trivial",
+    )
+    child = store.create_task(
+        session.id,
+        "Fix the bounded typo",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    store.add_authorization(
+        child.id,
+        "checkpoint",
+        AuthorizationStatus.APPROVED,
+        "user previously approved",
+        decided_by="user",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    config = replace(Config(), implementation=ImplementationConfig(mode="plan-only"))
+    executor = WorkerExecutor(store, adapters, registry(), config, root)
+
+    with pytest.raises(WorkerLaunchError, match="plan-only"):
+        executor.launch(
+            child,
+            "ship",
+            "trivial",
+            child.goal,
+            IMPLEMENTATION_AUTHORITY,
+        )

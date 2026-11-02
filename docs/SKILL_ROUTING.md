@@ -6,7 +6,8 @@ It is separate from role assignment and from model/provider/harness routing.
 
 ## Design
 
-A role defines authority. Skills provide policy or knowledge. Adding a skill never expands role authority.
+A role defines responsibility. Skills provide policy or knowledge. Worker authority is selected
+separately by orchestration, and adding a skill never expands it.
 
 The orchestrator does **not** choose skill names and does not need skill bodies in its prompt.
 
@@ -90,7 +91,7 @@ The classifier contract MUST:
 - return only normalized signal IDs plus optional brief evidence
 - have a small output contract
 - never directly choose skills
-- never change role authority
+- never change worker authority
 
 Choosing the cheapest configured model that satisfies the routing-classification floor belongs to V1-07, not V1-06.
 
@@ -245,7 +246,7 @@ If a worker discovers an uncovered policy domain:
 
 V1-06 does not own harness follow-up or live worker-context injection; later orchestration/worker lifecycle code decides how newly selected policy reaches a running worker.
 
-The worker keeps the same role authority and approved scope.
+The worker keeps the same worker authority and approved scope.
 
 ## Learning loop
 

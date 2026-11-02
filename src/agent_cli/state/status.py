@@ -119,6 +119,14 @@ def task_line(store: TaskStore, task: Task) -> Text:
     spec = store.latest_spec(task.id)
     if spec is not None:
         parts.append(Text(f"spec v{spec.version} {spec.approval}"))
+    authorization = store.latest_authorization(task.id)
+    if authorization is not None:
+        parts.append(
+            Text(
+                f"authority {authorization.authority_profile} {authorization.status} "
+                f"({authorization.mode})"
+            )
+        )
     workers = store.workers(task.id)
     if workers:
         latest = workers[-1]

@@ -1,12 +1,8 @@
-"""The orchestration service: ordinary root-prompt text in, persisted planning state out.
+"""Supervisor-side orchestration, preparation, authorization, and worker handoff.
 
-For each request it coordinates, in order: the session and root task, V1-05 inspection, the
-planner, whole-proposal validation, the atomic plan write, V1-06 skill routing, and pending
-specs. Then it stops. It never edits repository files, launches a harness, creates a worktree,
-or approves a spec; V1-10 and V1-11 take over from the persisted plan.
-
-A pending planning question captures the next ordinary input as its answer, so a restart can
-never skip it.
+Planning is conditional. Prepared scouts may launch with diagnostic authority. Prepared ships pass
+through the V1-10 authorization boundary before any implementation-authority worker can launch.
+Pending planning questions and checkpoint authorization gates both survive restart.
 """
 
 from __future__ import annotations
@@ -18,7 +14,7 @@ from pathlib import Path
 
 from rich.console import RenderableType
 
-from agent_cli.adapters import DIAGNOSTIC_AUTHORITY, AdapterRegistry
+from agent_cli.adapters import DIAGNOSTIC_AUTHORITY, IMPLEMENTATION_AUTHORITY, AdapterRegistry
 from agent_cli.budget import NO_PRICING, BudgetGuard, CostEstimator, SpendLedger
 from agent_cli.config import Config, ConfigError, ConfigService
 from agent_cli.models import (
@@ -30,6 +26,13 @@ from agent_cli.models import (
     select_classifier,
 )
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
+from agent_cli.orchestration.authorization import (
+    authorization_answer,
+    authorization_scope,
+    decide_authorization,
+    render_authorization_request,
+    render_authorization_result,
+)
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
     PlanningInput,
@@ -59,7 +62,16 @@ from agent_cli.orchestration.spec_author import (
 )
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
-from agent_cli.state import PinKind, Task, TaskStateError, TaskStore
+from agent_cli.state import (
+    AuthorizationStatus,
+    PinKind,
+    Task,
+    TaskAuthorization,
+    TaskStateError,
+    TaskStatus,
+    TaskStore,
+)
+from agent_cli.terms import TaskComplexity
 from agent_cli.ui import error, info
 from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
@@ -104,6 +116,10 @@ class OrchestrationService:
             session = self.store.latest_session() if self.store.exists() else None
             if session is None or not session.open:
                 session = self.store.start_session()
+            authorization = self.store.pending_authorization(session.id)
+            if authorization is not None:
+                return self.answer_authorization(authorization, text)
+
             pending = self.store.pending_planning_question(session.id)
             if pending is None and handoff is not None and handoff.goal.strip():
                 context = (handoff.context,) if handoff.context.strip() else ()
@@ -160,9 +176,6 @@ class OrchestrationService:
                 ),
                 planning,
             )
-            if handoff.kind == "ship":
-                auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-                auth.ensure_any_ready()
             ids = self.store.persist_plan(plan.write(root.id))
         except (PlanRejected, TaskStateError) as error:
             return self.stop(root, f"the direct task could not be saved: {error}")
@@ -172,31 +185,39 @@ class OrchestrationService:
         if problems:
             self.block([root.id], "task preparation is incomplete: " + "; ".join(problems))
 
-        if handoff.kind == "scout" and not problems:
+        if not problems:
             child = self.store.task(ids[item.id])
             project_root = self.config.paths.project_root
             if child is not None and project_root is not None:
-                try:
-                    started = WorkerExecutor(
-                        self.store,
-                        self.adapters,
-                        registry,
-                        config,
-                        project_root,
-                        notify=self.worker_notify,
-                    ).launch(child, "scout", handoff.complexity, child.goal, DIAGNOSTIC_AUTHORITY)
-                    return info("Scout started.", started)
-                except WorkerLaunchError as problem:
-                    return render_plan(
-                        self.store,
-                        root.id,
-                        plan.proposal.summary,
-                        plan.unpinned,
-                        (f"Scout prepared but could not start: {problem}",),
-                        (),
-                        config.ui.verbosity,
-                        ready="Scout prepared but not started.",
-                    )
+                if handoff.kind == "scout":
+                    try:
+                        started = WorkerExecutor(
+                            self.store,
+                            self.adapters,
+                            registry,
+                            config,
+                            project_root,
+                            notify=self.worker_notify,
+                        ).launch(
+                            child,
+                            "scout",
+                            handoff.complexity,
+                            child.goal,
+                            DIAGNOSTIC_AUTHORITY,
+                        )
+                        return info("Scout started.", started)
+                    except WorkerLaunchError as problem:
+                        return render_plan(
+                            self.store,
+                            root.id,
+                            plan.proposal.summary,
+                            plan.unpinned,
+                            (f"Scout prepared but could not start: {problem}",),
+                            (),
+                            config.ui.verbosity,
+                            ready="Scout prepared but not started.",
+                        )
+                return self.authorize_ship(child, config, registry, handoff.complexity)
 
         return render_plan(
             self.store,
@@ -208,6 +229,142 @@ class OrchestrationService:
             config.ui.verbosity,
             ready="Ready for worker execution. Nothing has been run yet.",
         )
+
+    def authorize_ship(
+        self,
+        task: Task,
+        config: Config,
+        registry: ModelRegistry,
+        complexity: TaskComplexity,
+    ) -> RenderableType:
+        """Grant, checkpoint, or block implementation authority for one prepared ship."""
+        spec = self.store.latest_spec(task.id)
+        routing = self.store.latest_skill_routing(task.id)
+        risk_signals = () if routing is None else tuple(signal.signal for signal in routing.signals)
+        decision = decide_authorization(config, complexity, spec, risk_signals)
+        version = None if spec is None else spec.version
+        if decision.action == "block":
+            authorization = self.store.add_authorization(
+                task.id,
+                config.implementation.mode,
+                AuthorizationStatus.REJECTED,
+                decision.reason,
+                spec_version=version,
+                decided_by=f"policy:{config.implementation.mode}",
+            )
+            self.store.set_status(task.id, TaskStatus.BLOCKED, decision.reason)
+            return render_authorization_result(authorization, decision.reason)
+
+        if decision.action == "checkpoint":
+            authorization = self.store.request_authorization(
+                task.id,
+                config.implementation.mode,
+                decision.reason,
+                spec_version=version,
+            )
+            return render_authorization_request(authorization, task, spec)
+
+        authorization = self.store.add_authorization(
+            task.id,
+            config.implementation.mode,
+            AuthorizationStatus.APPROVED,
+            decision.reason,
+            spec_version=version,
+            decided_by="policy:autopilot",
+        )
+        return self.launch_authorized_ship(task, config, registry, complexity, authorization)
+
+    def answer_authorization(
+        self,
+        authorization: TaskAuthorization,
+        text: str,
+    ) -> RenderableType:
+        """Resolve a persisted checkpoint gate from the user's next conversational turn."""
+        task = self.store.task(authorization.task_id)
+        if task is None:
+            raise TaskStateError(f"unknown authorization task: {authorization.task_id}")
+        spec = self.store.latest_spec(task.id)
+        answer = authorization_answer(text)
+        if answer == "unclear":
+            return render_authorization_request(authorization, task, spec)
+        if answer == "reject":
+            rejected = self.store.decide_authorization(
+                authorization.id,
+                AuthorizationStatus.REJECTED,
+                "user",
+                "user rejected implementation authority",
+            )
+            self.settle_canceled_parent(task)
+            return render_authorization_result(
+                rejected,
+                "No source-changing worker was launched.",
+            )
+
+        approved = self.store.decide_authorization(
+            authorization.id,
+            AuthorizationStatus.APPROVED,
+            "user",
+            "user approved bounded implementation authority",
+        )
+        try:
+            config = self.config.resolve()
+            registry = self.registry if self.registry is not None else load_registry()
+        except (ConfigError, RegistryError) as problem:
+            return error("Authorized, but cannot launch implementation.", str(problem))
+        root = self.store.task(self.store.root_task(task.id))
+        complexity = "moderate" if root is None or root.complexity is None else root.complexity
+        return self.launch_authorized_ship(task, config, registry, complexity, approved)
+
+    def launch_authorized_ship(
+        self,
+        task: Task,
+        config: Config,
+        registry: ModelRegistry,
+        complexity: TaskComplexity,
+        authorization: TaskAuthorization,
+    ) -> RenderableType:
+        """Launch only after canonical state records current implementation authorization."""
+        dependencies = [self.store.task(task_id) for task_id in self.store.dependencies(task.id)]
+        if any(
+            dependency is None or dependency.status is not TaskStatus.COMPLETED
+            for dependency in dependencies
+        ):
+            return render_authorization_result(
+                authorization,
+                "Implementation is authorized and waiting for its dependencies.",
+            )
+        project_root = self.config.paths.project_root
+        if project_root is None:
+            return error("Authorized, but cannot launch implementation.", "No repository is open.")
+        auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+        harness_pin = self.store.pins(task.id).get("harness")
+        if harness_pin is not None:
+            ready, reason = auth.repair_pinned((harness_pin.value,))
+            if not ready:
+                return error("Implementation authorized but harness is not ready.", reason)
+        else:
+            auth.ensure_any_ready()
+        spec = self.store.latest_spec(task.id)
+        scope = authorization_scope(task, spec)
+        try:
+            started = WorkerExecutor(
+                self.store,
+                self.adapters,
+                registry,
+                config,
+                project_root,
+                notify=self.worker_notify,
+            ).launch(task, "ship", complexity, scope, IMPLEMENTATION_AUTHORITY)
+        except WorkerLaunchError as problem:
+            return error("Implementation authorized but could not start.", str(problem))
+        return info("Implementation started.", started)
+
+    def settle_canceled_parent(self, task: Task) -> None:
+        if task.parent_id is None:
+            return
+        children = self.store.subtasks(task.parent_id)
+        if children and all(child.status.finished for child in children):
+            self.store.set_status(task.parent_id, TaskStatus.CANCELED)
 
     def plan(self, root: Task) -> RenderableType:
         try:
@@ -238,16 +395,6 @@ class OrchestrationService:
             if attempt + 1 == PLANNING_ATTEMPTS:
                 return self.stop(root, "planning could not be made under the pinned model")
 
-        if plan.proposal.work_items:
-            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-            harness_pins = tuple(pin.value for pin in plan.delegated_pins if pin.kind == "harness")
-            if harness_pins:
-                ready, reason = auth.repair_pinned(harness_pins)
-                if not ready:
-                    return self.stop(root, reason)
-            else:
-                auth.ensure_any_ready()
-
         if plan.question is not None:
             if len(self.store.planning_questions(root.id)) >= MAX_QUESTIONS:
                 return self.stop(
@@ -269,6 +416,13 @@ class OrchestrationService:
         problems += self.write_specs(call, items, planning, plan, repository)
         if problems:
             self.block([root.id], "planning is incomplete: " + "; ".join(problems))
+        elif root.kind == "ship" and len(items) == 1:
+            task_id, item = next(iter(items.items()))
+            if item.changes_code:
+                child = self.store.task(task_id)
+                if child is not None:
+                    complexity = root.complexity or ("trivial" if item.trivial else "moderate")
+                    return self.authorize_ship(child, config, registry, complexity)
         return render_plan(
             self.store,
             root.id,

@@ -382,6 +382,33 @@ def test_delegation_outside_a_repository_explains_where_to_run(isolated_home: Pa
     assert output == NO_REPOSITORY and provider.answered() == []
 
 
+def test_a_pending_authorization_takes_the_next_line_before_routing(
+    project: Path, isolated_home: Path
+) -> None:
+    store = TaskStore.for_repository(project)
+    session = store.start_session()
+    root, _ = store.start_root_task(session.id, "fix caching", kind="ship", complexity="trivial")
+    child = store.create_task(
+        session.id,
+        "Fix caching",
+        parent_id=root.id,
+        role="implementer",
+    )
+    store.request_authorization(
+        child.id,
+        "checkpoint",
+        "confirm bounded write",
+    )
+    provider = ModelProvider()
+    plans = Recorder()
+
+    gateway(config_for(isolated_home, project), provider, orchestrate=plans, store=store).handle(
+        "go ahead"
+    )
+
+    assert plans.seen == [("go ahead", None)] and provider.requests == []
+
+
 def test_a_pending_planning_question_takes_the_next_line_before_routing(
     project: Path, isolated_home: Path
 ) -> None:

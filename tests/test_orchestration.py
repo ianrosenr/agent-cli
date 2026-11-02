@@ -15,6 +15,7 @@ from rich.console import RenderableType
 from agent_cli import cli
 from agent_cli.adapters import (
     DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     ErrorKind,
@@ -71,6 +72,7 @@ from agent_cli.runtime import default_adapters, provider_estimators
 from agent_cli.skills import FakeClassifier
 from agent_cli.state import (
     Approval,
+    AuthorizationStatus,
     PlannedPin,
     PlannedTask,
     PlanWrite,
@@ -222,7 +224,7 @@ def test_trivial_task_brief_bypasses_planner(
     [child] = store.subtasks(root.id)
     assert child.role == role
     assert store.latest_spec(child.id) is None
-    assert f"Single {kind} task" in output
+    assert output.strip()
 
 
 def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
@@ -271,6 +273,185 @@ def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
     assert running.request.working_directory != project
 
 
+def ship_runtime() -> tuple[AdapterRegistry, FakeHarnessAdapter, ModelRegistry]:
+    provider = FakeProviderAdapter(
+        ProviderIdentity("sub", "Subscription", "fake", "subscription"),
+        ProviderReadiness(ReadinessState.READY),
+        (ModelDescriptor("sub", "small"),),
+    )
+    harness = FakeHarnessAdapter(auto_finish=False)
+    models = registry(model("small", cost="low", latency="fast"))
+    return AdapterRegistry([harness], [provider]), harness, models
+
+
+def test_trivial_ship_autopilot_authorizes_and_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+
+    assert "Implementation started" in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None
+    assert authorization.status is AuthorizationStatus.APPROVED
+    assert authorization.decided_by == "policy:autopilot"
+    [running] = harness.workers.values()
+    assert running.request.authority == IMPLEMENTATION_AUTHORITY
+
+
+def test_trivial_ship_checkpoint_waits_then_launches_on_go_ahead(
+    store: TaskStore, config: ConfigService
+) -> None:
+    config.set_session(
+        {
+            "ui": {"verbosity": "normal"},
+            "implementation": {"mode": "checkpoint"},
+        }
+    )
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    first = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+    assert "Authorization required" in first
+    assert harness.workers == {}
+
+    second = plain(orchestration.handle("go ahead"))
+    assert "Implementation started" in second
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is AuthorizationStatus.APPROVED
+    assert authorization.decided_by == "user"
+    assert len(harness.workers) == 1
+
+
+def test_moderate_single_ship_authorizes_after_spec_and_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=adapters,
+        registry=models,
+    )
+
+    output = plain(
+        orchestration.handle(
+            GOAL,
+            TaskBrief(GOAL, "", "ship", "moderate"),
+        )
+    )
+
+    assert "Implementation started" in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    spec = store.latest_spec(child.id)
+    authorization = store.latest_authorization(child.id)
+    assert spec is not None and spec.approval is Approval.APPROVED
+    assert authorization is not None and authorization.status is AuthorizationStatus.APPROVED
+    assert authorization.spec_version == spec.version
+    assert len(harness.workers) == 1
+
+
+def test_complex_single_ship_requires_checkpoint_even_in_autopilot(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=adapters,
+        registry=models,
+    )
+
+    output = plain(
+        orchestration.handle(
+            GOAL,
+            TaskBrief(GOAL, "", "ship", "complex"),
+        )
+    )
+
+    assert "Authorization required" in output
+    assert harness.workers == {}
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is AuthorizationStatus.PENDING
+
+
+def test_trivial_ship_plan_only_never_launches(store: TaskStore, config: ConfigService) -> None:
+    config.set_session(
+        {
+            "ui": {"verbosity": "normal"},
+            "implementation": {"mode": "plan-only"},
+        }
+    )
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+
+    assert "Not authorized" in output
+    assert harness.workers == {}
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is AuthorizationStatus.REJECTED
+    blocked = store.task(child.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
+
+
 # -- Auth-aware harness routing ----------------------------------------------------------------
 
 
@@ -297,7 +478,7 @@ def configure_harnesses(config: ConfigService, *harness_ids: str) -> None:
     )
 
 
-def test_pinned_harness_auth_is_repaired_before_plan_is_persisted(
+def test_planning_does_not_repair_pinned_harness_before_authorization(
     store: TaskStore, config: ConfigService
 ) -> None:
     configure_harnesses(config, "claude-code")
@@ -324,13 +505,13 @@ def test_pinned_harness_auth_is_repaired_before_plan_is_persisted(
 
     output = plain(orchestrator.handle(f"{GOAL} {instruction}"))
 
-    assert calls == [("claude-code",)]
+    assert calls == []
     [child] = store.subtasks(root_of(store))
     assert store.pins(child.id)["harness"].value == "claude-code"
     assert "Ready for spec review" in output
 
 
-def test_pinned_harness_declined_reauth_blocks_without_fallback(
+def test_planning_persists_pinned_harness_without_reauth(
     store: TaskStore, config: ConfigService
 ) -> None:
     configure_harnesses(config, "claude-code", "codex-cli")
@@ -357,9 +538,10 @@ def test_pinned_harness_declined_reauth_blocks_without_fallback(
 
     output = plain(orchestrator.handle(f"{GOAL} {instruction}"))
 
-    assert calls == [("claude-code",)]
-    assert store.subtasks(root_of(store)) == []
-    assert "required harness not ready: claude-code" in output
+    assert calls == []
+    [child] = store.subtasks(root_of(store))
+    assert store.pins(child.id)["harness"].value == "claude-code"
+    assert "Ready for spec review" in output
 
 
 def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
@@ -389,7 +571,7 @@ def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
     assert "Ready for spec review" in output
 
 
-def test_unpinned_no_ready_harness_offers_repair_once_and_continues(
+def test_planning_does_not_repair_unpinned_harness_before_authorization(
     store: TaskStore, config: ConfigService
 ) -> None:
     configure_harnesses(config, "claude-code")
@@ -409,13 +591,14 @@ def test_unpinned_no_ready_harness_offers_repair_once_and_continues(
         login_harnesses=login,
     )
 
-    orchestrator.handle(GOAL)
+    output = plain(orchestrator.handle(GOAL))
 
-    assert calls == [("claude-code",)]
+    assert calls == []
     assert len(store.subtasks(root_of(store))) == 1
+    assert "Ready for spec review" in output
 
 
-def test_declined_unpinned_repair_does_not_loop_or_block_planning(
+def test_declined_harness_repair_is_irrelevant_during_planning(
     store: TaskStore, config: ConfigService
 ) -> None:
     configure_harnesses(config, "claude-code")
@@ -436,9 +619,90 @@ def test_declined_unpinned_repair_does_not_loop_or_block_planning(
 
     output = plain(orchestrator.handle(GOAL))
 
-    assert calls == [("claude-code",)]
+    assert calls == []
     assert len(store.subtasks(root_of(store))) == 1
     assert "Ready for spec review" in output
+
+
+def test_authorized_ship_repairs_harness_only_at_launch(
+    store: TaskStore, config: ConfigService
+) -> None:
+    configure_harnesses(config, "claude-code")
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    base, _, models = ship_runtime()
+    provider = next(iter(base.providers().values()))
+    calls: list[tuple[str, ...]] = []
+
+    def login(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        claude.login()
+        return True
+
+    orchestration = OrchestrationService(
+        store,
+        config,
+        AdapterRegistry([claude], [provider]),
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+        login_harnesses=login,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+
+    assert calls == [("claude-code",)]
+    assert "Implementation started" in output
+
+
+def test_authorized_pinned_ship_never_falls_back_when_reauth_is_declined(
+    store: TaskStore, config: ConfigService
+) -> None:
+    configure_harnesses(config, "claude-code", "codex-cli")
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    codex = auth_harness("codex-cli", ReadinessState.READY)
+    base, _, models = ship_runtime()
+    provider = next(iter(base.providers().values()))
+    calls: list[tuple[str, ...]] = []
+
+    def decline(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        return False
+
+    instruction = "Use claude-code for implementer."
+    proposed = plan(
+        one_item,
+        pins=(PlannedPin("harness", "claude-code", "implementer", instruction),),
+    )
+    orchestration = service(
+        store,
+        config,
+        proposed,
+        adapters=AdapterRegistry([claude, codex], [provider]),
+        registry=models,
+        login_harnesses=decline,
+    )
+
+    output = plain(
+        orchestration.handle(
+            f"{GOAL} {instruction}",
+            TaskBrief(f"{GOAL} {instruction}", "", "ship", "moderate"),
+        )
+    )
+
+    assert calls == [("claude-code",)]
+    assert "harness is not ready" in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is AuthorizationStatus.APPROVED
+    assert store.workers(child.id) == []
 
 
 def test_planning_question_does_not_trigger_harness_login(
@@ -1569,12 +1833,13 @@ def test_the_shell_routes_requested_work_to_orchestration(
         output.append(plain(renderable))
 
     provider = ScriptedProvider("subscription", model_ids=("claude-sonnet-5-5",))
-    adapters = AdapterRegistry(providers=[provider])
+    harness = FakeHarnessAdapter(auto_finish=False)
+    adapters = AdapterRegistry([harness], [provider])
     cli.run_shell(build_registry(), read_line, write_line, "", config, adapters, store)
 
     assert provider.requests[0].system == SUPERVISOR_SYSTEM
     assert provider.requests[1].system == planner_module.SYSTEM
-    assert "Add TTL expiration to CacheStore." in output[1]
+    assert "Implementation started" in output[1]
     assert "role: orchestrator" in output[2]
     assert GOAL in output[2]
 

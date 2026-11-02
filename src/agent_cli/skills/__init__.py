@@ -1,7 +1,8 @@
 """Skill discovery, deterministic skill routing, and skill-context budgeting.
 
-Roles define authority; skills only add policy. Discovery reads packages, the policy maps signals
-to skills, an optional classifier emits signals, and the selector combines them. Nothing here
+Roles define responsibility; skills only add policy/knowledge; worker authority is a separate
+execution contract. Discovery reads packages, the policy maps signals to skills, an optional
+classifier emits signals, and the selector combines them. Nothing here
 chooses models, providers, or harnesses. See docs/SKILLS.md and docs/SKILL_ROUTING.md.
 """
 

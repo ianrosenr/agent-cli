@@ -16,7 +16,7 @@ from agent_cli.commands.builtin import help_command
 from agent_cli.commands.registry import parse_command
 from agent_cli.config import ConfigPaths, ConfigService, Layer
 from agent_cli.skills import Discovery, RoutingRequest, SkillRouter
-from agent_cli.state import TaskStatus, TaskStore
+from agent_cli.state import AuthorizationStatus, TaskStatus, TaskStore
 from agent_cli.ui import plain
 
 REQUIRED_COMMANDS = {
@@ -311,3 +311,38 @@ def test_parse_command_splits_name_and_args() -> None:
 def test_parse_command_rejects_non_command_input() -> None:
     with pytest.raises(ValueError):
         parse_command("help")
+
+
+def test_cancel_rejects_pending_authorization_and_cancels_request(
+    context: CommandContext, tmp_path: Path
+) -> None:
+    store = TaskStore(tmp_path / "tasks.sqlite")
+    session = store.start_session()
+    root, _ = store.start_root_task(
+        session.id,
+        "Fix caching",
+        kind="ship",
+        complexity="trivial",
+    )
+    child = store.create_task(
+        session.id,
+        "Fix caching",
+        parent_id=root.id,
+        role="implementer",
+    )
+    authorization = store.request_authorization(
+        child.id,
+        "checkpoint",
+        "confirm bounded write",
+    )
+
+    output = run(replace(context, tasks=store), "/cancel")
+
+    assert "Canceled implementation authorization" in output
+    decided = store.latest_authorization(child.id)
+    assert decided is not None and decided.id == authorization.id
+    assert decided.status is AuthorizationStatus.REJECTED
+    child_state = store.task(child.id)
+    root_state = store.task(root.id)
+    assert child_state is not None and child_state.status is TaskStatus.CANCELED
+    assert root_state is not None and root_state.status is TaskStatus.CANCELED

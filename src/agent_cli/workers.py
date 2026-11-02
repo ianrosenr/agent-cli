@@ -36,7 +36,14 @@ from agent_cli.models import (
     runtime_paths,
 )
 from agent_cli.skills import SkillError, load_catalog, skill_sources
-from agent_cli.state import PinKind, Task, TaskStateError, TaskStatus, TaskStore
+from agent_cli.state import (
+    AuthorizationStatus,
+    PinKind,
+    Task,
+    TaskStateError,
+    TaskStatus,
+    TaskStore,
+)
 from agent_cli.terms import Role, TaskComplexity, TaskKind
 
 
@@ -256,6 +263,8 @@ class WorkerExecutor:
         spec: str,
         authority: WorkerAuthority,
     ) -> str:
+        if authority.modify_source:
+            self._require_write_authorization(task, authority)
         pins = self._pins(task)
         dispatch = WorkerDispatcher(self.adapters, self.registry, self.config).choose(
             task, complexity, pins, authority
@@ -472,6 +481,33 @@ class WorkerExecutor:
         else:
             status = TaskStatus.COMPLETED
         self.store.set_status(task.parent_id, status)
+
+    def _require_write_authorization(
+        self,
+        task: Task,
+        authority: WorkerAuthority,
+    ) -> None:
+        if self.config.implementation.mode == "plan-only":
+            raise WorkerLaunchError("plan-only mode forbids source-changing workers")
+        authorization = self.store.latest_authorization(task.id)
+        if authorization is None or authorization.status is not AuthorizationStatus.APPROVED:
+            raise WorkerLaunchError(f"task {task.id} has no approved implementation authorization")
+        if authorization.mode != self.config.implementation.mode:
+            raise WorkerLaunchError(
+                f"task {task.id} was authorized under {authorization.mode}, "
+                f"not current mode {self.config.implementation.mode}"
+            )
+        if authorization.authority_profile != authority.profile:
+            raise WorkerLaunchError(
+                f"task {task.id} is authorized for {authorization.authority_profile}, "
+                f"not {authority.profile}"
+            )
+        spec = self.store.latest_spec(task.id)
+        current_version = None if spec is None else spec.version
+        if authorization.spec_version != current_version:
+            raise WorkerLaunchError(
+                f"task {task.id} authorization does not match the current implementation scope"
+            )
 
     def _active_worker_count(self, session_id: str) -> int:
         return sum(

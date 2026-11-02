@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import Literal, get_args
 
 from agent_cli.adapters.domain import Selection, WorkerStatus
-from agent_cli.terms import TaskComplexity, TaskKind
+from agent_cli.terms import ImplementationMode, TaskComplexity, TaskKind
 
 type PinKind = Literal["model", "provider", "harness"]
 type RequirementSource = Literal["user", "derived"]
@@ -42,7 +42,15 @@ class Approval(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     VOIDED = "voided"
-    """Approval was withdrawn, for example by a material requirement change."""
+    """Spec approval was withdrawn, for example by a material requirement change."""
+
+
+class AuthorizationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    VOIDED = "voided"
+    """Implementation authority was withdrawn or superseded."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +119,23 @@ class SpecVersion:
     """Unified diff from the previous version; empty for the first version."""
     approval: Approval
     created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAuthorization:
+    """One durable decision about granting implementation authority to a task."""
+
+    id: str
+    task_id: str
+    status: AuthorizationStatus
+    mode: ImplementationMode
+    authority_profile: str
+    spec_version: int | None
+    reason: str
+    decided_by: str | None
+    blocker_id: str | None
+    created_at: str
+    decided_at: str | None
 
 
 @dataclass(frozen=True, slots=True)

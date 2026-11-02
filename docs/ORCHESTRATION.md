@@ -170,7 +170,9 @@ Out of scope
 
 Keep specs concise: enough to remove implementation ambiguity, not a design essay. Do not invent exact files when evidence only identifies an area/module. Consequential unresolved questions prevent the work from becoming implementation-ready.
 
-V1-09 never approves its own specs. V1-10 owns spec review and approval.
+V1-09 only prepares specs. V1-10 binds write authority to the exact current task/spec: when
+implementation authorization is granted, that bound spec becomes approved for execution. Changing
+the spec voids active authorization. Result/code review remains a separate later phase.
 
 ## Implementation
 
@@ -199,17 +201,21 @@ Validation details worth knowing:
 
 `/autopilot` shows the effective `implementation.mode` and where it comes from; `/autopilot on|off|plan-only [global|project]` saves only that key (default: global). `off` means `checkpoint`. V1-10 applies the mode.
 
-## Roles and authority
+## Roles and worker authority
 
-| Role | Reasoning floor | May | May not |
+Roles describe responsibility and reasoning needs; they do not themselves grant technical
+permissions. Every launched worker separately receives `research`, `diagnostic`, or
+`implementation` authority. Skills never expand that authority.
+
+| Role | Reasoning floor | Responsibility | Must not infer from role alone |
 | --- | --- | --- | --- |
 | Orchestrator | high | decompose work, write canonical memory, coordinate, ask the user, escalate | edit code directly |
 | Spec author | high | read the repo, write and revise specs | edit code, expand the user's goal |
 | Spec reviewer | mid (escalates on risk) | question the spec author, approve or reject specs | rewrite the spec itself |
 | Architect | high | analyze architecture and propose bounded design constraints/options | edit code, expand product intent |
-| Implementer | low (with a precise spec) | edit files in its own worktree within spec scope, run tests | redesign, infer requirements, broaden scope, do unrelated refactors, silently resolve consequential ambiguity |
+| Implementer | low (with a precise spec) | implement the bounded task when orchestration grants implementation authority | that write permission exists merely because the role is implementer; redesign, broaden scope, or silently resolve consequential ambiguity |
 | Code reviewer | mid (escalates on risk) | question the implementer, request changes, approve | edit code |
-| Research investigator | high | read the repo and approved external sources, report findings | edit code, make design decisions |
+| Research investigator | high | investigate and report findings | shell or source-write permission merely because of the role; make design decisions |
 | Security investigator | high | assess security-sensitive specs and diffs | edit code |
 | Skill author | high | author/revise skill policy content within an explicitly scoped skill task | expand another role's authority or change product scope |
 | Skill evaluator | high | evaluate skill behavior/coverage and report findings | silently rewrite skills or expand another role's authority |
@@ -257,14 +263,18 @@ Vague preferences such as "use something cheap" are routing preferences, not har
 
 ## Implementation modes
 
+Implementation mode controls **whether Agent CLI grants implementation authority**. It is not passed
+to Claude Code, Codex, or any other harness as a vendor permission mode.
 
 | Mode | Behavior |
 | --- | --- |
-| **autopilot** (default) | After spec approval, the implementer makes every change the spec authorizes without asking per edit. No scope expansion. |
-| **checkpoint** | The implementer proposes each coherent batch (usually one file or one tightly related set of edits) and waits for user approval. |
-| **plan-only** | No files change. The agent explains the intended implementation. |
+| **autopilot** (default) | Agent CLI may grant implementation authority automatically when the current task/spec is sufficiently bounded. Moderate work requires a current spec; complex or risk-sensitive work still checkpoints. |
+| **checkpoint** | Agent CLI persists a user authorization gate. No source-changing worker launches until the user approves the exact current task/spec. |
+| **plan-only** | Agent CLI never grants implementation authority. Planning/spec preparation may continue, but no source-changing worker launches. |
 
-In every mode, anything outside the approved spec stops the implementer and escalates.
+Authorization is durable and scope-bound. The worker runtime independently verifies a current
+approved authorization before accepting `modify_source=true`. A changed spec voids previous
+authorization, so an earlier "go ahead" cannot authorize a materially changed scope.
 
 ## Escalation
 
