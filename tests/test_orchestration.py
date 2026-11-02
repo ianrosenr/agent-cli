@@ -50,6 +50,7 @@ from agent_cli.orchestration import (
     ModelOutputError,
     OrchestrationService,
     PlanningInput,
+    TaskBrief,
     PlanProposal,
     PlanRejected,
     ProposedQuestion,
@@ -185,6 +186,39 @@ def planning_input(goal: str = GOAL, *answers: str) -> PlanningInput:
         tuple(UserText(f"d{i}", text) for i, text in enumerate(answers)),
         RepositoryContext(),
     )
+
+
+# -- Supervisor fast path ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("kind", "role"),
+    [("scout", "research_investigator"), ("ship", "implementer")],
+)
+def test_trivial_task_brief_bypasses_planner(
+    store: TaskStore, config: ConfigService, kind: str, role: str
+) -> None:
+    planner = FakePlanner([])
+    orchestration = OrchestrationService(
+        store,
+        config,
+        planner=planner,
+        spec_author=FakeSpecAuthor(),
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "do the bounded task",
+            TaskBrief("Do the bounded task", "", kind, "trivial"),  # type: ignore[arg-type]
+        )
+    )
+
+    assert planner.inputs == []
+    [child] = store.subtasks(root_of(store))
+    assert child.role == role
+    assert store.latest_spec(child.id) is None
+    assert f"Single {kind} task" in output
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
