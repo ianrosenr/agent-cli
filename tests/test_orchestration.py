@@ -192,9 +192,25 @@ def auth_harness(harness_id: str, state: ReadinessState) -> FakeHarnessAdapter:
     )
 
 
+def configure_harnesses(config: ConfigService, *harness_ids: str) -> None:
+    config.set_session(
+        {
+            "harnesses": {
+                harness_id: {
+                    "type": "cli",
+                    "profile": harness_id,
+                    "enabled": True,
+                }
+                for harness_id in harness_ids
+            }
+        }
+    )
+
+
 def test_pinned_harness_auth_is_repaired_before_plan_is_persisted(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
 
@@ -227,6 +243,7 @@ def test_pinned_harness_auth_is_repaired_before_plan_is_persisted(
 def test_pinned_harness_declined_reauth_blocks_without_fallback(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code", "codex-cli")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     codex = auth_harness("codex-cli", ReadinessState.READY)
     calls: list[tuple[str, ...]] = []
@@ -258,6 +275,7 @@ def test_pinned_harness_declined_reauth_blocks_without_fallback(
 def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code", "codex-cli")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     codex = auth_harness("codex-cli", ReadinessState.READY)
     calls: list[tuple[str, ...]] = []
@@ -284,6 +302,7 @@ def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
 def test_unpinned_no_ready_harness_offers_repair_once_and_continues(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
 
@@ -309,6 +328,7 @@ def test_unpinned_no_ready_harness_offers_repair_once_and_continues(
 def test_declined_unpinned_repair_does_not_loop_or_block_planning(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
 
@@ -334,6 +354,7 @@ def test_declined_unpinned_repair_does_not_loop_or_block_planning(
 def test_planning_question_does_not_trigger_harness_login(
     store: TaskStore, config: ConfigService
 ) -> None:
+    configure_harnesses(config, "claude-code")
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
 
