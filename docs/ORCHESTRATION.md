@@ -67,11 +67,17 @@ earlier assistant suggestion into user authority.
 
 ## Answer path
 
-A direct answer creates no task state. General answers need no repository. Repository answers add
-bounded V1-05 facts/excerpts with credential-like material scrubbed before model context.
+An answer creates no task state. For a trivial general question the semantic supervisor may return
+the final concise answer in the same call, avoiding a second model invocation. Greetings use the
+zero-model fast path.
 
-Answer calls use generic model/provider routing, access preferences, explicit pins, and budget
-guardrails. Concise verbosity hides internal supervisor decisions.
+Repository-aware answers still run bounded V1-05 inspection and a downstream answer call because
+the supervisor intake turn does not receive repository contents. Moderate/complex general answers
+may also use the downstream answer model rather than forcing a small intake model to overreach.
+
+Explicit answer pins, access preference and budget guardrails still apply to downstream answer
+calls. An explicit answer pin prevents the inline shortcut so the requested model/provider is
+honored. Concise verbosity hides internal supervisor decisions.
 
 ## Task brief and conditional decomposition
 
