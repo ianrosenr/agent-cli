@@ -1,16 +1,17 @@
-"""The root-prompt gateway (V1-09.9): ordinary text is answered, or planned as work.
+"""Root-prompt supervisor intake (V1-09.9).
 
 ::
 
-    root prompt -> IntentRouter -> chat                -> DirectAnswerService
-                                -> repository_question -> RepositoryAnswerService (read-only)
-                                -> orchestration       -> OrchestrationService
+    user -> semantic supervisor -> answer
+                              -> scout (read-only work)
+                              -> ship  (repository changes)
 
-Kept import-light: the shell imports this package at startup, and the services load on first
-use. See docs/ORCHESTRATION.md.
+The actions are internal, not user modes. Repository context is attached to an answer when needed.
+Scout/ship decisions carry complexity downstream so dispatch can choose the minimum sufficient
+skills, model, provider, and harness. See docs/ORCHESTRATION.md.
 """
 
 NO_REPOSITORY = (
-    "Agent CLI plans work inside a Git repository. Start it from your project's directory."
+    "Agent CLI runs repository work inside a Git repository. Start it from your project's directory."
 )
-"""Shown when text asks for repository changes but no repository is open."""
+"""Shown when scout/ship work is requested but no repository is open."""
