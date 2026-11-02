@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
-from agent_cli.config.model import WorkersConfig
+from agent_cli.config.model import ImplementationConfig, WorkersConfig
 from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
 from agent_cli.state import AuthorizationStatus, Task, TaskStatus, TaskStore
 from agent_cli.workers import (
@@ -364,5 +365,43 @@ def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) ->
             "ship",
             "moderate",
             "Bounded spec v2",
+            IMPLEMENTATION_AUTHORITY,
+        )
+
+
+
+def test_current_plan_only_overrides_previous_write_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Fix the typo",
+        kind="ship",
+        complexity="trivial",
+    )
+    child = store.create_task(
+        session.id,
+        "Fix the bounded typo",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    store.add_authorization(
+        child.id,
+        "checkpoint",
+        AuthorizationStatus.APPROVED,
+        "user previously approved",
+        decided_by="user",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    config = replace(Config(), implementation=ImplementationConfig(mode="plan-only"))
+    executor = WorkerExecutor(store, adapters, registry(), config, root)
+
+    with pytest.raises(WorkerLaunchError, match="plan-only"):
+        executor.launch(
+            child,
+            "ship",
+            "trivial",
+            child.goal,
             IMPLEMENTATION_AUTHORITY,
         )
