@@ -82,6 +82,7 @@ class WorkerDispatcher:
         task: Task,
         complexity: TaskComplexity,
         pins: dict[PinKind, str],
+        authority: WorkerAuthority,
     ) -> Dispatch:
         runtime = runtime_paths(self.adapters, self.config)
         role = cast(Role, task.role or "research_investigator")
@@ -139,7 +140,7 @@ class WorkerDispatcher:
                     model=Selection(path.model_id, pinned=bool(model_pin)),
                     provider=Selection(path.provider.id, pinned=bool(provider_pin)),
                     harness=Selection(harness_id, pinned=bool(harness_pin)),
-                    mode="plan-only",
+                    authority=authority,
                 )
                 try:
                     harness.check(probe)
@@ -253,20 +254,17 @@ class WorkerExecutor:
         kind: TaskKind,
         complexity: TaskComplexity,
         spec: str,
-        authority: WorkerAuthority | None = None,
+        authority: WorkerAuthority,
     ) -> str:
         pins = self._pins(task)
         dispatch = WorkerDispatcher(self.adapters, self.registry, self.config).choose(
-            task, complexity, pins
+            task, complexity, pins, authority
         )
         harness = self.adapters.harness(dispatch.harness_id)
         if harness is None:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
         workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
-        selected_authority = authority or (
-            DIAGNOSTIC_AUTHORITY if kind == "scout" else IMPLEMENTATION_AUTHORITY
-        )
         mode = None if kind == "scout" else self.config.implementation.mode
         skills = self._skill_context(task.id)
         request = WorkerRequest(
@@ -276,7 +274,7 @@ class WorkerExecutor:
             workspace,
             repository=str(self.root),
             skills=skills,
-            authority=selected_authority,
+            authority=authority,
             model=Selection(dispatch.model_id, pinned="model" in pins),
             provider=Selection(dispatch.provider_id, pinned="provider" in pins),
             harness=Selection(dispatch.harness_id, pinned="harness" in pins),
@@ -304,7 +302,7 @@ class WorkerExecutor:
                 f"worker:{recorded.id}",
                 {
                     "complexity": complexity,
-                    "authority": selected_authority.profile,
+                    "authority": authority.profile,
                     "model": dispatch.model_id,
                     "provider": dispatch.provider_id,
                     "harness": dispatch.harness_id,
