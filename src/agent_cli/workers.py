@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     Capability,
-    DIAGNOSTIC_AUTHORITY,
-    IMPLEMENTATION_AUTHORITY,
     ErrorKind,
     Failure,
     Selection,
