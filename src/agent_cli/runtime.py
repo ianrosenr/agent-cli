@@ -54,17 +54,19 @@ def default_adapters(
         ]
     )
     for harness_id, harness in registry.harnesses().items():
-        entry = config.harnesses.get(harness_id)
+        harness_entry = config.harnesses.get(harness_id)
         if (
-            entry is not None
-            and entry.enabled
+            harness_entry is not None
+            and harness_entry.enabled
             and harness.capabilities().supports(Capability.DIRECT_MODEL)
         ):
             registry.register_provider(HarnessBackedProviderAdapter(harness))
 
-    entry = config.providers.get(ANTHROPIC)
-    if entry is not None:
-        registry.register_provider(AnthropicProviderAdapter(entry, credentials, anthropic_client))
+    provider_entry = config.providers.get(ANTHROPIC)
+    if provider_entry is not None:
+        registry.register_provider(
+            AnthropicProviderAdapter(provider_entry, credentials, anthropic_client)
+        )
     return registry
 
 
