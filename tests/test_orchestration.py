@@ -1931,4 +1931,4 @@ def test_restart_resumes_queued_work_without_replaying_completed_launches(
     recovered.resume_queued()
 
     assert len(store.workers(child.id)) == 1
-    assert store.task(root.id).status is TaskStatus.COMPLETED
+    assert status(store, root.id) is TaskStatus.COMPLETED
