@@ -23,7 +23,7 @@ from agent_cli.config import Config, ConfigError, ConfigService, Layer
 from agent_cli.config.model import Verbosity
 from agent_cli.guided_setup import GuidedSetup
 from agent_cli.login import HarnessLoginService
-from agent_cli.state import TaskStateError, status_view
+from agent_cli.state import Approval, TaskStateError, status_view
 from agent_cli.state.status import NO_ACTIVE_TASK
 from agent_cli.terms import ImplementationMode
 from agent_cli.ui import (
@@ -209,7 +209,21 @@ def cancel_command(context: CommandContext, args: str) -> RenderableType:
         return NO_QUESTION
     try:
         session = tasks.latest_session()
-        question = None if session is None else tasks.pending_planning_question(session.id)
+        if session is None:
+            return NO_QUESTION
+        authorization = tasks.pending_authorization(session.id)
+        if authorization is not None:
+            tasks.decide_authorization(
+                authorization.id,
+                Approval.REJECTED,
+                "user",
+                "canceled by user",
+            )
+            return success(
+                f"Canceled implementation authorization ({authorization.task_id}).",
+                "No source-changing worker was launched.",
+            )
+        question = tasks.pending_planning_question(session.id)
         if question is None:
             return NO_QUESTION
         tasks.cancel_planning_question(question.id)
