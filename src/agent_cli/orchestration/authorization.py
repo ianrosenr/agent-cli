@@ -61,6 +61,11 @@ def decide_authorization(
             "block",
             "plan-only mode never grants implementation authority",
         )
+    if complexity == "complex" and spec is None:
+        return AuthorizationDecision(
+            "block",
+            "complex work requires a bounded implementation spec before authorization",
+        )
     if mode == "checkpoint":
         return AuthorizationDecision(
             "checkpoint",
