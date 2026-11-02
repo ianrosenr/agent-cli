@@ -176,6 +176,18 @@ def run_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str
     )
 
 
+def safe_process_diagnostic(stderr: str, *sensitive: str, limit: int = 240) -> str:
+    """Return a bounded one-line diagnostic without echoing known prompt/system text."""
+    text = re.sub(r"\x1b\\[[0-?]*[ -/]*[@-~]", "", stderr)
+    for value in sensitive:
+        if value:
+            text = text.replace(value, "[redacted input]")
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
 @dataclass(slots=True)
 class CliHarnessAdapter(HarnessAdapter):
     """One implementation for CLI harnesses; vendor differences live in the profile."""
@@ -345,10 +357,17 @@ class CliHarnessAdapter(HarnessAdapter):
                 f"cannot run model call ({type(error).__name__})",
             ) from None
         if result.returncode != 0:
-            raise AdapterError(
-                ErrorKind.PROVIDER_ERROR,
-                f"model call exited with status {result.returncode}",
+            diagnostic = safe_process_diagnostic(
+                result.stderr,
+                request.prompt,
+                request.system or "",
             )
+            detail = (
+                f"model call exited with status {result.returncode}: {diagnostic}"
+                if diagnostic
+                else f"model call exited with status {result.returncode}"
+            )
+            raise AdapterError(ErrorKind.PROVIDER_ERROR, detail)
         parsed = parse_output(result.stdout, self.profile.output_protocol)
         if isinstance(parsed, Failure):
             raise AdapterError(ErrorKind.PROVIDER_ERROR, parsed.message)
