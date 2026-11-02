@@ -156,6 +156,54 @@ def test_voiding_withdraws_only_approved_specs(store: TaskStore) -> None:
     assert store.spec_versions(pending.id)[0].approval is Approval.PENDING
 
 
+def test_authorization_is_durable_and_new_spec_voids_it(store: TaskStore) -> None:
+    task = store.create_task(store.start_session().id, "Implement")
+    spec = store.add_spec_version(task.id, "Bounded spec v1")
+    authorization = store.add_authorization(
+        task.id,
+        "autopilot",
+        Approval.APPROVED,
+        "bounded",
+        spec_version=spec.version,
+        decided_by="policy:autopilot",
+    )
+
+    store = reopen(store)
+    restored = store.latest_authorization(task.id)
+    assert restored is not None and restored.id == authorization.id
+    assert restored.status is Approval.APPROVED
+    assert store.latest_spec(task.id) is not None
+    assert store.latest_spec(task.id).approval is Approval.APPROVED
+
+    store.add_spec_version(task.id, "Bounded spec v2")
+    voided = store.latest_authorization(task.id)
+    assert voided is not None and voided.status is Approval.VOIDED
+
+
+def test_checkpoint_authorization_blocks_then_resumes_task(store: TaskStore) -> None:
+    session = store.start_session()
+    task = store.create_task(session.id, "Implement")
+    authorization = store.request_authorization(
+        task.id,
+        "checkpoint",
+        "confirm bounded write",
+    )
+
+    assert store.task(task.id) is not None
+    assert store.task(task.id).status is TaskStatus.BLOCKED
+    assert store.pending_authorization(session.id) == authorization
+    decided = store.decide_authorization(
+        authorization.id,
+        Approval.APPROVED,
+        "user",
+        "go ahead",
+    )
+    assert decided.status is Approval.APPROVED
+    assert store.pending_authorization(session.id) is None
+    assert store.task(task.id).status is TaskStatus.PENDING
+    assert store.blockers(session.id) == []
+
+
 def test_user_pins_survive_restart_on_the_right_subtask(store: TaskStore) -> None:
     session = store.start_session()
     parent = store.create_task(session.id, "Feature")
