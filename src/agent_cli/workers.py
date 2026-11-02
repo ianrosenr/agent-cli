@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 import shutil
+import subprocess
 import threading
 import time
 from collections.abc import Callable
@@ -235,7 +235,9 @@ class WorktreeManager:
                     input=changed.stdout, capture_output=True,
                 )
                 if verified.returncode:
-                    raise WorkerLaunchError("predecessor changes conflict; manual integration required")
+                    raise WorkerLaunchError(
+                        "predecessor changes conflict; manual integration required"
+                    )
                 applied = subprocess.run(
                     ("git", "apply", "-"), cwd=target,
                     input=changed.stdout, capture_output=True,
