@@ -9,6 +9,7 @@ from agent_cli.orchestration.authorization import (
     decide_authorization,
 )
 from agent_cli.state import Approval, SpecVersion
+from agent_cli.terms import ImplementationMode
 
 
 def spec() -> SpecVersion:
@@ -22,8 +23,8 @@ def spec() -> SpecVersion:
     )
 
 
-def config(mode: str) -> Config:
-    return replace(Config(), implementation=ImplementationConfig(mode=mode))  # type: ignore[arg-type]
+def config(mode: ImplementationMode) -> Config:
+    return replace(Config(), implementation=ImplementationConfig(mode=mode))
 
 
 def test_autopilot_grants_trivial_ship_without_spec() -> None:
