@@ -216,9 +216,8 @@ def test_piped_input_runs_without_a_terminal(tmp_path: Path) -> None:
     assert TAGLINE in result.stdout
     assert "\033[" not in result.stdout
     assert "Agent CLI help" in result.stdout
-    # Chat runs anywhere; with no model configured nothing can route or answer, and
-    # uncertainty never plans work.
-    assert result.stdout.count("Cannot answer") == 2
+    # The greeting fast path answers locally; unresolved semantic work still needs a model.
+    assert result.stdout.count("Cannot answer") == 1
     assert result.stderr == ""
 
 
