@@ -1932,3 +1932,44 @@ def test_restart_resumes_queued_work_without_replaying_completed_launches(
 
     assert len(store.workers(child.id)) == 1
     assert status(store, root.id) is TaskStatus.COMPLETED
+
+
+def test_planner_retries_overlong_worker_goal(
+    store: TaskStore, config: ConfigService
+) -> None:
+    long_goal = "Inspect files and identify risks. " * 10
+    orchestration = service(
+        store,
+        config,
+        plan(lambda planning: item(planning, goal=long_goal)),
+        plan(one_item),
+    )
+    output = plain(orchestration.handle(GOAL))
+    assert "Planning stopped" not in output
+    assert len(store.subtasks(root_of(store))) == 1
+
+
+def test_resume_queued_covers_multiple_open_sessions(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, _, models = ship_runtime()
+    provider = next(iter(adapters.providers().values()))
+    runtime = AdapterRegistry([FakeHarnessAdapter(auto_finish=True)], [provider])
+    first = store.start_session()
+    first_root, _ = store.start_root_task(
+        first.id, "First request", kind="ship", complexity="trivial"
+    )
+    first_child = store.create_task(
+        first.id, "First change", parent_id=first_root.id, role="implementer"
+    )
+    second = store.start_session()
+    second_root, _ = store.start_root_task(
+        second.id, "Second request", kind="ship", complexity="trivial"
+    )
+    second_child = store.create_task(
+        second.id, "Second change", parent_id=second_root.id, role="implementer"
+    )
+    orchestration = service(store, config, adapters=runtime, registry=models)
+    orchestration.resume_queued()
+    assert len(store.workers(first_child.id)) == 1
+    assert len(store.workers(second_child.id)) == 1
