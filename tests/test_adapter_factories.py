@@ -101,9 +101,11 @@ def test_provider_factory_registry_supports_new_provider_type_without_runtime_ch
 
 def test_factory_registry_rejects_duplicate_type_registration() -> None:
     registry = HarnessFactoryRegistry()
-    factory = lambda harness_id, config: FakeHarnessAdapter(
-        harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
-    )
+    def factory(harness_id: str, config: HarnessConfig) -> FakeHarnessAdapter:
+        return FakeHarnessAdapter(
+            harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
+        )
+
     registry.register("fake", factory)
     with pytest.raises(ValueError, match="already registered"):
         registry.register("fake", factory)
