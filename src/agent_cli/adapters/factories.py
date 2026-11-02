@@ -5,8 +5,8 @@ Runtime depends on these reusable factories, not concrete vendor classes.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from agent_cli.adapters.anthropic import AnthropicProviderAdapter, ClientFactory, sdk_client
