@@ -361,6 +361,36 @@ def test_direct_model_call_uses_exact_model_isolated_env_and_temp_directory() ->
     assert call["cwd"].name.startswith("agent-cli-model-")
 
 
+def test_direct_model_failure_surfaces_sanitized_diagnostic() -> None:
+    prompt = "private user prompt"
+
+    def direct(
+        argv: tuple[str, ...],
+        env: Mapping[str, str],
+        sent: str,
+        cwd: Path,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            "",
+            f"Authentication expired. echoed input: {prompt}",
+        )
+
+    harness = claude_harness(direct_model_runner=direct)
+
+    with pytest.raises(AdapterError) as raised:
+        harness.invoke_model(
+            ProviderRequest("claude-sonnet-5-5", prompt, "private system text", 20)
+        )
+
+    assert raised.value.kind is ErrorKind.PROVIDER_ERROR
+    assert "Authentication expired" in raised.value.message
+    assert prompt not in raised.value.message
+    assert "[redacted input]" in raised.value.message
+
+
 def test_direct_model_rejects_unadvertised_model_without_dispatch() -> None:
     calls: list[int] = []
 
