@@ -453,3 +453,30 @@ def test_worktree_handoff_rejects_conflicting_changes(tmp_path: Path) -> None:
 
     with pytest.raises(WorkerLaunchError, match="conflict"):
         manager.inherit(target, [first, second])
+
+
+def test_recovery_preserves_independent_queued_tasks(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id, "Two independent tasks", kind="ship", complexity="trivial"
+    )
+    interrupted = store.create_task(
+        session.id, "Interrupted", parent_id=parent.id, role="implementer"
+    )
+    queued = store.create_task(
+        session.id, "Queued", parent_id=parent.id, role="implementer"
+    )
+    store.record_worker(
+        interrupted.id, "implementer", WorkerStatus.RUNNING, worktree="uncertain"
+    )
+
+    assert reconcile_orphaned_workers(store) == 1
+    failed = store.task(interrupted.id)
+    assert failed is not None and failed.status is TaskStatus.FAILED
+    pending = store.task(queued.id)
+    assert pending is not None and pending.status is TaskStatus.PENDING
+    parent_state = store.task(parent.id)
+    assert parent_state is not None and not parent_state.status.finished
+    assert reconcile_orphaned_workers(store) == 0
