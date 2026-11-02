@@ -55,9 +55,7 @@ def test_cli_profile_can_be_reused_under_another_configured_instance_name() -> N
 
 def test_unknown_harness_type_and_profile_fail_explicitly() -> None:
     with pytest.raises(AdapterFactoryError, match="unknown type"):
-        default_adapters(
-            Config(harnesses={"x": HarnessConfig(type="other", profile="anything")})
-        )
+        default_adapters(Config(harnesses={"x": HarnessConfig(type="other", profile="anything")}))
 
     with pytest.raises(AdapterFactoryError, match="unknown cli profile"):
         default_adapters(Config(harnesses={"x": harness("not-real")}))
@@ -103,9 +101,7 @@ def test_provider_factory_registry_supports_new_provider_type_without_runtime_ch
 def test_factory_registry_rejects_duplicate_type_registration() -> None:
     registry = HarnessFactoryRegistry()
     def factory(harness_id: str, config: HarnessConfig) -> FakeHarnessAdapter:
-        return FakeHarnessAdapter(
-            harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
-        )
+        return FakeHarnessAdapter(harness_identity=HarnessIdentity(harness_id, harness_id, "1.0"))
 
     registry.register("fake", factory)
     with pytest.raises(ValueError, match="already registered"):
