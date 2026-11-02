@@ -31,6 +31,7 @@ from agent_cli.workers import (
     WorkerDispatcher,
     WorkerExecutor,
     WorkerLaunchError,
+    WorktreeManager,
     reconcile_orphaned_workers,
 )
 
@@ -424,3 +425,31 @@ def test_current_plan_only_overrides_previous_write_authorization(tmp_path: Path
             child.goal,
             IMPLEMENTATION_AUTHORITY,
         )
+
+
+def test_downstream_worktree_inherits_tracked_and_new_files(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    upstream = manager.create("upstream", "ship")
+    (upstream / "pyproject.toml").write_text("[project]\\nname='changed'\\nversion='0.0.0'\\n")
+    (upstream / "addition.py").write_text("VALUE = 42\\n")
+    downstream = manager.create("downstream", "ship")
+
+    manager.inherit(downstream, [upstream])
+
+    assert "changed" in (downstream / "pyproject.toml").read_text()
+    assert (downstream / "addition.py").read_text() == "VALUE = 42\\n"
+    assert "worker-test" in (root / "pyproject.toml").read_text()
+
+
+def test_worktree_handoff_rejects_conflicting_changes(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    first = manager.create("first", "ship")
+    second = manager.create("second", "ship")
+    target = manager.create("target", "ship")
+    (first / "pyproject.toml").write_text("first change\\n")
+    (second / "pyproject.toml").write_text("conflicting change\\n")
+
+    with pytest.raises(WorkerLaunchError, match="conflict"):
+        manager.inherit(target, [first, second])
