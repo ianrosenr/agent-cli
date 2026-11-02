@@ -203,16 +203,14 @@ def test_improving_this_router_is_a_repository_answer(project: Path, isolated_ho
     assert git(project, "status", "--porcelain", "--untracked-files=no") == ""
 
 
-def test_checking_pytest_is_a_read_only_repository_task(
-    project: Path, isolated_home: Path
-) -> None:
+def test_checking_pytest_is_a_read_only_repository_task(project: Path, isolated_home: Path) -> None:
     question = "are there any pytests failing on this feature branch"
     provider = ModelProvider(route=judge(**{question: ("repository_task", question)}))
     plans = Recorder()
 
-    output = gateway(
-        config_for(isolated_home, project), provider, orchestrate=plans
-    ).handle(question)
+    output = gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(
+        question
+    )
 
     assert output == f"planned: {question}"
     [(text, handoff)] = plans.seen
