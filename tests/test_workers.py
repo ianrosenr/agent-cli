@@ -313,7 +313,7 @@ def test_write_worker_requires_current_approved_authorization(tmp_path: Path) ->
     store.add_authorization(
         child.id,
         "autopilot",
-        Approval.APPROVED,
+        AuthorizationStatus.APPROVED,
         "bounded trivial ship",
         decided_by="policy:autopilot",
     )
