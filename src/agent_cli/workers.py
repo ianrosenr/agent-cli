@@ -15,6 +15,8 @@ from agent_cli.adapters import (
     AdapterError,
     AdapterRegistry,
     Capability,
+    ErrorKind,
+    Failure,
     Selection,
     WorkerHandle,
     WorkerRequest,
@@ -301,8 +303,17 @@ class WorkerExecutor:
                 handle = harness.start(request)
             except AdapterError as error:
                 self.store.update_worker(recorded.id, WorkerStatus.FAILED)
+                self.store.add_artifact(
+                    task.id,
+                    "worker-summary",
+                    f"worker:{recorded.id}",
+                    {"summary": f"Worker failed to start: {error}"},
+                )
+                if kind == "scout":
+                    WorktreeManager(self.root, self.config).remove(workspace)
                 raise WorkerLaunchError(str(error)) from error
 
+        self.store.set_status(task.id, TaskStatus.IN_PROGRESS)
         self.store.add_artifact(
             task.id,
             "worker-handle",
@@ -342,7 +353,17 @@ class WorkerExecutor:
     ) -> None:
         harness = self.adapters.harness(harness_id)
         if harness is None:
-            self.store.update_worker(worker_id, WorkerStatus.FAILED)
+            self._finish(
+                worker_id,
+                task_id,
+                kind,
+                workspace,
+                WorkerResult(
+                    WorkerStatus.FAILED,
+                    error=Failure(ErrorKind.NOT_FOUND, f"harness {harness_id!r} disappeared"),
+                ),
+                notify=True,
+            )
             return
         while True:
             try:
@@ -358,9 +379,19 @@ class WorkerExecutor:
                         notify=True,
                     )
                     return
-            except (AdapterError, TaskStateError):
-                with suppress(TaskStateError):
-                    self.store.update_worker(worker_id, WorkerStatus.FAILED)
+            except AdapterError as error:
+                self._finish(
+                    worker_id,
+                    task_id,
+                    kind,
+                    workspace,
+                    WorkerResult(WorkerStatus.FAILED, error=error.failure),
+                    notify=True,
+                )
+                return
+            except TaskStateError as error:
+                if self.notify is not None:
+                    self.notify(f"{kind.title()} {worker_id} lost task state: {error}")
                 return
             time.sleep(self.poll_seconds)
 
@@ -375,12 +406,15 @@ class WorkerExecutor:
         notify: bool,
     ) -> None:
         self.store.update_worker(worker_id, result.status)
-        if result.summary:
+        summary = result.summary or (
+            f"Worker failed: {result.error}" if result.error is not None else ""
+        )
+        if summary:
             self.store.add_artifact(
                 task_id,
                 "worker-summary",
                 f"worker:{worker_id}",
-                {"summary": result.summary},
+                {"summary": summary},
             )
         if result.status is WorkerStatus.COMPLETED:
             self.store.set_status(task_id, TaskStatus.COMPLETED)
@@ -392,10 +426,8 @@ class WorkerExecutor:
         if kind == "scout" and result.status.finished:
             WorktreeManager(self.root, self.config).remove(workspace)
         if notify and self.notify is not None:
-            summary = result.summary or (
-                str(result.error) if result.error is not None else str(result.status)
-            )
-            self.notify(f"{kind.title()} {worker_id} {result.status}: {summary}")
+            notice = summary or str(result.status)
+            self.notify(f"{kind.title()} {worker_id} {result.status}: {notice}")
 
     def _finish_parent(self, task_id: str) -> None:
         task = self.store.task(task_id)
