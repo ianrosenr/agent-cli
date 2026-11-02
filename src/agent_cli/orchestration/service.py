@@ -74,7 +74,7 @@ from agent_cli.state import (
     TaskStore,
 )
 from agent_cli.terms import TaskComplexity
-from agent_cli.ui import error, info
+from agent_cli.ui import error, info, plain
 from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
@@ -165,18 +165,16 @@ class OrchestrationService:
             else:
                 response = self.authorize_ship(child, config, registry, complexity)
             if self.store.pending_authorization(child.session_id) is not None:
-                pending = self.store.pending_authorization(child.session_id)
-                if pending is not None and self.worker_notify is not None:
-                    self.worker_notify(
-                        f"Approval required: {child.goal}. Reply approve/reject in the CLI."
-                    )
                 break  # one user-facing gate at a time
         return response
 
     def worker_finished(self, task_id: str) -> None:
         task = self.store.task(task_id)
         if task is not None and task.parent_id is not None:
-            self.advance(task.parent_id)
+            response = self.advance(task.parent_id)
+            pending = self.store.pending_authorization(task.session_id)
+            if response is not None and pending is not None and self.worker_notify is not None:
+                self.worker_notify(plain(response))
 
     def executor(self, config: Config, registry: ModelRegistry) -> WorkerExecutor:
         project_root = self.config.paths.project_root
