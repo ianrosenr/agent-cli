@@ -33,6 +33,7 @@ def render_plan(
     problems: Sequence[str] = (),
     planned_by: Sequence[str] = (),
     verbosity: Verbosity = "normal",
+    ready: str = READY,
 ) -> RenderableType:
     if verbosity == "concise" and not problems:
         footer = (
@@ -54,7 +55,7 @@ def render_plan(
 
     later = [f"{p.scope}: {p.kind}={p.value}" for p in pins_for_later_roles(store, root_id)]
     assumptions = [a.text for a in store.assumptions(root_id)]
-    outcome = styled(READY, "success") if not problems else warning(INCOMPLETE, SEE_STATUS)
+    outcome = styled(ready, "success") if not problems else warning(INCOMPLETE, SEE_STATUS)
     return blocks(
         Group(heading("Plan"), Text(summary)),
         steps if children else None,
