@@ -36,13 +36,13 @@ class HarnessLoginService:
 
     def selected(self, target: str = "") -> tuple[HarnessAdapter, ...] | RenderableType:
         if target:
-            harness_id = ALIASES.get(target.lower())
-            if harness_id is None:
+            harness_id = ALIASES.get(target.lower(), target)
+            adapter = self.adapters.harness(harness_id)
+            if adapter is None:
                 return error(
                     f"Unknown login target: {target}.",
-                    "Use /login, /login claude, or /login codex.",
+                    "Use /login or /login <configured-harness-id>.",
                 )
-            adapter = self.adapters.harness(harness_id)
             if adapter is None:
                 return error(f"{harness_id} is not available in this session.")
             if not self.enabled(harness_id):
