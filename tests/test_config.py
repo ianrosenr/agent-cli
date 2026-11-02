@@ -307,7 +307,9 @@ def test_credential_references_are_accepted(service: ConfigService, paths: Confi
                 },
                 "other": {"type": "openai-compatible", "api_key_keyring": "agent-cli/other"},
             },
-            "harnesses": {"pi": {"command": "pi"}},
+            "harnesses": {
+                "pi": {"type": "cli", "profile": "pi", "command": "pi"}
+            },
         },
     )
     config = service.resolve()
