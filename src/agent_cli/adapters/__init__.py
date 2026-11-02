@@ -29,6 +29,7 @@ from agent_cli.adapters.domain import (
     WorkerStatus,
 )
 from agent_cli.adapters.harness import HarnessAdapter
+from agent_cli.adapters.harness_provider import HarnessBackedProviderAdapter
 from agent_cli.adapters.provider import ProviderAdapter
 from agent_cli.adapters.registry import AdapterRegistry
 from agent_cli.adapters.status import adapter_status, providers_view
@@ -41,6 +42,7 @@ __all__ = [
     "ErrorKind",
     "Failure",
     "HarnessAdapter",
+    "HarnessBackedProviderAdapter",
     "HarnessCapabilities",
     "HarnessIdentity",
     "HarnessReadiness",
