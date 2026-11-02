@@ -82,10 +82,7 @@ class Conversation:
 
 def configured(*ids: str, version: str = "latest") -> Config:
     return Config(
-        harnesses={
-            id: HarnessConfig(type="cli", profile=id, version=version)
-            for id in ids
-        }
+        harnesses={id: HarnessConfig(type="cli", profile=id, version=version) for id in ids}
     )
 
 
