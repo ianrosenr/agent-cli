@@ -60,7 +60,7 @@ def run_shell(
     reload_adapters: Callable[[], str | None] | None = None,
     auto_startup: bool = False,
 ) -> int:
-    """Show startup, optionally onboard once, then read input until EOF. Ctrl-C clears a line."""
+    """Show startup and read input. Ctrl-C exits idle shell or cancels foreground work."""
     context = CommandContext(
         registry=registry,
         config=config,
@@ -78,14 +78,15 @@ def run_shell(
     while True:
         try:
             line = read_line(PROMPT)
-        except KeyboardInterrupt:
-            continue
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             return 0
         try:
             response = handle_input(line, context)
         except ExitShell:
             return 0
+        except KeyboardInterrupt:
+            write_line(info("Canceled current operation."))
+            continue
         if response is not None:
             write_line(Group(response, Text("")))  # a blank line before the next prompt
 
