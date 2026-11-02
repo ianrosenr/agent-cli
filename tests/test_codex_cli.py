@@ -18,6 +18,7 @@ from agent_cli.adapters import (
     WorkerRequest,
     WorkerStatus,
 )
+from agent_cli.adapters.cli_harness import CliHarnessAdapter
 from agent_cli.adapters.codex_cli import (
     BILLING_OVERRIDE_ENV,
     HARNESS_ID,
@@ -660,13 +661,13 @@ def test_custom_command_is_used_for_detection_and_launch(tmp_path: Path) -> None
 
 def test_runtime_registers_codex_without_persisting_auth() -> None:
     harness = default_adapters(Config()).harness(HARNESS_ID)
-    assert isinstance(harness, CodexCliHarnessAdapter)
+    assert isinstance(harness, CliHarnessAdapter)
 
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(Config(harnesses={"codex-cli": HarnessConfig()}))
     harness = registry.harness("codex-cli")
-    assert isinstance(harness, CodexCliHarnessAdapter)
+    assert isinstance(harness, CliHarnessAdapter)
     harness.runner = FakeCommands()
 
     provider = registry.provider("openai-subscription")
