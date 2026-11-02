@@ -176,9 +176,6 @@ class OrchestrationService:
                 ),
                 planning,
             )
-            if handoff.kind == "ship":
-                auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-                auth.ensure_any_ready()
             ids = self.store.persist_plan(plan.write(root.id))
         except (PlanRejected, TaskStateError) as error:
             return self.stop(root, f"the direct task could not be saved: {error}")
@@ -339,6 +336,14 @@ class OrchestrationService:
         project_root = self.config.paths.project_root
         if project_root is None:
             return error("Authorized, but cannot launch implementation.", "No repository is open.")
+        auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+        harness_pin = self.store.pins(task.id).get("harness")
+        if harness_pin is not None:
+            ready, reason = auth.repair_pinned((harness_pin.value,))
+            if not ready:
+                return error("Implementation authorized but harness is not ready.", reason)
+        else:
+            auth.ensure_any_ready()
         spec = self.store.latest_spec(task.id)
         scope = authorization_scope(task, spec)
         try:
@@ -389,16 +394,6 @@ class OrchestrationService:
                 break
             if attempt + 1 == PLANNING_ATTEMPTS:
                 return self.stop(root, "planning could not be made under the pinned model")
-
-        if plan.proposal.work_items:
-            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-            harness_pins = tuple(pin.value for pin in plan.delegated_pins if pin.kind == "harness")
-            if harness_pins:
-                ready, reason = auth.repair_pinned(harness_pins)
-                if not ready:
-                    return self.stop(root, reason)
-            else:
-                auth.ensure_any_ready()
 
         if plan.question is not None:
             if len(self.store.planning_questions(root.id)) >= MAX_QUESTIONS:
