@@ -37,10 +37,14 @@ class DirectHarness(HarnessAdapter):
         return HarnessCapabilities(frozenset({Capability.START_WORKER, Capability.DIRECT_MODEL}))
 
     def direct_provider(self) -> ProviderIdentity:
-        return ProviderIdentity("example-subscription", "Example subscription", "harness", "subscription")
+        return ProviderIdentity(
+            "example-subscription", "Example subscription", "harness", "subscription"
+        )
 
     def direct_models(self) -> tuple[ModelDescriptor, ...]:
-        return (ModelDescriptor("example-subscription", "example-model", "Example Model", 1000),)
+        return (
+            ModelDescriptor("example-subscription", "example-model", "Example Model", 1000),
+        )
 
     def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
         if self.calls is not None:
