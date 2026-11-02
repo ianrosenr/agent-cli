@@ -53,8 +53,13 @@ def default_adapters(
             CodexCliHarnessAdapter(codex_config),
         ]
     )
-    for harness in registry.harnesses().values():
-        if harness.capabilities().supports(Capability.DIRECT_MODEL):
+    for harness_id, harness in registry.harnesses().items():
+        entry = config.harnesses.get(harness_id)
+        if (
+            entry is not None
+            and entry.enabled
+            and harness.capabilities().supports(Capability.DIRECT_MODEL)
+        ):
             registry.register_provider(HarnessBackedProviderAdapter(harness))
 
     entry = config.providers.get(ANTHROPIC)
