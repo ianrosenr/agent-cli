@@ -142,6 +142,7 @@ class Capability(StrEnum):
     START_WORKER = "start_worker"
     INSTALL = "install"
     UPDATE = "update"
+    DIRECT_MODEL = "direct_model"
     LOGIN = "login"
     FOLLOW_UP = "follow_up"
     INTERRUPT = "interrupt"

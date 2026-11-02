@@ -572,6 +572,9 @@ Automatic first-run onboarding: an unconfigured interactive install enters the e
 ### V1-10.12
 Harness lifecycle: generic install/update capabilities, `/startup` installation offers, and cached startup-only `latest` refreshes. No per-query update checks.
 
+### V1-10.13
+Subscription-backed providers: any harness implementing the generic direct-model capability is bridged into the provider/model router automatically. Claude and Codex subscription auth can therefore power orchestration without separate API credentials.
+
 ### V1-11
 Git worktrees and worker lifecycle.
 

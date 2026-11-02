@@ -27,7 +27,7 @@
 #       - concise evidence label
 #     aliases: []                 # other IDs providers report this model as
 
-version: 2
+version: 3
 models:
   # Conservative, reviewed scores: enough for the orchestrator, spec_author, architect, and
   # research floors (4), deliberately not the high security floor. No 5 without independent
@@ -49,4 +49,25 @@ models:
     sources:
       - "Anthropic models overview, reviewed 2026-10-31: https://platform.claude.com/docs/en/models/overview"
       - "Anthropic Claude Sonnet 5.5 model page: https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+    aliases: []
+
+  # Conservative reviewed scores for the current Codex/Work subscription model. Keep automatic
+  # routing below 5 until independent evaluation evidence is added.
+  - id: gpt-6-sol
+    display_name: GPT-6 Sol
+    status: active
+    scores:
+      reasoning: 4
+      coding: 4
+      repository_engineering: 4
+      debugging: 4
+      tool_use: 4
+      architecture: 4
+      security_reasoning: 3
+    latency: medium
+    cost: medium
+    confidence: medium
+    sources:
+      - "OpenAI model page, reviewed 2026-11-02: https://developers.openai.com/api/docs/models/gpt-6-sol"
+      - "ChatGPT Work and Codex availability, reviewed 2026-11-02: https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex"
     aliases: []

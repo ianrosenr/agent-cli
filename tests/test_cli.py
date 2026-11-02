@@ -286,6 +286,7 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.adapters",
         "agent_cli.adapters.domain",
         "agent_cli.adapters.harness",
+        "agent_cli.adapters.harness_provider",
         "agent_cli.adapters.provider",
         "agent_cli.adapters.registry",
         "agent_cli.adapters.status",
