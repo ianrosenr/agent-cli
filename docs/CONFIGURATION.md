@@ -96,10 +96,14 @@ harnesses:
   claude-code:
     enabled: true
     command: claude
+    version: latest
   codex-cli:
     enabled: true
     command: codex
+    version: latest
 ```
+
+Harness `version` defaults to `latest`. `latest` accepts the currently installed CLI version and means the user has not pinned Agent CLI to an older harness release. An exact value such as `0.120.0` requires the detected CLI version to match and fails closed on mismatch. Agent CLI does not install or upgrade harness CLIs yet; future installer/factory work can honor the same `latest` policy without changing config.
 
 Authentication stays owned and cached by each native CLI. `/startup` offers sign-in when an enabled harness needs it; later, `/login` checks the saved harness configuration, skips already-authenticated harnesses, and launches native login only where needed. `/login claude` and `/login codex` target one harness. Agent CLI never copies credentials. Subscription child processes isolate API/cloud credential environment variables so existing API setup cannot silently redirect subscription execution.
 

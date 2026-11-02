@@ -100,7 +100,9 @@ def test_enter_through_writes_a_valid_complete_global_config(
     assert result == f"Done  Settings saved to {paths.global_file}."
     config = ConfigService(paths).resolve()
     assert config.harnesses["claude-code"].enabled is True
+    assert config.harnesses["claude-code"].version == "latest"
     assert config.harnesses["codex-cli"].enabled is True
+    assert config.harnesses["codex-cli"].version == "latest"
     saved = load(paths.global_file)
     assert isinstance(saved, dict)
     assert saved["workers"] == {"max_concurrency": 3}

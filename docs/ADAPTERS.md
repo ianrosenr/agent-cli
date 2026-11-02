@@ -41,7 +41,7 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 - **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Claude Code's `auto` permission mode; `plan-only` uses `plan`. Checkpoint approval stays in Agent CLI orchestration, so every harness/model follows the same `/startup` implementation policy rather than inventing vendor-specific review settings.
 - **Lifecycle.** Start/status/result/interruption are normalized. Results retain a concise summary, token usage when Claude reports it, and Git changed-file/diff information. Raw stderr is never surfaced because it may contain task context.
 - **Provider pin.** This fixed access path identifies itself as `claude-subscription`. A conflicting provider pin, including the paid `anthropic` API provider, is rejected rather than substituted.
-- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches `claude auth login` only when needed. Credentials stay owned by Claude Code. `harnesses.claude-code.command` can override the executable path.
+- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches `claude auth login` only when needed. Credentials stay owned by Claude Code. `command` can override the executable path; `version` defaults to `latest` or can pin an exact detected CLI version.
 
 ### Codex CLI harness (V1-10.6)
 
@@ -53,7 +53,7 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 - **Permissions.** `autopilot` and each already-approved `checkpoint` batch use Codex's `workspace-write` sandbox; `plan-only` uses `read-only`. Checkpoint approval stays in Agent CLI orchestration, shared across every harness.
 - **Lifecycle.** Start/status/result/interruption are normalized. JSONL events provide the final agent message, thread reference, and token usage; Git changed-file/diff information is collected separately. Raw stderr and vendor error details are never surfaced.
 - **Provider pin.** This fixed access path identifies itself as `openai-subscription`. A conflicting provider pin is rejected rather than substituted.
-- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches native ChatGPT login only when needed. Credentials stay owned by Codex. `harnesses.codex-cli.command` can override the executable path.
+- **Login/config.** `/startup` persists whether the harness is enabled; `/login` launches native ChatGPT login only when needed. Credentials stay owned by Codex. `command` can override the executable path; `version` defaults to `latest` or can pin an exact detected CLI version.
 
 ### Anthropic provider (V1-09.5)
 

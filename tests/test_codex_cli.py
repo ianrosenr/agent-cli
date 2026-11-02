@@ -172,6 +172,26 @@ def adapter(
     )
 
 
+def test_latest_version_policy_accepts_detected_codex_version() -> None:
+    readiness = adapter(config=HarnessConfig(version="latest")).readiness()
+    assert readiness.state is ReadinessState.READY
+
+
+def test_exact_codex_version_policy_accepts_detected_version_token() -> None:
+    readiness = adapter(config=HarnessConfig(version="0.120.0")).readiness()
+    assert readiness.state is ReadinessState.READY
+
+
+def test_exact_codex_version_mismatch_fails_closed_before_auth() -> None:
+    commands = FakeCommands()
+    readiness = adapter(commands=commands, config=HarnessConfig(version="0.119.0")).readiness()
+
+    assert readiness.state is ReadinessState.MISCONFIGURED
+    assert "configured version '0.119.0'" in readiness.reason
+    assert "0.120.0" in readiness.reason
+    assert len(commands.calls) == 1
+
+
 def test_missing_executable_is_not_detected() -> None:
     readiness = adapter(commands=FakeCommands(missing=True)).readiness()
     assert readiness.state is ReadinessState.NOT_DETECTED
