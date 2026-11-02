@@ -87,7 +87,6 @@ class CliHarnessProfile:
     env_remove: frozenset[str]
     output_protocol: OutputProtocol
     worker_base_args: tuple[str, ...]
-    worker_plan_args: tuple[str, ...]
     worker_write_args: tuple[str, ...]
     worker_research_args: tuple[str, ...] | None = None
     worker_diagnostic_args: tuple[str, ...] | None = None
