@@ -251,6 +251,33 @@ def test_shell_passes_its_io_and_config_to_commands(tmp_path: Path) -> None:
     )
 
 
+def test_main_migrates_legacy_builtin_harness_config_before_validation(
+    isolated_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = isolated_home / ".agent-cli" / "config.yaml"
+    config.parent.mkdir()
+    config.write_text(
+        "harnesses:\n"
+        "  claude-code:\n"
+        "    enabled: true\n"
+        "    version: latest\n"
+    )
+    monkeypatch.chdir(isolated_home)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(EOFError))
+
+    assert cli.main([]) == 0
+
+    out = capsys.readouterr().out
+    assert "Updated legacy Claude/Codex harness config" in out
+    migrated = config.read_text()
+    assert "type: cli" in migrated
+    assert "profile: claude-code" in migrated
+    assert "Configuration error" not in out
+
+
 def test_main_reports_invalid_configuration_at_startup(
     isolated_home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
