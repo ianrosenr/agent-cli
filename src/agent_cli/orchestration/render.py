@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from agent_cli.config.model import Verbosity
+
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
@@ -31,7 +33,16 @@ def render_plan(
     unpinned: Sequence[str] = (),
     problems: Sequence[str] = (),
     planned_by: Sequence[str] = (),
+    verbosity: Verbosity = "normal",
 ) -> RenderableType:
+    if verbosity == "concise" and not problems:
+        footer = (
+            muted("Planned with " + "; ".join(dict.fromkeys(planned_by)) + ".")
+            if planned_by
+            else None
+        )
+        return blocks(Text(summary), footer)
+
     children = store.subtasks(root_id)
     number = {task.id: str(index) for index, task in enumerate(children, 1)}
     steps = Table.grid(padding=(0, 2))
