@@ -242,8 +242,7 @@ V3 = (
 """Planning questions (at most one pending per root task) and scoped user pins (V1-09)."""
 
 V4 = (
-    "ALTER TABLE tasks ADD COLUMN kind TEXT "
-    "CHECK (kind IS NULL OR kind IN ('scout', 'ship'))",
+    "ALTER TABLE tasks ADD COLUMN kind TEXT CHECK (kind IS NULL OR kind IN ('scout', 'ship'))",
     "ALTER TABLE tasks ADD COLUMN complexity TEXT "
     "CHECK (complexity IS NULL OR complexity IN ('trivial', 'moderate', 'complex'))",
 )
