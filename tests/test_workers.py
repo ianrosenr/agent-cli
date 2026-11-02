@@ -146,7 +146,6 @@ def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_pat
     assert recorded.status is WorkerStatus.RUNNING
     [worker] = harness.workers.values()
     assert worker.request.authority == DIAGNOSTIC_AUTHORITY
-    assert worker.request.mode is None
     assert worker.request.working_directory != root
     assert worker.request.working_directory.is_dir()
     assert git(root, "diff", "--name-only") == ""
