@@ -172,8 +172,8 @@ def test_authorization_is_durable_and_new_spec_voids_it(store: TaskStore) -> Non
     restored = store.latest_authorization(task.id)
     assert restored is not None and restored.id == authorization.id
     assert restored.status is Approval.APPROVED
-    assert store.latest_spec(task.id) is not None
-    assert store.latest_spec(task.id).approval is Approval.APPROVED
+    latest = store.latest_spec(task.id)
+    assert latest is not None and latest.approval is Approval.APPROVED
 
     store.add_spec_version(task.id, "Bounded spec v2")
     voided = store.latest_authorization(task.id)
@@ -189,8 +189,8 @@ def test_checkpoint_authorization_blocks_then_resumes_task(store: TaskStore) -> 
         "confirm bounded write",
     )
 
-    assert store.task(task.id) is not None
-    assert store.task(task.id).status is TaskStatus.BLOCKED
+    blocked = store.task(task.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
     assert store.pending_authorization(session.id) == authorization
     decided = store.decide_authorization(
         authorization.id,
@@ -200,7 +200,8 @@ def test_checkpoint_authorization_blocks_then_resumes_task(store: TaskStore) -> 
     )
     assert decided.status is Approval.APPROVED
     assert store.pending_authorization(session.id) is None
-    assert store.task(task.id).status is TaskStatus.PENDING
+    resumed = store.task(task.id)
+    assert resumed is not None and resumed.status is TaskStatus.PENDING
     assert store.blockers(session.id) == []
 
 
