@@ -102,8 +102,17 @@ class SupervisorService:
         if decision.action in {"scout", "ship"}:
             return self.delegate(text, decision, config)
 
-        question = Question(text, decision.request, self.conversation.recent(ANSWER_VIEW))
         pins = explicit_pins(text, calls.registry, self.adapters)
+        if (
+            decision.answer
+            and decision.complexity == "trivial"
+            and not decision.repository
+            and not pins
+        ):
+            self.conversation.add(text, decision.answer, decision.action)
+            return render_supervisor_answer(decision.answer, decision, config)
+
+        question = Question(text, decision.request, self.conversation.recent(ANSWER_VIEW))
         try:
             if decision.repository and self.root is not None:
                 if self._repository is None:
@@ -214,6 +223,17 @@ def verbose_routing(config: Config, decision: RouteDecision) -> tuple[str, ...]:
         return ()
     resolved = (f"Understood as: {decision.request}",) if decision.request else ()
     return (f"Routed as {decision.describe()}.", *resolved)
+
+
+def render_supervisor_answer(
+    text: str, decision: RouteDecision, config: Config
+) -> RenderableType:
+    """Render an answer completed by semantic intake without a second model call."""
+    body: RenderableType = Markdown(text) if text else Text("(empty answer)")
+    if config.ui.verbosity == "concise" or decision.source == "fast-path":
+        return body
+    notes = [f"Answered during {decision.reason}.", *verbose_routing(config, decision)]
+    return blocks(body, Group(*(muted(note) for note in notes)))
 
 
 def render_answer(answer: Answer, decision: RouteDecision, config: Config) -> RenderableType:
