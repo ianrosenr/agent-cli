@@ -52,11 +52,7 @@ def default_adapters(
     harness_ids = set(BUILTIN_CLI_PROFILES) | set(config.harnesses)
     for harness_id in sorted(harness_ids):
         entry = config.harnesses.get(harness_id)
-        effective = (
-            HarnessConfig(type="cli", profile=harness_id)
-            if entry is None
-            else entry
-        )
+        effective = HarnessConfig(type="cli", profile=harness_id) if entry is None else entry
         harness = harness_factories.build(harness_id, effective)
         registry.register_harness(harness)
 
