@@ -261,12 +261,17 @@ def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     codex = auth_harness("codex-cli", ReadinessState.READY)
     calls: list[tuple[str, ...]] = []
+
+    def login(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        return True
+
     orchestrator = service(
         store,
         config,
         plan(one_item),
         adapters=AdapterRegistry([claude, codex]),
-        login_harnesses=lambda ids: (calls.append(ids), True)[1],
+        login_harnesses=login,
     )
 
     output = plain(orchestrator.handle(GOAL))
@@ -306,12 +311,17 @@ def test_declined_unpinned_repair_does_not_loop_or_block_planning(
 ) -> None:
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
+
+    def decline(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        return False
+
     orchestrator = service(
         store,
         config,
         plan(one_item),
         adapters=AdapterRegistry([claude]),
-        login_harnesses=lambda ids: (calls.append(ids), False)[1],
+        login_harnesses=decline,
     )
 
     output = plain(orchestrator.handle(GOAL))
@@ -326,12 +336,17 @@ def test_planning_question_does_not_trigger_harness_login(
 ) -> None:
     claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
     calls: list[tuple[str, ...]] = []
+
+    def login(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        return True
+
     orchestrator = service(
         store,
         config,
         ask(),
         adapters=AdapterRegistry([claude]),
-        login_harnesses=lambda ids: calls.append(ids) or True,
+        login_harnesses=login,
     )
 
     orchestrator.handle(GOAL)
