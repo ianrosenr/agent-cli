@@ -103,7 +103,7 @@ harnesses:
     version: latest
 ```
 
-Harness `version` defaults to `latest`. `latest` accepts the currently installed CLI version and means the user has not pinned Agent CLI to an older harness release. An exact value such as `0.120.0` requires the detected CLI version to match and fails closed on mismatch. Agent CLI does not install or upgrade harness CLIs yet; future installer/factory work can honor the same `latest` policy without changing config.
+Harness `version` defaults to `latest`. `latest` means the user has not pinned Agent CLI to an older harness release. An exact value such as `0.120.0` requires the detected CLI version to match and fails closed on mismatch. Supported harnesses may implement generic install/update capabilities; future descriptor/factory work can add more harnesses without changing this config contract.
 
 On first interactive launch, Agent CLI runs `/startup` automatically when neither global nor project config exists. After harness choices are saved, `/startup` can install enabled missing Claude/Codex CLIs, then reuse the same native login flow. Install/update operations are adapter capabilities, not startup vendor branches.
 
