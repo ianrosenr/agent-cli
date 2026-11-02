@@ -40,7 +40,6 @@ CLAUDE_CODE = CliHarnessProfile(
         "--max-turns",
         "25",
     ),
-    worker_plan_args=("--permission-mode", "plan"),
     worker_research_args=(
         "--permission-mode",
         "dontAsk",
@@ -130,7 +129,6 @@ CODEX_CLI = CliHarnessProfile(
         "--json",
         "--ephemeral",
     ),
-    worker_plan_args=("--sandbox", "read-only"),
     worker_research_args=None,
     worker_diagnostic_args=("--sandbox", "read-only"),
     worker_write_args=("--sandbox", "workspace-write"),
