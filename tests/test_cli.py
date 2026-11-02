@@ -106,6 +106,49 @@ def test_startup_screen_is_shown_before_the_first_prompt() -> None:
     assert events == [STARTUP, f"prompt {cli.PROMPT!r}"]
 
 
+def test_first_run_can_auto_start_guided_setup(tmp_path: Path) -> None:
+    service = ConfigService(ConfigPaths(tmp_path / ".agent-cli" / "config.yaml", None))
+    output, write_line = recorder()
+
+    code = cli.run_shell(
+        build_registry(),
+        scripted(*[""] * (len(SETTINGS) + 1)),
+        write_line,
+        STARTUP,
+        service,
+        auto_startup=True,
+    )
+
+    assert code == 0
+    assert output[0] == STARTUP
+    assert any(line.startswith("Agent CLI setup") for line in output)
+    assert service.paths.global_file.exists()
+
+
+def test_needs_onboarding_only_when_interactive_and_no_config_exists(tmp_path: Path) -> None:
+    global_file = tmp_path / "home" / ".agent-cli" / "config.yaml"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    service = ConfigService(ConfigPaths(global_file, repo))
+
+    assert cli.needs_onboarding(service, interactive=True) is True
+    assert cli.needs_onboarding(service, interactive=False) is False
+
+    global_file.parent.mkdir(parents=True)
+    global_file.write_text("")
+    assert cli.needs_onboarding(service, interactive=True) is False
+
+
+def test_existing_project_config_prevents_first_run_onboarding(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    project_file = repo / ".agent-cli" / "config.yaml"
+    project_file.parent.mkdir(parents=True)
+    project_file.write_text("")
+    service = ConfigService(ConfigPaths(tmp_path / "home" / ".agent-cli" / "config.yaml", repo))
+
+    assert cli.needs_onboarding(service, interactive=True) is False
+
+
 def test_first_input_is_a_task_with_no_mode_selection() -> None:
     output, write_line = recorder()
     cli.run_shell(build_registry(), scripted("add a health endpoint"), write_line, STARTUP)
