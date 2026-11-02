@@ -215,7 +215,9 @@ def test_trivial_task_brief_bypasses_planner(
     )
 
     assert planner.inputs == []
-    [child] = store.subtasks(root_of(store))
+    root = store.task(root_of(store))
+    assert root is not None and root.kind == kind and root.complexity == "trivial"
+    [child] = store.subtasks(root.id)
     assert child.role == role
     assert store.latest_spec(child.id) is None
     assert f"Single {kind} task" in output
