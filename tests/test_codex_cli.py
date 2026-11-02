@@ -11,8 +11,10 @@ import pytest
 
 from agent_cli.adapters import (
     AdapterError,
+    DIAGNOSTIC_AUTHORITY,
     ErrorKind,
     ProviderRequest,
+    RESEARCH_AUTHORITY,
     ReadinessState,
     Selection,
     WorkerRequest,
@@ -507,6 +509,28 @@ def test_start_uses_stdin_context_cwd_exact_model_and_workspace_sandbox(tmp_path
     assert result.usage.reference == "thread-123"
     assert result.changes is not None
     assert result.changes.files == ("new.txt", "src/example.py")
+
+
+def test_diagnostic_authority_uses_read_only_sandbox(tmp_path: Path) -> None:
+    launcher = FakeLauncher()
+    harness = adapter(launcher=launcher)
+    harness.start(request(tmp_path, authority=DIAGNOSTIC_AUTHORITY, mode=None, model=None))
+    argv = launcher.calls[0]["argv"]
+
+    index = argv.index("--sandbox")
+    assert argv[index + 1] == "read-only"
+
+
+def test_research_authority_fails_closed_when_shell_cannot_be_removed(tmp_path: Path) -> None:
+    launcher = FakeLauncher()
+    harness = adapter(launcher=launcher)
+
+    with pytest.raises(AdapterError) as raised:
+        harness.start(request(tmp_path, authority=RESEARCH_AUTHORITY, mode=None, model=None))
+
+    assert raised.value.kind is ErrorKind.INCOMPATIBLE
+    assert "research authority" in raised.value.message
+    assert launcher.calls == []
 
 
 def test_plan_only_uses_read_only_sandbox(tmp_path: Path) -> None:
