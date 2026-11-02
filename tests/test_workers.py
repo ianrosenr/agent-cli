@@ -31,6 +31,7 @@ from agent_cli.workers import (
     WorkerDispatcher,
     WorkerExecutor,
     WorkerLaunchError,
+    WorktreeManager,
     reconcile_orphaned_workers,
 )
 
@@ -424,3 +425,69 @@ def test_current_plan_only_overrides_previous_write_authorization(tmp_path: Path
             child.goal,
             IMPLEMENTATION_AUTHORITY,
         )
+
+
+def test_downstream_worktree_inherits_tracked_and_new_files(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    upstream = manager.create("upstream", "ship")
+    (upstream / "pyproject.toml").write_text("[project]\\nname='changed'\\nversion='0.0.0'\\n")
+    (upstream / "addition.py").write_text("VALUE = 42\\n")
+    downstream = manager.create("downstream", "ship")
+
+    manager.inherit(downstream, [upstream])
+
+    assert "changed" in (downstream / "pyproject.toml").read_text()
+    assert (downstream / "addition.py").read_text() == "VALUE = 42\\n"
+    assert "worker-test" in (root / "pyproject.toml").read_text()
+
+
+def test_worktree_handoff_rejects_conflicting_changes(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    first = manager.create("first", "ship")
+    second = manager.create("second", "ship")
+    target = manager.create("target", "ship")
+    (first / "pyproject.toml").write_text("first change\\n")
+    (second / "pyproject.toml").write_text("conflicting change\\n")
+
+    with pytest.raises(WorkerLaunchError, match="conflict"):
+        manager.inherit(target, [first, second])
+
+
+def test_recovery_preserves_independent_queued_tasks(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id, "Two independent tasks", kind="ship", complexity="trivial"
+    )
+    interrupted = store.create_task(
+        session.id, "Interrupted", parent_id=parent.id, role="implementer"
+    )
+    queued = store.create_task(session.id, "Queued", parent_id=parent.id, role="implementer")
+    store.record_worker(interrupted.id, "implementer", WorkerStatus.RUNNING, worktree="uncertain")
+
+    assert reconcile_orphaned_workers(store) == 1
+    failed = store.task(interrupted.id)
+    assert failed is not None and failed.status is TaskStatus.FAILED
+    pending = store.task(queued.id)
+    assert pending is not None and pending.status is TaskStatus.PENDING
+    parent_state = store.task(parent.id)
+    assert parent_state is not None and not parent_state.status.finished
+    assert reconcile_orphaned_workers(store) == 0
+
+
+def test_three_stage_worktree_handoff_preserves_transitive_changes(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    first = manager.create("chain-a", "ship")
+    (first / "a.py").write_text("A = 1\\n")
+    second = manager.create("chain-b", "ship")
+    manager.inherit(second, [first])
+    (second / "b.py").write_text("B = 2\\n")
+    third = manager.create("chain-c", "ship")
+    manager.inherit(third, [second])
+    assert (third / "a.py").read_text() == "A = 1\\n"
+    assert (third / "b.py").read_text() == "B = 2\\n"
+    assert not (root / "a.py").exists()

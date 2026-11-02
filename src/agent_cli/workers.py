@@ -185,8 +185,20 @@ class WorktreeManager:
         base.mkdir(parents=True, exist_ok=True)
         target = base / task_id
         if target.exists():
+            status = subprocess.run(
+                ("git", "status", "--porcelain"),
+                cwd=target,
+                text=True,
+                capture_output=True,
+            )
+            if status.returncode or (kind == "ship" and status.stdout.strip()):
+                raise WorkerLaunchError("existing worker worktree is not clean")
             return target
-        command = ["git", "worktree", "add", "--detach", str(target), "HEAD"]
+        command = (
+            ["git", "worktree", "add", "-b", f"agent-cli/task/{task_id}", str(target), "HEAD"]
+            if kind == "ship"
+            else ["git", "worktree", "add", "--detach", str(target), "HEAD"]
+        )
         result = subprocess.run(
             command,
             cwd=self.root,
@@ -199,6 +211,54 @@ class WorktreeManager:
             detail = diagnostic[-1] if diagnostic else "git worktree add failed"
             raise WorkerLaunchError(detail)
         return target
+
+    @staticmethod
+    def _git(worktree: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args], cwd=worktree, capture_output=True, text=True, check=False
+        )
+
+    def inherit(self, target: Path, upstream: list[Path]) -> None:
+        """Merge predecessor commits into a child branch, preserving conflicts for review."""
+        if not upstream:
+            return
+        target_head = self._git(target, "rev-parse", "HEAD")
+        baseline = self._git(self.root, "rev-parse", "HEAD")
+        if target_head.returncode or baseline.returncode:
+            raise WorkerLaunchError("cannot determine integration baseline")
+        if target_head.stdout.strip() != baseline.stdout.strip():
+            raise WorkerLaunchError("target worktree has a different integration baseline")
+        for source in upstream:
+            if source.resolve() == self.root.resolve() or not source.is_dir():
+                raise WorkerLaunchError("missing or unsafe predecessor worktree")
+            status = self._git(source, "status", "--porcelain")
+            if status.returncode:
+                raise WorkerLaunchError("cannot inspect predecessor changes")
+            if status.stdout:
+                # Worker output belongs to its isolated branch, including newly created files.
+                staged = self._git(source, "add", "-A")
+                if staged.returncode:
+                    raise WorkerLaunchError("cannot stage predecessor changes")
+                committed = self._git(
+                    source, "-c", "user.name=Agent CLI", "-c",
+                    "user.email=agent-cli@localhost", "commit", "-m",
+                    "Record completed worker changes",
+                )
+                if committed.returncode:
+                    raise WorkerLaunchError("cannot commit predecessor changes")
+            source_head = self._git(source, "rev-parse", "HEAD")
+            if source_head.returncode:
+                raise WorkerLaunchError("cannot read predecessor commit")
+            merged = self._git(
+                target, "-c", "user.name=Agent CLI",
+                "-c", "user.email=agent-cli@localhost",
+                "merge", "--no-ff", "--no-edit", source_head.stdout.strip(),
+            )
+            if merged.returncode:
+                self._git(target, "merge", "--abort")
+                raise WorkerLaunchError(
+                    "predecessor branches conflict; preserve worktrees for manual integration"
+                )
 
     def remove(self, path: Path) -> None:
         """Remove one linked worktree; never remove the user's primary checkout."""
@@ -234,7 +294,9 @@ def reconcile_orphaned_workers(store: TaskStore) -> int:
             if task.parent_id is not None:
                 parent = store.task(task.parent_id)
                 if parent is not None and not parent.status.finished:
-                    store.set_status(parent.id, TaskStatus.FAILED)
+                    children = store.subtasks(parent.id)
+                    if children and all(child.status.finished for child in children):
+                        store.set_status(parent.id, TaskStatus.FAILED)
             store.add_artifact(
                 task.id,
                 "worker-summary",
@@ -254,6 +316,7 @@ class WorkerExecutor:
     root: Path
     poll_seconds: float = 0.25
     notify: Callable[[str], None] | None = None
+    on_finished: Callable[[str], None] | None = None
 
     def launch(
         self,
@@ -273,27 +336,45 @@ class WorkerExecutor:
         if harness is None:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
-        workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
-        skills = self._skill_context(task.id)
-        request = WorkerRequest(
-            task.id,
-            task.role or "research_investigator",
-            spec,
-            workspace,
-            repository=str(self.root),
-            skills=skills,
-            authority=authority,
-            model=Selection(dispatch.model_id, pinned="model" in pins),
-            provider=Selection(dispatch.provider_id, pinned="provider" in pins),
-            harness=Selection(dispatch.harness_id, pinned="harness" in pins),
-        )
         with _LAUNCH_LOCK:
+            if self.store.workers(task.id):
+                raise WorkerLaunchError("task has an existing worker record; refusing replay")
             active = self._active_worker_count(task.session_id)
             if active >= self.config.workers.max_concurrency:
                 raise WorkerLaunchError(
                     f"worker concurrency limit reached ({active}/"
                     f"{self.config.workers.max_concurrency})"
                 )
+            manager = WorktreeManager(self.root, self.config)
+            workspace = manager.create(task.id, kind)
+            if kind == "ship":
+                predecessors = self.store.dependencies(task.id)
+                sources: list[Path] = []
+                for predecessor in predecessors:
+                    original = self.store.task(predecessor)
+                    if original is None or original.status is not TaskStatus.COMPLETED:
+                        raise WorkerLaunchError("cannot launch until all predecessors finish")
+                    records = self.store.workers(predecessor)
+                    if original.role != "implementer":
+                        continue
+                    if records and records[-1].worktree:
+                        sources.append(Path(records[-1].worktree))
+                    else:
+                        raise WorkerLaunchError("predecessor has no integration workspace")
+                manager.inherit(workspace, sources)
+            skills = self._skill_context(task.id)
+            request = WorkerRequest(
+                task.id,
+                task.role or "research_investigator",
+                spec,
+                workspace,
+                repository=str(self.root),
+                skills=skills,
+                authority=authority,
+                model=Selection(dispatch.model_id, pinned="model" in pins),
+                provider=Selection(dispatch.provider_id, pinned="provider" in pins),
+                harness=Selection(dispatch.harness_id, pinned="harness" in pins),
+            )
             recorded = self.store.record_worker(
                 task.id,
                 request.role,
@@ -466,6 +547,8 @@ class WorkerExecutor:
         if notify and self.notify is not None:
             notice = summary or str(result.status)
             self.notify(f"{kind.title()} {worker_id} {result.status}: {notice}")
+        if self.on_finished is not None:
+            self.on_finished(task_id)
 
     def _finish_parent(self, task_id: str) -> None:
         task = self.store.task(task_id)

@@ -60,7 +60,7 @@ def run_shell(
     reload_adapters: Callable[[], str | None] | None = None,
     auto_startup: bool = False,
 ) -> int:
-    """Show startup, optionally onboard once, then read input until EOF. Ctrl-C clears a line."""
+    """Show startup and read input. Ctrl-C exits idle shell or cancels foreground work."""
     context = CommandContext(
         registry=registry,
         config=config,
@@ -78,14 +78,15 @@ def run_shell(
     while True:
         try:
             line = read_line(PROMPT)
-        except KeyboardInterrupt:
-            continue
-        except EOFError:
+        except (KeyboardInterrupt, EOFError):
             return 0
         try:
             response = handle_input(line, context)
         except ExitShell:
             return 0
+        except KeyboardInterrupt:
+            write_line(info("Canceled current operation."))
+            continue
         if response is not None:
             write_line(Group(response, Text("")))  # a blank line before the next prompt
 
@@ -102,7 +103,7 @@ def orchestrator(
         return None
     service: OrchestrationService | None = None
 
-    def orchestrate(text: str, handoff: TaskBrief | None = None) -> RenderableType:
+    def ensure_service() -> OrchestrationService:
         nonlocal service
         if service is None:
             from agent_cli.orchestration import OrchestrationService
@@ -136,8 +137,21 @@ def orchestrator(
                 login_harnesses=login_harnesses,
                 worker_notify=worker_notify,
             )
-        return service.handle(text, handoff)
+        return service
 
+    def orchestrate(text: str, handoff: TaskBrief | None = None) -> RenderableType:
+        return ensure_service().handle(text, handoff)
+
+    # Resume already persisted queues at startup, without creating a new task.
+    if tasks.exists():
+        queued = any(
+            task.parent_id is not None and task.status.value == "pending"
+            for session in tasks.sessions()
+            if session.open
+            for task in tasks.tasks(session.id)
+        )
+        if queued:
+            ensure_service().resume_queued()
     return orchestrate
 
 

@@ -7,9 +7,10 @@ Pending planning questions and checkpoint authorization gates both survive resta
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from rich.console import RenderableType
@@ -50,6 +51,7 @@ from agent_cli.orchestration.inspection import MAX_FILES, goal_anchors, reposito
 from agent_cli.orchestration.output import ModelOutputError
 from agent_cli.orchestration.planner import Planner, ProviderPlanner
 from agent_cli.orchestration.render import render_plan, render_question, render_stopped
+from agent_cli.orchestration.scheduler import Readiness, evaluate_task
 from agent_cli.orchestration.spec_author import (
     ProviderSpecAuthor,
     SpecAuthor,
@@ -72,7 +74,7 @@ from agent_cli.state import (
     TaskStore,
 )
 from agent_cli.terms import TaskComplexity
-from agent_cli.ui import error, info
+from agent_cli.ui import error, info, plain
 from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
 type ClassifierFactory = Callable[[Config, BudgetGuard], SignalClassifier | None]
@@ -104,6 +106,89 @@ class OrchestrationService:
     worker_notify: Callable[[str], None] | None = None
     """Optional shell-safe notification sink for background worker completion."""
     _index: RepositoryIndex | None = None
+
+    def resume_queued(self) -> None:
+        """Restart recovery for unlaunched, persisted work only."""
+        if not self.store.exists():
+            return
+        for session in self.store.sessions():
+            if not session.open:
+                continue
+            for task in self.store.tasks(session.id):
+                if task.parent_id is None and task.kind == "ship" and self.store.subtasks(task.id):
+                    self.advance(task.id)
+
+    def advance(self, root_id: str) -> RenderableType | None:
+        """Dispatch dependency-ready tasks without a planning-model call."""
+        root = self.store.task(root_id)
+        if root is None or root.status.finished:
+            return None
+        try:
+            config = self.config.resolve()
+            registry = self.registry if self.registry is not None else load_registry()
+        except (ConfigError, RegistryError):
+            return None
+        response: RenderableType | None = None
+        for child in self.store.subtasks(root_id):
+            assessment = evaluate_task(self.store, child)
+            if assessment.readiness is Readiness.FAILED:
+                self.block([child.id], assessment.reason)
+                continue
+            if assessment.readiness is not Readiness.READY:
+                continue
+            if self.store.workers(child.id):
+                continue  # never replay an uncertain prior launch
+            complexity = root.complexity or child.complexity or "moderate"
+            if child.role != "implementer":
+                project_root = self.config.paths.project_root
+                if project_root is None:
+                    continue
+                try:
+                    started = self.executor(config, registry).launch(
+                        child, "scout", complexity, child.goal, DIAGNOSTIC_AUTHORITY
+                    )
+                    response = info("Scout started.", started)
+                except WorkerLaunchError as problem:
+                    if "concurrency limit reached" not in str(problem):
+                        self.block([child.id], str(problem))
+                continue
+            authorization = self.store.latest_authorization(child.id)
+            if (
+                authorization is not None
+                and authorization.status is not AuthorizationStatus.APPROVED
+            ):
+                continue  # never silently reauthorize rejected, voided, or gated work
+            if authorization is not None and authorization.status is AuthorizationStatus.APPROVED:
+                response = self.launch_authorized_ship(
+                    child, config, registry, complexity, authorization
+                )
+            else:
+                response = self.authorize_ship(child, config, registry, complexity)
+            if self.store.pending_authorization(child.session_id) is not None:
+                break  # one user-facing gate at a time
+        return response
+
+    def worker_finished(self, task_id: str) -> None:
+        task = self.store.task(task_id)
+        if task is not None and task.parent_id is not None:
+            response = self.advance(task.parent_id)
+            pending = self.store.pending_authorization(task.session_id)
+            if response is not None and pending is not None and self.worker_notify is not None:
+                self.worker_notify(plain(response))
+
+    def executor(self, config: Config, registry: ModelRegistry) -> WorkerExecutor:
+        project_root = self.config.paths.project_root
+        if project_root is None:
+            raise WorkerLaunchError("No repository is open")
+        return WorkerExecutor(
+            self.store,
+            self.adapters,
+            registry,
+            config,
+            project_root,
+            notify=self.worker_notify,
+            on_finished=self.worker_finished,
+        )
 
     def handle(self, text: str, handoff: TaskBrief | None = None) -> RenderableType:
         """Plan ``text`` as a new request, or take it as the answer to a pending question.
@@ -313,7 +398,11 @@ class OrchestrationService:
             return error("Authorized, but cannot launch implementation.", str(problem))
         root = self.store.task(self.store.root_task(task.id))
         complexity = "moderate" if root is None or root.complexity is None else root.complexity
-        return self.launch_authorized_ship(task, config, registry, complexity, approved)
+        result = self.launch_authorized_ship(task, config, registry, complexity, approved)
+        refreshed = self.store.task(task.id)
+        if refreshed is not None and refreshed.status.finished:
+            self.worker_finished(task.id)
+        return result
 
     def launch_authorized_ship(
         self,
@@ -336,7 +425,9 @@ class OrchestrationService:
         project_root = self.config.paths.project_root
         if project_root is None:
             return error("Authorized, but cannot launch implementation.", "No repository is open.")
-        auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+        foreground = threading.current_thread() is threading.main_thread()
+        login = self.login_harnesses if foreground else None
+        auth = HarnessAuthCoordinator(self.adapters, config, login)
         harness_pin = self.store.pins(task.id).get("harness")
         if harness_pin is not None:
             ready, reason = auth.repair_pinned((harness_pin.value,))
@@ -347,15 +438,12 @@ class OrchestrationService:
         spec = self.store.latest_spec(task.id)
         scope = authorization_scope(task, spec)
         try:
-            started = WorkerExecutor(
-                self.store,
-                self.adapters,
-                registry,
-                config,
-                project_root,
-                notify=self.worker_notify,
-            ).launch(task, "ship", complexity, scope, IMPLEMENTATION_AUTHORITY)
+            started = self.executor(config, registry).launch(
+                task, "ship", complexity, scope, IMPLEMENTATION_AUTHORITY
+            )
         except WorkerLaunchError as problem:
+            if "concurrency limit reached" in str(problem):
+                return info("Implementation queued.", "Waiting for a worker slot.")
             return error("Implementation authorized but could not start.", str(problem))
         return info("Implementation started.", started)
 
@@ -383,7 +471,23 @@ class OrchestrationService:
             call = DirectModelCall(self.adapters, config, registry, guard, root.id, pins, replies)
             made = len(replies)
             try:
-                plan = validate_proposal(self.planner.propose(planning, call), planning)
+                proposal = self.planner.propose(planning, call)
+                try:
+                    plan = validate_proposal(proposal, planning)
+                except PlanRejected as rejected:
+                    if not rejected.problems or not all(
+                        "goal is over" in problem for problem in rejected.problems
+                    ):
+                        raise
+                    retry_input = replace(
+                        planning,
+                        constraints=(
+                            *planning.constraints,
+                            "Validation retry: every work item goal MUST be at most "
+                            "200 characters. Put details in why, not goal.",
+                        ),
+                    )
+                    plan = validate_proposal(self.planner.propose(retry_input, call), planning)
             except (PlanningUnavailable, ModelOutputError, PlanRejected) as error:
                 return self.stop(root, f"{failure(error)}: {error}")
             for pin in plan.planning_pins:
@@ -416,13 +520,10 @@ class OrchestrationService:
         problems += self.write_specs(call, items, planning, plan, repository)
         if problems:
             self.block([root.id], "planning is incomplete: " + "; ".join(problems))
-        elif root.kind == "ship" and len(items) == 1:
-            task_id, item = next(iter(items.items()))
-            if item.changes_code:
-                child = self.store.task(task_id)
-                if child is not None:
-                    complexity = root.complexity or ("trivial" if item.trivial else "moderate")
-                    return self.authorize_ship(child, config, registry, complexity)
+        elif root.kind == "ship":
+            launched = self.advance(root.id)
+            if launched is not None:
+                return launched
         return render_plan(
             self.store,
             root.id,

@@ -208,6 +208,10 @@ class TaskStore:
         rows = self._read("SELECT * FROM sessions WHERE id = ?", session_id)
         return to_session(rows[0]) if rows else None
 
+    def sessions(self) -> list[Session]:
+        """All sessions, newest first, for deterministic queue recovery."""
+        return [to_session(row) for row in self._read("SELECT * FROM sessions ORDER BY rowid DESC")]
+
     def latest_session(self) -> Session | None:
         """The most recent open session, or else the most recent session of any kind."""
         rows = self._read(
