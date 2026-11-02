@@ -427,10 +427,11 @@ def test_the_router_sees_only_a_compact_recent_conversation() -> None:
     assert all(len(turn["assistant"]) <= ROUTER_VIEW.assistant_chars for turn in recent)
 
 
-def test_greetings_need_no_routing_call(isolated_home: Path) -> None:
+def test_greetings_need_no_model_call(isolated_home: Path) -> None:
     provider = ModelProvider()
-    gateway(config_for(isolated_home, None), provider).handle("hello!")
-    assert provider.routed() == [] and len(provider.answered()) == 1
+    output = plain(gateway(config_for(isolated_home, None), provider).handle("hello!"))
+    assert "what do you want to work on" in output
+    assert provider.requests == []
 
 
 def test_concise_verbosity_shows_only_the_answer(project: Path, isolated_home: Path) -> None:
@@ -450,21 +451,33 @@ def test_verbose_verbosity_explains_routing_and_the_resolved_request(
     )
     config = config_for(isolated_home, project, "verbose")
     output = plain(gateway(config, provider, orchestrate=Recorder()).handle("fix it"))
-    assert "Routed as ship/moderate, repository (supervisor: supervisor@2 (tiny via" in output
+    assert "Routed as ship/moderate, repository (supervisor: supervisor@3 (tiny via" in output
     assert "Understood as: Fix the retry bug in route()" in output
 
 
 # -- The router model --------------------------------------------------------------------------
 
 
-def test_routing_uses_the_cheap_model_and_answering_the_stronger_one(isolated_home: Path) -> None:
-    provider = ModelProvider(route=judge(**{"what is a daemon": "chat"}))
-    gateway(config_for(isolated_home, None), provider).handle("what is a daemon")
+def test_trivial_general_answer_finishes_in_the_supervisor_call(isolated_home: Path) -> None:
+    def answer_now(
+        message: str, conversation: list[dict[str, str]], in_repo: bool
+    ) -> dict[str, Any]:
+        return {
+            "action": "answer",
+            "confident": True,
+            "request": message,
+            "repository": False,
+            "complexity": "trivial",
+            "answer": ANSWER,
+        }
 
-    routed, answered = provider.requests
+    provider = ModelProvider(route=answer_now)
+    output = plain(gateway(config_for(isolated_home, None), provider).handle("what is a daemon"))
+
+    [routed] = provider.requests
     assert routed.system == ROUTER_SYSTEM != SKILL_CLASSIFIER_SYSTEM
     assert routed.model_id == "tiny" and routed.max_output_tokens is not None
-    assert answered.model_id == "chat-model"
+    assert output.strip() == ANSWER
 
 
 def test_auto_router_uses_medium_cost_model_when_no_cheaper_router_exists(
