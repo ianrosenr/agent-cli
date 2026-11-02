@@ -72,8 +72,8 @@ def run_shell(
     )
     write_line(startup)
     if auto_startup:
-        response = context.registry.dispatch("/startup", context)
-        write_line(Group(response, Text("")))
+        onboarding = context.registry.dispatch("/startup", context)
+        write_line(Group(onboarding, Text("")))
     while True:
         try:
             line = read_line(PROMPT)
