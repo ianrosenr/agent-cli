@@ -295,7 +295,9 @@ def reconcile_orphaned_workers(store: TaskStore) -> int:
             if task.parent_id is not None:
                 parent = store.task(task.parent_id)
                 if parent is not None and not parent.status.finished:
-                    store.set_status(parent.id, TaskStatus.FAILED)
+                    children = store.subtasks(parent.id)
+                    if children and all(child.status.finished for child in children):
+                        store.set_status(parent.id, TaskStatus.FAILED)
             store.add_artifact(
                 task.id,
                 "worker-summary",
@@ -349,7 +351,7 @@ class WorkerExecutor:
                     continue
                 if records and records[-1].worktree:
                     sources.append(Path(records[-1].worktree))
-                elif records:
+                else:
                     raise WorkerLaunchError("predecessor has no integration workspace")
             manager.inherit(workspace, sources)
         skills = self._skill_context(task.id)
