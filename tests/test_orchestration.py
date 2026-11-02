@@ -14,7 +14,9 @@ from rich.console import RenderableType
 
 from agent_cli import cli
 from agent_cli.adapters import (
+    AdapterError,
     AdapterRegistry,
+    ErrorKind,
     HarnessIdentity,
     HarnessReadiness,
     ModelDescriptor,
@@ -1116,6 +1118,7 @@ class ScriptedProvider(ProviderAdapter):
     id: str = "scripted"
     plan_reply: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     usage: Usage | None = None
+    failure: ErrorKind | None = None
     requests: list[ProviderRequest] = field(default_factory=list)
 
     def identity(self) -> ProviderIdentity:
@@ -1129,6 +1132,8 @@ class ScriptedProvider(ProviderAdapter):
 
     def invoke(self, request: ProviderRequest) -> ProviderResponse:
         self.requests.append(request)
+        if self.failure is not None:
+            raise AdapterError(self.failure, "scripted provider failed")
         payload = json.loads(request.prompt)
         if request.system == planner_module.SYSTEM:
             make = self.plan_reply or default_plan_reply
@@ -1207,6 +1212,52 @@ def test_provider_backed_planning_and_spec_authoring_end_to_end(
     spec = store.latest_spec(child.id)
     assert spec is not None and "Existing get callers behave the same." in spec.body
     assert "Planned with planner-model via scripted (subscription)." in output
+
+
+def test_automatic_planning_falls_back_after_runtime_provider_failure(
+    store: TaskStore, config: ConfigService
+) -> None:
+    failing = ScriptedProvider(
+        "subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR
+    )
+    working = ScriptedProvider("subscription", id="b-working")
+    orchestrator = provider_service(
+        store,
+        config,
+        working,
+        adapters=AdapterRegistry(providers=[failing, working]),
+    )
+
+    output = plain(orchestrator.handle(GOAL))
+
+    assert len(failing.requests) == 2
+    assert len(working.requests) == 2
+    assert "Planned with planner-model via b-working (subscription)." in output
+
+
+def test_runtime_fallback_never_crosses_a_pinned_provider(
+    store: TaskStore, config: ConfigService
+) -> None:
+    failing = ScriptedProvider(
+        "subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR
+    )
+    working = ScriptedProvider("subscription", id="b-working")
+    orchestrator = provider_service(
+        store,
+        config,
+        working,
+        adapters=AdapterRegistry(providers=[failing, working]),
+    )
+    session = store.start_session()
+    root, _ = store.start_root_task(session.id, GOAL)
+    store.pin_by_user(root.id, "provider", "a-failing", "Use provider a-failing.")
+
+    output = plain(orchestrator.plan(root))
+
+    assert len(failing.requests) == 1
+    assert working.requests == []
+    assert "a-failing" in output
+    assert "failed on every eligible path" in output
 
 
 def anthropic_reply(kwargs: dict[str, Any]) -> Any:
