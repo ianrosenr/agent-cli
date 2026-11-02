@@ -225,7 +225,9 @@ class CliHarnessAdapter(HarnessAdapter):
             )
         if version.returncode != 0:
             return HarnessReadiness(ReadinessState.UNAVAILABLE, "version check failed")
-        self._version = first_line(version.stdout) or first_line(version.stderr) or "unknown version"
+        self._version = (
+            first_line(version.stdout) or first_line(version.stderr) or "unknown version"
+        )
         if not version_matches(self.config.version, self._version):
             return HarnessReadiness(
                 ReadinessState.MISCONFIGURED,
