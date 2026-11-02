@@ -676,11 +676,7 @@ def test_runtime_registers_claude_code_without_persisting_auth() -> None:
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(
-        Config(
-            harnesses={
-                "claude-code": HarnessConfig(type="cli", profile=HARNESS_ID)
-            }
-        )
+        Config(harnesses={"claude-code": HarnessConfig(type="cli", profile=HARNESS_ID)})
     )
     harness = registry.harness("claude-code")
     assert isinstance(harness, CliHarnessAdapter)
