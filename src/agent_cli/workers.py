@@ -29,12 +29,21 @@ from agent_cli.models import (
     ranked_model_candidates,
     runtime_paths,
 )
+from agent_cli.skills import SkillError, load_catalog, skill_sources
 from agent_cli.state import PinKind, Task, TaskStateError, TaskStatus, TaskStore
 from agent_cli.terms import Role, TaskComplexity, TaskKind
 
 
 class WorkerLaunchError(Exception):
     """A prepared task cannot be launched safely."""
+
+
+_LAUNCH_LOCK = threading.Lock()
+ACTIVE_WORKER_STATUSES = {
+    WorkerStatus.STARTING,
+    WorkerStatus.RUNNING,
+    WorkerStatus.WAITING,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,31 +217,40 @@ class WorkerExecutor:
 
         workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
         mode = "plan-only" if kind == "scout" else self.config.implementation.mode
+        skills = self._skill_context(task.id)
         request = WorkerRequest(
             task.id,
             task.role or "research_investigator",
             spec,
             workspace,
             repository=str(self.root),
+            skills=skills,
             model=Selection(dispatch.model_id, pinned="model" in pins),
             provider=Selection(dispatch.provider_id, pinned="provider" in pins),
             harness=Selection(dispatch.harness_id, pinned="harness" in pins),
             mode=mode,
         )
-        recorded = self.store.record_worker(
-            task.id,
-            request.role,
-            WorkerStatus.STARTING,
-            model=dispatch.model_id,
-            provider=dispatch.provider_id,
-            harness=dispatch.harness_id,
-            worktree=str(workspace),
-        )
-        try:
-            handle = harness.start(request)
-        except AdapterError as error:
-            self.store.update_worker(recorded.id, WorkerStatus.FAILED)
-            raise WorkerLaunchError(str(error)) from error
+        with _LAUNCH_LOCK:
+            active = self._active_worker_count(task.session_id)
+            if active >= self.config.workers.max_concurrency:
+                raise WorkerLaunchError(
+                    f"worker concurrency limit reached ({active}/"
+                    f"{self.config.workers.max_concurrency})"
+                )
+            recorded = self.store.record_worker(
+                task.id,
+                request.role,
+                WorkerStatus.STARTING,
+                model=dispatch.model_id,
+                provider=dispatch.provider_id,
+                harness=dispatch.harness_id,
+                worktree=str(workspace),
+            )
+            try:
+                handle = harness.start(request)
+            except AdapterError as error:
+                self.store.update_worker(recorded.id, WorkerStatus.FAILED)
+                raise WorkerLaunchError(str(error)) from error
 
         status = harness.status(handle)
         self.store.update_worker(recorded.id, status)
@@ -287,6 +305,37 @@ class WorkerExecutor:
             self.store.set_status(task_id, TaskStatus.CANCELED)
         elif result.status is WorkerStatus.FAILED:
             self.store.set_status(task_id, TaskStatus.FAILED)
+
+    def _active_worker_count(self, session_id: str) -> int:
+        return sum(
+            1
+            for task in self.store.tasks(session_id)
+            for worker in self.store.workers(task.id)
+            if worker.status in ACTIVE_WORKER_STATUSES
+        )
+
+    def _skill_context(self, task_id: str) -> tuple[str, ...]:
+        routing = self.store.latest_skill_routing(task_id)
+        if routing is None or not routing.selected:
+            return ()
+        try:
+            catalog = load_catalog(
+                skill_sources(self.config.skills.paths, self.root)
+            )
+        except SkillError as error:
+            raise WorkerLaunchError(f"cannot load routed skills: {error}") from error
+        rendered: list[str] = []
+        for routed in routing.selected:
+            skill = catalog.get(routed.name)
+            if skill is None:
+                raise WorkerLaunchError(f"routed skill {routed.name!r} is no longer available")
+            if skill.version != routed.version:
+                raise WorkerLaunchError(
+                    f"routed skill {routed.name!r} changed from v{routed.version} "
+                    f"to v{skill.version}; reroute the task before launch"
+                )
+            rendered.append(f"{skill.name} v{skill.version}\n{skill.body}")
+        return tuple(rendered)
 
     def _pins(self, task: Task) -> dict[PinKind, str]:
         pins = {kind: pin.value for kind, pin in self.store.pins(task.id).items()}
