@@ -140,6 +140,8 @@ class Capability(StrEnum):
     """An optional harness feature. Nothing is assumed: an adapter lists what it supports."""
 
     START_WORKER = "start_worker"
+    INSTALL = "install"
+    UPDATE = "update"
     LOGIN = "login"
     FOLLOW_UP = "follow_up"
     INTERRUPT = "interrupt"
