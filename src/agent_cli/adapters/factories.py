@@ -83,6 +83,7 @@ def profile_from_config(profile_id: str, config: CliProfileConfig) -> CliHarness
         output_protocol=config.output_protocol,
         worker_base_args=config.worker_base_args,
         worker_plan_args=config.worker_plan_args,
+        worker_research_args=config.worker_research_args,
         worker_diagnostic_args=config.worker_diagnostic_args,
         worker_write_args=config.worker_write_args,
         worker_model_flag=config.worker_model_flag,
