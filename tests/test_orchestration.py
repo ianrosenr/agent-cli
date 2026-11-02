@@ -310,7 +310,6 @@ def test_trivial_ship_autopilot_authorizes_and_launches(
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
     assert authorization is not None
-    assert authorization.approval if False else True
     assert authorization.status is Approval.APPROVED
     assert authorization.decided_by == "policy:autopilot"
     [running] = harness.workers.values()
