@@ -12,6 +12,7 @@ import pytest
 from agent_cli.adapters import (
     AdapterError,
     ErrorKind,
+    ProviderRequest,
     ReadinessState,
     Selection,
     WorkerRequest,
@@ -262,6 +263,81 @@ def test_exact_update_uses_exact_codex_npm_version() -> None:
     harness.update()
 
     assert calls == [("npm", "install", "-g", "@openai/codex@0.120.0")]
+
+
+def test_direct_models_expose_openai_subscription_model() -> None:
+    harness = adapter()
+    [model] = harness.direct_models()
+
+    assert harness.direct_provider().id == SUBSCRIPTION_PROVIDER_ID
+    assert harness.direct_provider().access == "subscription"
+    assert model.provider_id == SUBSCRIPTION_PROVIDER_ID
+    assert model.model_id == "gpt-6.1-sol"
+
+
+def test_direct_model_call_uses_exact_model_isolated_env_and_read_only_sandbox() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def direct(
+        argv: tuple[str, ...],
+        env: Mapping[str, str],
+        prompt: str,
+        cwd: Path,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        seen.append(
+            {
+                "argv": argv,
+                "env": dict(env),
+                "prompt": prompt,
+                "cwd": cwd,
+                "timeout": timeout,
+            }
+        )
+        return subprocess.CompletedProcess(argv, 0, codex_output("the sky is blue", 9, 3), "")
+
+    environ = {"PATH": "/usr/bin", **{name: "secret" for name in BILLING_OVERRIDE_ENV}}
+    harness = CodexCliHarnessAdapter(
+        config=HarnessConfig(),
+        runner=FakeCommands(),
+        launcher=FakeLauncher(),
+        git_runner=FakeGit(),
+        environ=environ,
+        direct_model_runner=direct,
+    )
+    response = harness.invoke_model(
+        ProviderRequest("gpt-6.1-sol", "what color is the sky", "answer briefly", 30)
+    )
+
+    assert response.text == "the sky is blue"
+    assert response.usage is not None and response.usage.tokens == 12
+    [call] = seen
+    assert "--sandbox" in call["argv"] and "read-only" in call["argv"]
+    assert "--model" in call["argv"] and "gpt-6.1-sol" in call["argv"]
+    assert "answer briefly" in call["prompt"] and "what color is the sky" in call["prompt"]
+    assert all(name not in call["env"] for name in BILLING_OVERRIDE_ENV)
+    assert call["cwd"].name.startswith("agent-cli-model-")
+
+
+def test_direct_model_rejects_unadvertised_model_without_dispatch() -> None:
+    calls: list[int] = []
+
+    def direct(
+        argv: tuple[str, ...],
+        env: Mapping[str, str],
+        prompt: str,
+        cwd: Path,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(1)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = CodexCliHarnessAdapter(direct_model_runner=direct)
+    with pytest.raises(AdapterError) as raised:
+        harness.invoke_model(ProviderRequest("other-model", "hello", None, 20))
+
+    assert raised.value.kind is ErrorKind.INCOMPATIBLE
+    assert calls == []
 
 
 def test_missing_executable_is_not_detected() -> None:
