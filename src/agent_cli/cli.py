@@ -26,7 +26,7 @@ from agent_cli.state import TaskStore
 from agent_cli.ui import blocks, error, home, info, is_unicode, make_console
 
 if TYPE_CHECKING:
-    from agent_cli.gateway.service import RootPromptGateway
+    from agent_cli.gateway.service import SupervisorService
     from agent_cli.orchestration import OrchestrationService
     from agent_cli.orchestration.domain import Handoff
 
@@ -148,14 +148,14 @@ def gateway(
         return None
     registry = adapters or AdapterRegistry()
     orchestrate = orchestrator(config, registry, tasks, read_line, write_line)
-    service: RootPromptGateway | None = None
+    service: SupervisorService | None = None
 
     def respond(text: str) -> RenderableType:
         nonlocal service
         if service is None:
-            from agent_cli.gateway.service import RootPromptGateway
+            from agent_cli.gateway.service import SupervisorService
 
-            service = RootPromptGateway(
+            service = SupervisorService(
                 config,
                 registry,
                 orchestrate,
