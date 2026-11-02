@@ -23,6 +23,7 @@ from agent_cli.budget import (
     BudgetError,
     BudgetGuard,
     BudgetRejected,
+    BudgetedPaths,
     CallBounds,
     PathQuote,
     quote_path,
@@ -165,7 +166,7 @@ class DirectModelCall:
         system: str,
         prompt: str,
         max_output_tokens: int,
-    ):
+    ) -> BudgetedPaths:
         """Return every admissible path in routing order without reserving spend."""
         preference = self.config.access.preference
         context = DEFAULT_ESTIMATOR.estimate(system + prompt) + max_output_tokens
