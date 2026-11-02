@@ -191,15 +191,6 @@ def safe_process_diagnostic(stderr: str, *sensitive: str, limit: int = 240) -> s
     return text
 
 
-def effective_authority(request: WorkerRequest) -> WorkerAuthority:
-    """Use explicit authority when present; preserve legacy mode semantics for old callers."""
-    if request.authority is not None:
-        return request.authority
-    if request.mode == "plan-only":
-        return WorkerAuthority()
-    return WorkerAuthority(execute_commands=True, modify_source=True)
-
-
 def authority_args(profile: CliHarnessProfile, authority: WorkerAuthority) -> tuple[str, ...]:
     """Translate generic authority to one declarative CLI profile."""
     if authority.modify_source:
@@ -414,8 +405,7 @@ class CliHarnessAdapter(HarnessAdapter):
 
     def check(self, request: WorkerRequest) -> None:
         HarnessAdapter.check(self, request)
-        if request.authority is not None:
-            authority_args(self.profile, request.authority)
+        authority_args(self.profile, request.authority)
 
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
@@ -457,14 +447,7 @@ class CliHarnessAdapter(HarnessAdapter):
         return WorkerHandle(self.harness_id, token)
 
     def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        if request.authority is None:
-            args = (
-                self.profile.worker_plan_args
-                if request.mode == "plan-only"
-                else self.profile.worker_write_args
-            )
-        else:
-            args = authority_args(self.profile, request.authority)
+        args = authority_args(self.profile, request.authority)
         argv = [self.command(), *self.profile.worker_base_args, *args]
         if request.model is not None:
             argv += [self.profile.worker_model_flag, request.model.id]
@@ -748,7 +731,7 @@ def direct_model_prompt(request: ProviderRequest) -> str:
 
 
 def render_worker_prompt(request: WorkerRequest) -> str:
-    authority = effective_authority(request)
+    authority = request.authority
     sections = [
         "You are a bounded worker controlled by Agent CLI.",
         f"Role: {request.role}",
