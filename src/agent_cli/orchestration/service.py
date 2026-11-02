@@ -109,12 +109,14 @@ class OrchestrationService:
 
     def resume_queued(self) -> None:
         """Restart recovery for unlaunched, persisted work only."""
-        session = self.store.latest_session() if self.store.exists() else None
-        if session is None or not session.open:
+        if not self.store.exists():
             return
-        for task in self.store.tasks(session.id):
-            if task.parent_id is None and task.kind == "ship" and self.store.subtasks(task.id):
-                self.advance(task.id)
+        for session in self.store.sessions():
+            if not session.open:
+                continue
+            for task in self.store.tasks(session.id):
+                if task.parent_id is None and task.kind == "ship" and self.store.subtasks(task.id):
+                    self.advance(task.id)
 
     def advance(self, root_id: str) -> RenderableType | None:
         """Dispatch dependency-ready tasks without a planning-model call."""
