@@ -175,6 +175,7 @@ def test_provider_factory_registry_supports_new_provider_type_without_runtime_ch
 
 def test_factory_registry_rejects_duplicate_type_registration() -> None:
     registry = HarnessFactoryRegistry()
+
     def factory(harness_id: str, config: HarnessConfig) -> FakeHarnessAdapter:
         return FakeHarnessAdapter(harness_identity=HarnessIdentity(harness_id, harness_id, "1.0"))
 
