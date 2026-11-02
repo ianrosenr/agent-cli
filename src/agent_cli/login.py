@@ -10,7 +10,6 @@ from rich.console import RenderableType
 from agent_cli.adapters import AdapterError, AdapterRegistry, Capability, ReadinessState
 from agent_cli.adapters.harness import HarnessAdapter
 from agent_cli.config import Config
-from agent_cli.config.model import HarnessConfig
 from agent_cli.ui import blocks, error, fields, info, muted, section, success, warning
 
 type ReadLine = Callable[[str], str]
@@ -32,7 +31,8 @@ class HarnessLoginService:
     write_line: WriteLine
 
     def enabled(self, harness_id: str) -> bool:
-        return self.config.harnesses.get(harness_id, HarnessConfig()).enabled
+        entry = self.config.harnesses.get(harness_id)
+        return entry is not None and entry.enabled
 
     def selected(self, target: str = "") -> tuple[HarnessAdapter, ...] | RenderableType:
         if target:
