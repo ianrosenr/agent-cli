@@ -171,8 +171,13 @@ class OrchestrationService:
         if project_root is None:
             raise WorkerLaunchError("No repository is open")
         return WorkerExecutor(
-            self.store, self.adapters, registry, config, project_root,
-            notify=self.worker_notify, on_finished=self.worker_finished,
+            self.store,
+            self.adapters,
+            registry,
+            config,
+            project_root,
+            notify=self.worker_notify,
+            on_finished=self.worker_finished,
         )
 
     def handle(self, text: str, handoff: TaskBrief | None = None) -> RenderableType:
