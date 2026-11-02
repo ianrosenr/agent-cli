@@ -53,7 +53,7 @@ def default_adapters(
     for harness_id in sorted(harness_ids):
         entry = config.harnesses.get(harness_id)
         effective = (
-            HarnessConfig(profile=harness_id)
+            HarnessConfig(type="cli", profile=harness_id)
             if entry is None
             else entry
         )
