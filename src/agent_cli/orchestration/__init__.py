@@ -13,7 +13,6 @@ from agent_cli.orchestration.calls import (
 from agent_cli.orchestration.domain import (
     DELEGATED_ROLES,
     FileFacts,
-    Handoff,
     PlanningInput,
     PlanProposal,
     PlanRejected,
@@ -49,7 +48,6 @@ __all__ = [
     "FakePlanner",
     "FakeSpecAuthor",
     "FileFacts",
-    "Handoff",
     "ModelCall",
     "ModelOutputError",
     "ModelReply",
