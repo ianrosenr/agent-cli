@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from agent_cli.terms import AccessKind, ImplementationMode
+from agent_cli.terms import AccessKind
 
 # -- Errors ------------------------------------------------------------------------------------
 
@@ -238,7 +238,6 @@ class WorkerRequest:
     """The provider/access path."""
     harness: Selection | None = None
     """The harness routing chose. The adapter receiving the request must be this harness."""
-    mode: ImplementationMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
