@@ -87,7 +87,7 @@ class RootPromptGateway:
 
     def handle(self, text: str) -> RenderableType:
         if self.orchestrate is not None and self.pending_question():
-            self.conversation.add(text, ANSWERED_QUESTION, "orchestration")
+            self.conversation.add(text, ANSWERED_QUESTION, "ship")
             return self.orchestrate(text, None)
         try:
             config = self.config.resolve()
