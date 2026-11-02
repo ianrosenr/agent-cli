@@ -89,6 +89,8 @@ class OrchestrationService:
     home: Path | None = None
     login_harnesses: LoginHarnesses | None = None
     """Interactive native-login callback supplied by the shell; absent in noninteractive uses."""
+    worker_notify: Callable[[str], None] | None = None
+    """Optional shell-safe notification sink for background worker completion."""
     _index: RepositoryIndex | None = None
 
     def handle(self, text: str, handoff: Handoff | None = None) -> RenderableType:
@@ -181,6 +183,7 @@ class OrchestrationService:
                         registry,
                         config,
                         project_root,
+                        notify=self.worker_notify,
                     ).launch(child, "scout", handoff.complexity, child.goal)
                     return info("Scout started.", started)
                 except WorkerLaunchError:
