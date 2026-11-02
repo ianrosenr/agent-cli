@@ -63,6 +63,7 @@ from agent_cli.orchestration.spec_author import (
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
 from agent_cli.state import Approval, PinKind, Task, TaskAuthorization, TaskStateError, TaskStatus, TaskStore
+from agent_cli.terms import TaskComplexity
 from agent_cli.ui import error, info
 from agent_cli.workers import WorkerExecutor, WorkerLaunchError
 
@@ -229,7 +230,7 @@ class OrchestrationService:
         task: Task,
         config: Config,
         registry: ModelRegistry,
-        complexity,
+        complexity: TaskComplexity,
     ) -> RenderableType:
         """Grant, checkpoint, or block implementation authority for one prepared ship."""
         spec = self.store.latest_spec(task.id)
@@ -311,7 +312,7 @@ class OrchestrationService:
         task: Task,
         config: Config,
         registry: ModelRegistry,
-        complexity,
+        complexity: TaskComplexity,
         authorization: TaskAuthorization,
     ) -> RenderableType:
         """Launch only after canonical state records current implementation authorization."""
