@@ -450,6 +450,8 @@ def test_trivial_ship_plan_only_never_launches(
     [child] = store.subtasks(root.id)
     authorization = store.latest_authorization(child.id)
     assert authorization is not None and authorization.status is AuthorizationStatus.REJECTED
+    blocked = store.task(child.id)
+    assert blocked is not None and blocked.status is TaskStatus.BLOCKED
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
