@@ -89,6 +89,7 @@ class CliHarnessProfile:
     worker_base_args: tuple[str, ...]
     worker_plan_args: tuple[str, ...]
     worker_write_args: tuple[str, ...]
+    worker_research_args: tuple[str, ...] | None = None
     worker_diagnostic_args: tuple[str, ...] | None = None
     worker_model_flag: str = "--model"
     worker_stdin_marker: str | None = None
@@ -215,7 +216,12 @@ def authority_args(profile: CliHarnessProfile, authority: WorkerAuthority) -> tu
                 f"{profile.display_name}: cannot enforce diagnostic authority",
             )
         return profile.worker_diagnostic_args
-    return profile.worker_plan_args
+    if profile.worker_research_args is None:
+        raise AdapterError(
+            ErrorKind.INCOMPATIBLE,
+            f"{profile.display_name}: cannot enforce research authority",
+        )
+    return profile.worker_research_args
 
 
 @dataclass(slots=True)
@@ -408,7 +414,8 @@ class CliHarnessAdapter(HarnessAdapter):
 
     def check(self, request: WorkerRequest) -> None:
         super().check(request)
-        authority_args(self.profile, effective_authority(request))
+        if request.authority is not None:
+            authority_args(self.profile, request.authority)
 
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
@@ -450,7 +457,14 @@ class CliHarnessAdapter(HarnessAdapter):
         return WorkerHandle(self.harness_id, token)
 
     def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        args = authority_args(self.profile, effective_authority(request))
+        if request.authority is None:
+            args = (
+                self.profile.worker_plan_args
+                if request.mode == "plan-only"
+                else self.profile.worker_write_args
+            )
+        else:
+            args = authority_args(self.profile, request.authority)
         argv = [self.command(), *self.profile.worker_base_args, *args]
         if request.model is not None:
             argv += [self.profile.worker_model_flag, request.model.id]
