@@ -23,7 +23,7 @@ from agent_cli.config import Config, ConfigError, ConfigService, Layer
 from agent_cli.config.model import Verbosity
 from agent_cli.guided_setup import GuidedSetup
 from agent_cli.login import HarnessLoginService
-from agent_cli.state import Approval, TaskStateError, status_view
+from agent_cli.state import AuthorizationStatus, TaskStateError, status_view
 from agent_cli.state.status import NO_ACTIVE_TASK
 from agent_cli.terms import ImplementationMode
 from agent_cli.ui import (
@@ -215,7 +215,7 @@ def cancel_command(context: CommandContext, args: str) -> RenderableType:
         if authorization is not None:
             tasks.decide_authorization(
                 authorization.id,
-                Approval.REJECTED,
+                AuthorizationStatus.REJECTED,
                 "user",
                 "canceled by user",
             )
