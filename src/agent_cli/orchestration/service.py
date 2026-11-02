@@ -489,9 +489,7 @@ class OrchestrationService:
                             "200 characters. Put details in why, not goal.",
                         ),
                     )
-                    plan = validate_proposal(
-                        self.planner.propose(retry_input, call), planning
-                    )
+                    plan = validate_proposal(self.planner.propose(retry_input, call), planning)
             except (PlanningUnavailable, ModelOutputError, PlanRejected) as error:
                 return self.stop(root, f"{failure(error)}: {error}")
             for pin in plan.planning_pins:
