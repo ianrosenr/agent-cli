@@ -25,7 +25,7 @@ from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
 from agent_cli.config.model import WorkersConfig
 from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
-from agent_cli.state import Approval, Task, TaskStatus, TaskStore
+from agent_cli.state import AuthorizationStatus, Task, TaskStatus, TaskStore
 from agent_cli.workers import (
     WorkerDispatcher,
     WorkerExecutor,
