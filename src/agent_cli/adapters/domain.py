@@ -199,6 +199,25 @@ class Selection:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerAuthority:
+    """Execution powers granted to one worker, independent of its role or skills."""
+
+    execute_commands: bool = False
+    modify_source: bool = False
+
+    @property
+    def profile(self) -> str:
+        if self.modify_source:
+            return "implementation"
+        return "diagnostic" if self.execute_commands else "research"
+
+
+RESEARCH_AUTHORITY = WorkerAuthority()
+DIAGNOSTIC_AUTHORITY = WorkerAuthority(execute_commands=True)
+IMPLEMENTATION_AUTHORITY = WorkerAuthority(execute_commands=True, modify_source=True)
+
+
+@dataclass(frozen=True, slots=True)
 class WorkerRequest:
     """Everything a harness needs to run one unit of work. Holds no conversation history."""
 
@@ -212,6 +231,8 @@ class WorkerRequest:
     """The targeted repository context, such as its root or a short description."""
     skills: tuple[str, ...] = ()
     """Selected skills and policy context, already rendered for the worker."""
+    authority: WorkerAuthority = RESEARCH_AUTHORITY
+    """Technically enforced execution powers. Skills and role never expand these."""
     model: Selection | None = None
     provider: Selection | None = None
     """The provider/access path."""
