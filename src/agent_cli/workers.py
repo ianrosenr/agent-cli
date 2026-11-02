@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import threading
 import time
@@ -195,7 +194,11 @@ class WorktreeManager:
             if status.returncode or (kind == "ship" and status.stdout.strip()):
                 raise WorkerLaunchError("existing worker worktree is not clean")
             return target
-        command = ["git", "worktree", "add", "--detach", str(target), "HEAD"]
+        command = (
+            ["git", "worktree", "add", "-b", f"agent-cli/task/{task_id}", str(target), "HEAD"]
+            if kind == "ship"
+            else ["git", "worktree", "add", "--detach", str(target), "HEAD"]
+        )
         result = subprocess.run(
             command,
             cwd=self.root,
@@ -209,82 +212,53 @@ class WorktreeManager:
             raise WorkerLaunchError(detail)
         return target
 
-    def inherit(self, target: Path, upstream: list[Path]) -> None:
-        """Apply predecessor changes into a new worktree; fail closed on conflicts.
+    @staticmethod
+    def _git(worktree: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args], cwd=worktree, capture_output=True, text=True, check=False
+        )
 
-        Use the primary checkout's HEAD as a shared baseline. Never change the
-        user's checkout or silently discard new files.
-        """
+    def inherit(self, target: Path, upstream: list[Path]) -> None:
+        """Merge predecessor commits into a child branch, preserving conflicts for review."""
         if not upstream:
             return
-        base = subprocess.run(
-            ("git", "rev-parse", "HEAD"), cwd=self.root, text=True, capture_output=True
-        )
-        if base.returncode:
+        target_head = self._git(target, "rev-parse", "HEAD")
+        baseline = self._git(self.root, "rev-parse", "HEAD")
+        if target_head.returncode or baseline.returncode:
             raise WorkerLaunchError("cannot determine integration baseline")
-        baseline = base.stdout.strip()
-        target_head = subprocess.run(
-            ("git", "rev-parse", "HEAD"), cwd=target, text=True, capture_output=True
-        )
-        if target_head.returncode or target_head.stdout.strip() != baseline:
+        if target_head.stdout.strip() != baseline.stdout.strip():
             raise WorkerLaunchError("target worktree has a different integration baseline")
         for source in upstream:
             if source.resolve() == self.root.resolve() or not source.is_dir():
                 raise WorkerLaunchError("missing or unsafe predecessor worktree")
-            ancestor = subprocess.run(
-                ("git", "merge-base", "--is-ancestor", baseline, "HEAD"),
-                cwd=source,
-                capture_output=True,
-            )
-            if ancestor.returncode:
-                raise WorkerLaunchError("predecessor does not share the integration baseline")
-            changed = subprocess.run(
-                ("git", "diff", "--binary", baseline), cwd=source, capture_output=True
-            )
-            if changed.returncode:
-                raise WorkerLaunchError("cannot collect predecessor changes")
-            if changed.stdout:
-                verified = subprocess.run(
-                    ("git", "apply", "--check", "-"),
-                    cwd=target,
-                    input=changed.stdout,
-                    capture_output=True,
+            status = self._git(source, "status", "--porcelain")
+            if status.returncode:
+                raise WorkerLaunchError("cannot inspect predecessor changes")
+            if status.stdout:
+                # Worker output belongs to its isolated branch, including newly created files.
+                staged = self._git(source, "add", "-A")
+                if staged.returncode:
+                    raise WorkerLaunchError("cannot stage predecessor changes")
+                committed = self._git(
+                    source, "-c", "user.name=Agent CLI", "-c",
+                    "user.email=agent-cli@localhost", "commit", "-m",
+                    "Record completed worker changes",
                 )
-                if verified.returncode:
-                    raise WorkerLaunchError(
-                        "predecessor changes conflict; manual integration required"
-                    )
-                applied = subprocess.run(
-                    ("git", "apply", "-"),
-                    cwd=target,
-                    input=changed.stdout,
-                    capture_output=True,
-                )
-                if applied.returncode:
-                    raise WorkerLaunchError("predecessor patch could not be applied")
-            untracked = subprocess.run(
-                ("git", "ls-files", "--others", "--exclude-standard", "-z"),
-                cwd=source,
-                capture_output=True,
+                if committed.returncode:
+                    raise WorkerLaunchError("cannot commit predecessor changes")
+            source_head = self._git(source, "rev-parse", "HEAD")
+            if source_head.returncode:
+                raise WorkerLaunchError("cannot read predecessor commit")
+            merged = self._git(
+                target, "-c", "user.name=Agent CLI",
+                "-c", "user.email=agent-cli@localhost",
+                "merge", "--no-ff", "--no-edit", source_head.stdout.strip(),
             )
-            if untracked.returncode:
-                raise WorkerLaunchError("cannot inspect predecessor untracked files")
-            for relative in untracked.stdout.split(b"\0"):
-                if not relative:
-                    continue
-                name = relative.decode("utf-8")
-                origin = source / name
-                destination = target / name
-                if (
-                    not origin.is_file()
-                    or origin.is_symlink()
-                    or not origin.resolve().is_relative_to(source.resolve())
-                    or not destination.resolve().is_relative_to(target.resolve())
-                    or destination.exists()
-                ):
-                    raise WorkerLaunchError("unsafe or conflicting predecessor file")
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(origin, destination)
+            if merged.returncode:
+                self._git(target, "merge", "--abort")
+                raise WorkerLaunchError(
+                    "predecessor branches conflict; preserve worktrees for manual integration"
+                )
 
     def remove(self, path: Path) -> None:
         """Remove one linked worktree; never remove the user's primary checkout."""
