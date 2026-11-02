@@ -191,6 +191,35 @@ class WorktreeManager:
         return target
 
 
+def reconcile_orphaned_workers(store: TaskStore) -> int:
+    """Fail active worker records from a previous process; never replay uncertain launches."""
+    if not store.exists():
+        return 0
+    session = store.latest_session()
+    if session is None:
+        return 0
+    reconciled = 0
+    for task in store.tasks(session.id):
+        for worker in store.workers(task.id):
+            if worker.status not in ACTIVE_WORKER_STATUSES:
+                continue
+            store.update_worker(worker.id, WorkerStatus.FAILED)
+            if not task.status.finished:
+                store.set_status(task.id, TaskStatus.FAILED)
+            store.add_artifact(
+                task.id,
+                "worker-summary",
+                f"worker:{worker.id}",
+                {
+                    "summary": (
+                        "Worker was active when Agent CLI restarted; it was not replayed."
+                    )
+                },
+            )
+            reconciled += 1
+    return reconciled
+
+
 @dataclass(slots=True)
 class WorkerExecutor:
     store: TaskStore
