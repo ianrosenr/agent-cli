@@ -80,6 +80,54 @@ def test_user_defined_cli_profile_needs_no_new_adapter_code() -> None:
     assert adapter.profile.auth_pattern.regexes == ("signed in",)
 
 
+def test_invalid_custom_auth_regex_fails_explicitly() -> None:
+    profile = CliProfileConfig(
+        display_name="Broken CLI",
+        default_command="broken",
+        provider_id="broken-subscription",
+        provider_name="Broken subscription",
+        auth_label="Broken auth",
+        auth_status_args=("auth", "status"),
+        login_args=("auth", "login"),
+        auth_regexes=("(",),
+    )
+
+    with pytest.raises(AdapterFactoryError, match="invalid auth regex"):
+        default_adapters(
+            Config(
+                harness_profiles={"broken": profile},
+                harnesses={"broken": harness("broken")},
+            )
+        )
+
+
+def test_custom_profile_without_lifecycle_commands_does_not_advertise_them() -> None:
+    profile = CliProfileConfig(
+        display_name="Example CLI",
+        default_command="example",
+        provider_id="example-subscription",
+        provider_name="Example subscription",
+        auth_label="Example auth",
+        auth_status_args=("auth", "status"),
+        login_args=("auth", "login"),
+        auth_regexes=("signed in",),
+    )
+    registry = default_adapters(
+        Config(
+            harness_profiles={"example": profile},
+            harnesses={"example": harness("example")},
+        )
+    )
+    adapter = registry.harness("example")
+    assert adapter is not None
+
+    capabilities = adapter.capabilities()
+
+    assert Capability.INSTALL not in capabilities.supported
+    assert Capability.UPDATE not in capabilities.supported
+    assert Capability.LOGIN in capabilities.supported
+
+
 def test_unknown_harness_type_and_profile_fail_explicitly() -> None:
     with pytest.raises(AdapterFactoryError, match="unknown type"):
         default_adapters(Config(harnesses={"x": HarnessConfig(type="other", profile="anything")}))
