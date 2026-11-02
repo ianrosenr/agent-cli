@@ -36,7 +36,14 @@ from agent_cli.models import (
     runtime_paths,
 )
 from agent_cli.skills import SkillError, load_catalog, skill_sources
-from agent_cli.state import AuthorizationStatus, PinKind, Task, TaskStateError, TaskStatus, TaskStore
+from agent_cli.state import (
+    AuthorizationStatus,
+    PinKind,
+    Task,
+    TaskStateError,
+    TaskStatus,
+    TaskStore,
+)
 from agent_cli.terms import Role, TaskComplexity, TaskKind
 
 
