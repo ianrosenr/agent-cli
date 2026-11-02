@@ -26,6 +26,13 @@ from agent_cli.adapters.domain import (
 )
 
 
+def version_matches(policy: str, detected: str) -> bool:
+    """Whether a detected CLI version satisfies the generic harness version policy."""
+    if policy == "latest":
+        return True
+    return detected == policy or detected.rsplit(maxsplit=1)[-1] == policy
+
+
 def unsupported(identity: HarnessIdentity, capability: Capability) -> AdapterError:
     return AdapterError(
         ErrorKind.UNSUPPORTED, f"{identity.display_name} does not support {capability}"
