@@ -32,8 +32,8 @@ signals: [
     throughput_target, timeout, tool_contract_change, transaction, trust_boundary
 ]
 
-# Roles define authority. These are the required baseline skills for each role.
-# No skill is global to every worker.
+# Roles define responsibility. These are the required baseline skills for each role.
+# Skills never grant worker authority. No skill is global to every worker.
 role_defaults:
   orchestrator: []
   spec_author: [specification]
