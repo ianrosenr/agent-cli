@@ -42,7 +42,7 @@ from agent_cli.gateway.intent import (
     RouteDecision,
     SemanticRouter,
 )
-from agent_cli.models import ROUTER_POLICY, ModelRegistry, RegistryError, load_registry
+from agent_cli.models import SUPERVISOR_POLICY, ModelRegistry, RegistryError, load_registry
 from agent_cli.orchestration.calls import PlanningUnavailable
 from agent_cli.orchestration.domain import Handoff, TaskKind
 from agent_cli.state import PinKind, TaskStateError, TaskStore
@@ -170,7 +170,7 @@ class RootPromptGateway:
         """
         if self.router is not None:
             return self.router(config, calls.registry)
-        settings = config.routing.classifier
+        settings = config.routing.supervisor
         if settings.mode == "disabled":
             return None
         pins: dict[PinKind, str] = {}
@@ -179,7 +179,7 @@ class RootPromptGateway:
         call = calls.call(config, pins)
 
         def route(system: str, prompt: str, max_output_tokens: int) -> tuple[str, str]:
-            reply = call(ROUTER_POLICY, "supervisor_intake", system, prompt, max_output_tokens)
+            reply = call(SUPERVISOR_POLICY, "supervisor_intake", system, prompt, max_output_tokens)
             return reply.text, reply.describe()
 
         return ProviderRouter(route)
