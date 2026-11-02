@@ -304,6 +304,7 @@ class WorkerExecutor:
                 f"worker:{recorded.id}",
                 {
                     "complexity": complexity,
+                    "authority": selected_authority.profile,
                     "model": dispatch.model_id,
                     "provider": dispatch.provider_id,
                     "harness": dispatch.harness_id,
