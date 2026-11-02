@@ -126,7 +126,14 @@ def test_login_respects_saved_disabled_harness() -> None:
 def test_targeted_login_uses_alias_and_respects_disabled_config() -> None:
     claude = FakeHarness("claude-code", "Claude Code", ReadinessState.AUTH_REQUIRED)
     codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.AUTH_REQUIRED)
-    config = Config(harnesses={"claude-code": HarnessConfig(enabled=False)})
+    config = Config(
+        harnesses={
+            "claude-code": HarnessConfig(
+                type="cli", profile="claude-code", enabled=False
+            ),
+            "codex-cli": HarnessConfig(type="cli", profile="codex-cli"),
+        }
+    )
     login, _ = service(claude, codex, config)
 
     disabled = plain(login.run("claude"))
