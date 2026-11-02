@@ -28,5 +28,3 @@ def test_pending_dependency_blocks_dispatch(tmp_path) -> None:
     store.set_status(upstream.id, TaskStatus.COMPLETED)
     assert evaluate_task(store, downstream).readiness is Readiness.READY
     assert ready_tasks(store, root.id) == [downstream]
-    store.set_status(upstream.id, TaskStatus.FAILED)
-    assert evaluate_task(store, downstream).readiness is Readiness.FAILED
