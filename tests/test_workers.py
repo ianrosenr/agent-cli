@@ -158,7 +158,7 @@ def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
     adapters, _ = runtime(auto_finish=True)
 
     WorkerExecutor(store, adapters, registry(), Config(), root).launch(
-        child, "scout", "trivial", child.goal
+        child, "scout", "trivial", child.goal, DIAGNOSTIC_AUTHORITY
     )
 
     [recorded] = store.workers(child.id)
@@ -269,7 +269,7 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     adapters = AdapterRegistry([harness], [provider])
 
     WorkerExecutor(store, adapters, registry(), Config(), root).launch(
-        child, "scout", "trivial", child.goal
+        child, "scout", "trivial", child.goal, DIAGNOSTIC_AUTHORITY
     )
 
     [recorded] = store.workers(child.id)
