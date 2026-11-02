@@ -18,7 +18,7 @@ from pathlib import Path
 
 from rich.console import RenderableType
 
-from agent_cli.adapters import AdapterRegistry
+from agent_cli.adapters import DIAGNOSTIC_AUTHORITY, AdapterRegistry
 from agent_cli.budget import NO_PRICING, BudgetGuard, CostEstimator, SpendLedger
 from agent_cli.config import Config, ConfigError, ConfigService
 from agent_cli.models import (
@@ -184,7 +184,7 @@ class OrchestrationService:
                         config,
                         project_root,
                         notify=self.worker_notify,
-                    ).launch(child, "scout", handoff.complexity, child.goal)
+                    ).launch(child, "scout", handoff.complexity, child.goal, DIAGNOSTIC_AUTHORITY)
                     return info("Scout started.", started)
                 except WorkerLaunchError as problem:
                     return render_plan(
