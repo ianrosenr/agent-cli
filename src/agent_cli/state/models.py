@@ -11,6 +11,7 @@ from enum import StrEnum
 from typing import Literal, get_args
 
 from agent_cli.adapters.domain import Selection, WorkerStatus
+from agent_cli.terms import TaskComplexity, TaskKind
 
 type PinKind = Literal["model", "provider", "harness"]
 type RequirementSource = Literal["user", "derived"]
@@ -62,6 +63,8 @@ class Task:
     role: str | None
     created_at: str
     updated_at: str
+    kind: TaskKind | None = None
+    complexity: TaskComplexity | None = None
 
 
 @dataclass(frozen=True, slots=True)
