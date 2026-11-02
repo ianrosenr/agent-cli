@@ -49,7 +49,6 @@ ROLE_CAPABILITIES: Mapping[Role, tuple[ModelCapability, ModelCapability]] = Mapp
 )
 """Role → (primary capability the floor applies to, secondary capability for ranking)."""
 
-
 @dataclass(frozen=True, slots=True)
 class RoleRequirement:
     role: Role
@@ -95,7 +94,6 @@ def eligible_models(registry: ModelRegistry, need: RoleRequirement) -> tuple[Mod
     eligible = [entry for entry in registry.active() if need.met_by(entry)]
     return tuple(sorted(eligible, key=lambda entry: rank_key(entry, need)))
 
-
 @dataclass(frozen=True, slots=True)
 class ModelCandidate:
     """One capability-ranked automatic worker model with every currently usable access path.
@@ -127,7 +125,6 @@ def ranked_model_candidates(
             result.append(ModelCandidate(need, entry.id, entry, paths))
     return tuple(result)
 
-
 @dataclass(frozen=True, slots=True)
 class AnswerPolicy:
     """Model choice for direct root-prompt/control-plane calls.
@@ -155,7 +152,6 @@ REPOSITORY_ANSWER_POLICY = AnswerPolicy(
 """Read-only questions about the current repository."""
 SUPERVISOR_POLICY = AnswerPolicy("supervisor", C.REASONING, FLOOR_SCORES["low"])
 """Root supervisor intake: prefer the cheapest adequate reachable model."""
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,7 +186,6 @@ def answer_candidates(
             result.append(AnswerCandidate(entry.id, entry, paths))
     return tuple(result)
 
-
 @dataclass(frozen=True, slots=True)
 class ModelPin:
     """A model the user named for delegated work. A hard constraint, not routing evidence."""
@@ -206,7 +201,6 @@ class SelectionKind(StrEnum):
     PINNED = "pinned"
     PINNED_UNSCORED = "pinned_unscored"
     """Pinned to a model the registry has no active scores for; no scores are invented."""
-
 
 @dataclass(frozen=True, slots=True)
 class ModelSelection:
@@ -254,7 +248,6 @@ def select_model(
     """
     need = requirement(role, floors)
     return select_pinned(registry, need, runtime, preference, pin, context_tokens)
-
 
 @dataclass(frozen=True, slots=True)
 class PinnedPaths:
