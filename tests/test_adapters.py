@@ -475,7 +475,11 @@ def status_registry() -> AdapterRegistry:
 
 def test_status_combines_config_with_runtime_readiness() -> None:
     config = Config(
-        harnesses={"beta": HarnessConfig(), "gamma": HarnessConfig(), "off": HarnessConfig(False)},
+        harnesses={
+            "beta": HarnessConfig(type="cli", profile="beta"),
+            "gamma": HarnessConfig(type="cli", profile="gamma"),
+            "off": HarnessConfig(type="cli", profile="off", enabled=False),
+        },
         providers={"local": ProviderConfig("openai-compatible")},
     )
     assert adapter_status(status_registry(), config) == [
@@ -515,9 +519,11 @@ def test_runtime_readiness_is_not_configuration() -> None:
     assert config_fields.isdisjoint({"detected", "ready", "readiness", "health"})
     assert "version" in field_names(HarnessConfig)
     # This is user policy; the detected runtime version is still not persisted.
-    config = Config(harnesses={"beta": HarnessConfig()})
+    config = Config(harnesses={"beta": HarnessConfig(type="cli", profile="beta")})
     adapter_status(status_registry(), config)
-    assert config == Config(harnesses={"beta": HarnessConfig()})
+    assert config == Config(
+        harnesses={"beta": HarnessConfig(type="cli", profile="beta")}
+    )
 
 
 def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigService) -> None:
