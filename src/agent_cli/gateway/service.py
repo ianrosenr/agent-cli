@@ -96,7 +96,7 @@ class RootPromptGateway:
         in_repository = self.root is not None and self.orchestrate is not None
         router = IntentRouter(lambda: self.build_router(config, calls))
         decision = router.route(text, self.conversation.recent(ROUTER_VIEW), in_repository)
-        if decision.intent == "orchestration":
+        if decision.intent in {"repository_task", "orchestration"}:
             return self.delegate(text, decision, config)
 
         question = Question(text, decision.request, self.conversation.recent(ANSWER_VIEW))
@@ -123,7 +123,7 @@ class RootPromptGateway:
             return NO_REPOSITORY
         handoff = Handoff(decision.request or text, self.conversation.transcript(HANDOFF_VIEW))
         output = self.orchestrate(text, handoff)
-        self.conversation.add(text, f"Delegated to planning: {handoff.goal}", "orchestration")
+        self.conversation.add(text, f"Delegated to planning: {handoff.goal}", decision.intent)
         notes = verbose_routing(config, decision)
         if not notes:
             return output
@@ -155,9 +155,9 @@ class RootPromptGateway:
             return True  # let orchestration report the broken state
 
     def build_router(self, config: Config, calls: AnswerCalls) -> SemanticRouter | None:
-        """Auto uses only a free/low-cost adequate router model; selected uses the exact model.
-        Every call is still budgeted. ``routing.classifier.mode: disabled`` turns routing off,
-        and every turn is then answered read-only."""
+        """Auto prefers the cheapest adequate router model and falls back to the cheapest
+        reachable adequate model so semantic routing never disappears. Selected uses the exact
+        model. Every call is budgeted; disabled turns semantic routing off."""
         if self.router is not None:
             return self.router(config, calls.registry)
         settings = config.routing.classifier
