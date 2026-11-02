@@ -413,7 +413,7 @@ class CliHarnessAdapter(HarnessAdapter):
         return ProviderResponse(request.model_id, text, usage)
 
     def check(self, request: WorkerRequest) -> None:
-        super().check(request)
+        HarnessAdapter.check(self, request)
         if request.authority is not None:
             authority_args(self.profile, request.authority)
 
