@@ -86,6 +86,12 @@ UNAVAILABLE = "Configuration is unavailable in this session."
 def startup_command(context: CommandContext, args: str) -> RenderableType:
     if context.config is None:
         return error(UNAVAILABLE)
+    migrated = context.config.migrate_legacy_builtin_harnesses()
+    migration = (
+        info("Updated legacy Claude/Codex harness config to the current format.")
+        if migrated
+        else None
+    )
     adapters = adapters_of(context)
     setup = GuidedSetup(
         context.config,
@@ -95,7 +101,7 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     )
     result = setup.run()
     if not setup.saved:
-        return result
+        return blocks(migration, result)
     if context.reload_adapters is not None:
         context.reload_adapters()
     try:
@@ -112,14 +118,14 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     )
     installation = lifecycle.offer_install()
     if "subscription" not in config.access.preference:
-        return blocks(result, installation) if installation is not None else result
+        return blocks(migration, result, installation)
     login = HarnessLoginService(
         adapters_of(context),
         config,
         context.read_line,
         context.write_line,
     ).offer()
-    return blocks(result, installation, login)
+    return blocks(migration, result, installation, login)
 
 
 def login_command(context: CommandContext, args: str) -> RenderableType:
