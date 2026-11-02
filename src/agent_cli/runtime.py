@@ -67,8 +67,8 @@ def default_adapters(
         ):
             registry.register_provider(HarnessBackedProviderAdapter(harness))
 
-    for provider_id, entry in sorted(config.providers.items()):
-        registry.register_provider(provider_factories.build(provider_id, entry))
+    for provider_id, provider_config in sorted(config.providers.items()):
+        registry.register_provider(provider_factories.build(provider_id, provider_config))
     return registry
 
 
