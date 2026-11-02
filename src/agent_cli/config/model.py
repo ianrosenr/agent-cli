@@ -15,6 +15,7 @@ from agent_cli.terms import AccessKind, ImplementationMode
 type SkillActivation = Literal["always", "auto", "explicit", "disabled"]
 type Tier = Literal["low", "mid", "high"]
 type ClassifierSelection = Literal["auto", "selected", "disabled"]
+type Verbosity = Literal["concise", "normal", "verbose"]
 
 MAX_WORKER_CONCURRENCY = 16
 
@@ -69,6 +70,11 @@ class SkillsConfig:
     paths: tuple[str, ...] = constrained((), kind="paths")
     activation: dict[str, SkillActivation] = field(default_factory=dict)
     context_budget_tokens: int = constrained(8000, minimum=0)
+
+
+@dataclass(frozen=True, slots=True)
+class UiConfig:
+    verbosity: Verbosity = "concise"
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +186,7 @@ class Config:
     workers: WorkersConfig = field(default_factory=WorkersConfig)
     git: GitConfig = field(default_factory=GitConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    ui: UiConfig = field(default_factory=UiConfig)
     harness_profiles: dict[str, CliProfileConfig] = field(default_factory=dict)
     harnesses: dict[str, HarnessConfig] = field(default_factory=dict)
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
