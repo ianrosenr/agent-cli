@@ -244,22 +244,30 @@ class TaskStore:
         )
         if parent_id is not None and self._session_of(db, parent_id) != session_id:
             raise TaskStateError(f"parent task {parent_id} belongs to another session")
-        db.execute(
-            "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-            "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                task.id,
-                session_id,
-                parent_id,
-                goal,
-                task.status,
-                role,
-                now,
-                now,
-                kind,
-                complexity,
-            ),
-        )
+        if kind is None and complexity is None:
+            # Keep test/upgrade helpers able to seed an older migration intentionally.
+            db.execute(
+                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (task.id, session_id, parent_id, goal, task.status, role, now, now),
+            )
+        else:
+            db.execute(
+                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+                "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task.id,
+                    session_id,
+                    parent_id,
+                    goal,
+                    task.status,
+                    role,
+                    now,
+                    now,
+                    kind,
+                    complexity,
+                ),
+            )
         self._event(
             db,
             session_id,
