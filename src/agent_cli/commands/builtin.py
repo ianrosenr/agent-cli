@@ -149,9 +149,9 @@ def reload_command(context: CommandContext, args: str) -> RenderableType:
         context.config.resolve()
     except ConfigError as problem:
         return error("Configuration reload rejected.", str(problem))
-    problem = context.reload_adapters()
-    if problem is not None:
-        return error("Configuration reload rejected.", problem)
+    reload_problem = context.reload_adapters()
+    if reload_problem is not None:
+        return error("Configuration reload rejected.", reload_problem)
     return success("Configuration reloaded.", "/providers and /models now use the new runtime.")
 
 
