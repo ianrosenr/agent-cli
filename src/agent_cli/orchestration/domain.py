@@ -10,10 +10,9 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 from agent_cli.state import ALL_CHILDREN, PIN_KINDS, PlannedPin, PlannedTask, PlanWrite
-from agent_cli.terms import CANONICAL_ROLES
+from agent_cli.terms import CANONICAL_ROLES, TaskComplexity, TaskKind
 
 ROOT_ROLE = "orchestrator"
 PLANNING_SCOPE = ROOT_ROLE
@@ -130,10 +129,6 @@ class PlanningInput:
     def user_texts(self) -> tuple[str, ...]:
         """Everything that can authorize a pin: only what the user actually said."""
         return tuple(item.text for item in (*self.requirements, *self.answers))
-
-
-type TaskKind = Literal["scout", "ship"]
-type TaskComplexity = Literal["trivial", "moderate", "complex"]
 
 
 @dataclass(frozen=True, slots=True)
