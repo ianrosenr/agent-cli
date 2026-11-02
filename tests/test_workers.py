@@ -134,7 +134,7 @@ def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_pat
     assert worker.request.mode == "plan-only"
     assert worker.request.working_directory != root
     assert worker.request.working_directory.is_dir()
-    assert git(root, "status", "--porcelain") == ""
+    assert git(root, "diff", "--name-only") == ""
 
 
 def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
