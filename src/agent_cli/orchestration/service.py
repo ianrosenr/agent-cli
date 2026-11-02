@@ -135,9 +135,7 @@ class OrchestrationService:
 
         if plan.proposal.work_items:
             auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-            harness_pins = tuple(
-                pin.value for pin in plan.delegated_pins if pin.kind == "harness"
-            )
+            harness_pins = tuple(pin.value for pin in plan.delegated_pins if pin.kind == "harness")
             if harness_pins:
                 ready, reason = auth.repair_pinned(harness_pins)
                 if not ready:
