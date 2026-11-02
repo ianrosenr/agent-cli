@@ -6,9 +6,8 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-from rich.console import RenderableType
-
 import pytest
+from rich.console import RenderableType
 
 from agent_cli import cli
 from agent_cli.commands import CommandContext, build_registry
@@ -186,14 +185,11 @@ def test_shell_cancels_foreground_operation_on_ctrl_c() -> None:
     def interrupted(_line: str, _context: CommandContext) -> RenderableType | None:
         raise KeyboardInterrupt
 
-    original = cli.handle_input
-    cli.handle_input = interrupted
-    try:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(cli, "handle_input", interrupted)
         code = cli.run_shell(
             build_registry(), scripted("run", KeyboardInterrupt), write_line, STARTUP
         )
-    finally:
-        cli.handle_input = original
     assert code == 0
     assert any("Canceled current operation" in item for item in output)
 
