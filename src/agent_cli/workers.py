@@ -7,26 +7,30 @@ import threading
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, cast
 
 from agent_cli.adapters import (
     AdapterError,
     AdapterRegistry,
     Capability,
     Selection,
+    WorkerHandle,
     WorkerRequest,
     WorkerResult,
     WorkerStatus,
 )
 from agent_cli.config import Config
+from agent_cli.config.model import RoleFloors, Tier
 from agent_cli.models import (
     ModelPath,
+    ModelPin,
     ModelRegistry,
     pinned_paths,
     ranked_model_candidates,
     runtime_paths,
 )
 from agent_cli.state import PinKind, Task, TaskStateError, TaskStatus, TaskStore
-from agent_cli.terms import TaskComplexity, TaskKind
+from agent_cli.terms import Role, TaskComplexity, TaskKind
 
 
 class WorkerLaunchError(Exception):
@@ -41,12 +45,15 @@ class Dispatch:
     reason: str
 
 
-def floors_for(config: Config, role: str, complexity: TaskComplexity):
+def floors_for(config: Config, role: Role, complexity: TaskComplexity) -> RoleFloors:
     """Lower only the task role's floor for trivial work; complex work requires high."""
-    floor = "low" if complexity == "trivial" else "high" if complexity == "complex" else None
+    floor: Tier | None = (
+        "low" if complexity == "trivial" else "high" if complexity == "complex" else None
+    )
     if floor is None:
         return config.routing.role_floors
-    return replace(config.routing.role_floors, **{role: floor})
+    changes = cast(Any, {role: floor})
+    return replace(config.routing.role_floors, **changes)
 
 
 @dataclass(slots=True)
@@ -62,6 +69,7 @@ class WorkerDispatcher:
         pins: dict[PinKind, str],
     ) -> Dispatch:
         runtime = runtime_paths(self.adapters, self.config)
+        role = cast(Role, task.role or "research_investigator")
         model_pin = pins.get("model")
         provider_pin = pins.get("provider")
         harness_pin = pins.get("harness")
@@ -78,8 +86,8 @@ class WorkerDispatcher:
         else:
             candidates = ranked_model_candidates(
                 self.registry,
-                task.role or "research_investigator",
-                floors_for(self.config, task.role or "research_investigator", complexity),
+                role,
+                floors_for(self.config, role, complexity),
                 runtime,
                 self.config.access.preference,
             )
@@ -138,9 +146,7 @@ class WorkerDispatcher:
         raise WorkerLaunchError(f"no compatible worker route is available{suffix}")
 
     @staticmethod
-    def _model_pin(value: str, task_id: str):
-        from agent_cli.models import ModelPin
-
+    def _model_pin(value: str, task_id: str) -> ModelPin:
         return ModelPin(value, f"task:{task_id}")
 
 
@@ -244,7 +250,9 @@ class WorkerExecutor:
             f"{dispatch.model_id} / {dispatch.harness_id}. You can keep prompting."
         )
 
-    def _monitor(self, worker_id: str, task_id: str, harness_id: str, handle) -> None:
+    def _monitor(
+        self, worker_id: str, task_id: str, harness_id: str, handle: WorkerHandle
+    ) -> None:
         harness = self.adapters.harness(harness_id)
         if harness is None:
             self.store.update_worker(worker_id, WorkerStatus.FAILED)
@@ -257,16 +265,12 @@ class WorkerExecutor:
                     self._finish(worker_id, task_id, harness.result(handle))
                     return
             except (AdapterError, TaskStateError):
-                with self._ignore_state_errors():
+                try:
                     self.store.update_worker(worker_id, WorkerStatus.FAILED)
+                except TaskStateError:
+                    pass
                 return
             time.sleep(self.poll_seconds)
-
-    @staticmethod
-    def _ignore_state_errors():
-        from contextlib import suppress
-
-        return suppress(TaskStateError)
 
     def _finish(self, worker_id: str, task_id: str, result: WorkerResult) -> None:
         self.store.update_worker(worker_id, result.status)
