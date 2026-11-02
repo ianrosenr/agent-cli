@@ -1,7 +1,7 @@
 """Process startup and the interactive shell loop.
 
-Ordinary text is the primary input: the root-prompt gateway answers it or plans it as work.
-Slash commands are secondary controls, recognized only when input begins with ``/``.
+Ordinary text goes to one continuous supervisor conversation. The supervisor answers directly or
+delegates scout/ship work; slash commands remain secondary controls.
 """
 
 from __future__ import annotations
@@ -142,8 +142,8 @@ def gateway(
     read_line: ReadLine | None = None,
     write_line: WriteLine | None = None,
 ) -> Callable[[str], RenderableType] | None:
-    """The root-prompt entry point: answers questions anywhere, plans work in a repository.
-    Built on first use so routing stays out of startup."""
+    """The root-prompt supervisor: answer directly or delegate scout/ship repository work.
+    Built on first use so semantic intake stays out of startup."""
     if config is None:
         return None
     registry = adapters or AdapterRegistry()
