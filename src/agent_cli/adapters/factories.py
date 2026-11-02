@@ -37,9 +37,7 @@ class HarnessFactoryRegistry:
     def build(self, harness_id: str, config: HarnessConfig) -> HarnessAdapter:
         factory = self.factories.get(config.type)
         if factory is None:
-            raise AdapterFactoryError(
-                f"harness {harness_id!r}: unknown type {config.type!r}"
-            )
+            raise AdapterFactoryError(f"harness {harness_id!r}: unknown type {config.type!r}")
         return factory(harness_id, config)
 
 
@@ -55,9 +53,7 @@ class ProviderFactoryRegistry:
     def build(self, provider_id: str, config: ProviderConfig) -> ProviderAdapter:
         factory = self.factories.get(config.type)
         if factory is None:
-            raise AdapterFactoryError(
-                f"provider {provider_id!r}: unknown type {config.type!r}"
-            )
+            raise AdapterFactoryError(f"provider {provider_id!r}: unknown type {config.type!r}")
         return factory(provider_id, config)
 
 
