@@ -7,6 +7,7 @@ authority.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,6 +22,25 @@ from agent_cli.ui import blocks, muted, styled
 type AuthorizationAction = Literal["grant", "checkpoint", "block"]
 type AuthorizationAnswer = Literal["approve", "reject", "unclear"]
 
+HIGH_RISK_SIGNALS = frozenset(
+    {
+        "agent_instruction_change",
+        "auth_change",
+        "authentication",
+        "authorization",
+        "credential",
+        "cryptography",
+        "irreversible_decision",
+        "migration",
+        "model_selection_policy_change",
+        "privilege",
+        "routing_policy_change",
+        "secret",
+        "system_prompt_change",
+        "trust_boundary",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class AuthorizationDecision:
@@ -32,6 +52,7 @@ def decide_authorization(
     config: Config,
     complexity: TaskComplexity,
     spec: SpecVersion | None,
+    risk_signals: Iterable[str] = (),
 ) -> AuthorizationDecision:
     """Apply proportional write policy without consulting a model."""
     mode = config.implementation.mode
@@ -44,6 +65,12 @@ def decide_authorization(
         return AuthorizationDecision(
             "checkpoint",
             "checkpoint mode requires explicit user approval before source changes",
+        )
+    risky = sorted(HIGH_RISK_SIGNALS.intersection(risk_signals))
+    if risky:
+        return AuthorizationDecision(
+            "checkpoint",
+            "risk-sensitive work requires explicit approval: " + ", ".join(risky),
         )
     if complexity == "complex":
         return AuthorizationDecision(
