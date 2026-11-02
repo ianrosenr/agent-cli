@@ -12,6 +12,7 @@ skills, model, provider, and harness. See docs/ORCHESTRATION.md.
 """
 
 NO_REPOSITORY = (
-    "Agent CLI runs repository work inside a Git repository. Start it from your project's directory."
+    "Agent CLI runs repository work inside a Git repository. "
+    "Start it from your project's directory."
 )
 """Shown when scout/ship work is requested but no repository is open."""
