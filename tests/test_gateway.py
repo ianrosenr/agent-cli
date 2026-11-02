@@ -422,7 +422,10 @@ def test_routing_uses_the_cheap_model_and_answering_the_stronger_one(isolated_ho
 
 
 def test_auto_router_never_promotes_a_medium_cost_model(isolated_home: Path) -> None:
-    provider = ModelProvider(model_ids=("chat-model",), route=judge(**{"fix this bug": "orchestration"}))
+    provider = ModelProvider(
+        model_ids=("chat-model",),
+        route=judge(**{"fix this bug": "orchestration"}),
+    )
     plans = Recorder()
 
     output = plain(
