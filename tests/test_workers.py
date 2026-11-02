@@ -328,6 +328,27 @@ def test_write_worker_requires_current_approved_authorization(tmp_path: Path) ->
     assert "completed" in started
 
 
+def test_mode_change_invalidates_previous_write_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id, "Fix the typo", kind="ship", complexity="trivial"
+    )
+    child = store.create_task(
+        session.id, "Fix the bounded typo", parent_id=parent.id, role="implementer"
+    )
+    store.add_authorization(
+        child.id, "autopilot", AuthorizationStatus.APPROVED, "prior mode",
+        decided_by="policy:autopilot",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    current = replace(Config(), implementation=ImplementationConfig(mode="checkpoint"))
+    executor = WorkerExecutor(store, adapters, registry(), current, root)
+    with pytest.raises(WorkerLaunchError, match="not current mode checkpoint"):
+        executor.launch(child, "ship", "trivial", child.goal, IMPLEMENTATION_AUTHORITY)
+
+
 def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
