@@ -28,6 +28,7 @@ from agent_cli.state.models import (
     ALL_CHILDREN,
     PIN_KINDS,
     Approval,
+    AuthorizationStatus,
     Artifact,
     Assumption,
     Blocker,
@@ -619,7 +620,7 @@ class TaskStore:
         self,
         task_id: str,
         mode: ImplementationMode,
-        status: Approval,
+        status: AuthorizationStatus,
         reason: str,
         *,
         authority_profile: str = "implementation",
@@ -639,7 +640,7 @@ class TaskStore:
                 spec_version=spec_version,
                 decided_by=decided_by,
             )
-            if status is Approval.APPROVED and spec_version is not None:
+            if status is AuthorizationStatus.APPROVED and spec_version is not None:
                 db.execute(
                     "UPDATE spec_versions SET approval = 'approved' "
                     "WHERE task_id = ? AND version = ?",
@@ -669,7 +670,7 @@ class TaskStore:
                 db,
                 task_id,
                 mode,
-                Approval.PENDING,
+                AuthorizationStatus.PENDING,
                 reason,
                 authority_profile=authority_profile,
                 spec_version=spec_version,
@@ -688,12 +689,12 @@ class TaskStore:
     def decide_authorization(
         self,
         authorization_id: str,
-        approval: Approval,
+        approval: AuthorizationStatus,
         decided_by: str,
         reason: str = "",
     ) -> TaskAuthorization:
         """Resolve a pending authorization gate. Only approved/rejected are terminal answers."""
-        if approval not in (Approval.APPROVED, Approval.REJECTED):
+        if approval not in (AuthorizationStatus.APPROVED, AuthorizationStatus.REJECTED):
             raise TaskStateError(f"authorization decision cannot be {approval}")
         with self._write() as db:
             row = db.execute(
@@ -702,7 +703,7 @@ class TaskStore:
             ).fetchone()
             if row is None:
                 raise TaskStateError(f"unknown task authorization: {authorization_id}")
-            if row["status"] != Approval.PENDING:
+            if row["status"] != AuthorizationStatus.PENDING:
                 raise TaskStateError(
                     f"task authorization {authorization_id} is {row['status']}"
                 )
@@ -729,7 +730,7 @@ class TaskStore:
                 )
             next_status = (
                 TaskStatus.PENDING
-                if approval is Approval.APPROVED
+                if approval is AuthorizationStatus.APPROVED
                 else TaskStatus.CANCELED
             )
             self._set_task(
@@ -740,7 +741,7 @@ class TaskStore:
                 "status_changed",
                 reason="authorization decided",
             )
-            if approval is Approval.APPROVED and row["spec_version"] is not None:
+            if approval is AuthorizationStatus.APPROVED and row["spec_version"] is not None:
                 db.execute(
                     "UPDATE spec_versions SET approval = 'approved' "
                     "WHERE task_id = ? AND version = ?",
@@ -791,7 +792,7 @@ class TaskStore:
         db: sqlite3.Connection,
         task_id: str,
         mode: ImplementationMode,
-        status: Approval,
+        status: AuthorizationStatus,
         reason: str,
         *,
         authority_profile: str,
@@ -812,7 +813,7 @@ class TaskStore:
             decided_by,
             blocker_id,
             now,
-            now if status is not Approval.PENDING else None,
+            now if status is not AuthorizationStatus.PENDING else None,
         )
         db.execute(
             "INSERT INTO task_authorizations "
@@ -1673,7 +1674,7 @@ def to_authorization(row: sqlite3.Row) -> TaskAuthorization:
     return record(
         TaskAuthorization,
         row,
-        status=Approval(row["status"]),
+        status=AuthorizationStatus(row["status"]),
         mode=cast(ImplementationMode, row["mode"]),
     )
 
