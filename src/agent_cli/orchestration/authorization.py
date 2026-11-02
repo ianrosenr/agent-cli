@@ -15,7 +15,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from agent_cli.config import Config
-from agent_cli.state import Approval, SpecVersion, Task, TaskAuthorization
+from agent_cli.state import AuthorizationStatus, SpecVersion, Task, TaskAuthorization
 from agent_cli.terms import TaskComplexity
 from agent_cli.ui import blocks, muted, styled
 
@@ -158,6 +158,6 @@ def render_authorization_result(
     authorization: TaskAuthorization,
     message: str,
 ) -> RenderableType:
-    state = "Authorized" if authorization.status is Approval.APPROVED else "Not authorized"
-    style = "success" if authorization.status is Approval.APPROVED else "warning"
+    state = "Authorized" if authorization.status is AuthorizationStatus.APPROVED else "Not authorized"
+    style = "success" if authorization.status is AuthorizationStatus.APPROVED else "warning"
     return blocks(styled(state, style), Text(message))
