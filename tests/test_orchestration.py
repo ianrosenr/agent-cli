@@ -41,7 +41,7 @@ from agent_cli.budget import (
 )
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import ConfigPaths, ConfigService, Layer
-from agent_cli.gateway.intent import ROUTER_SYSTEM
+from agent_cli.gateway.intent import SUPERVISOR_SYSTEM
 from agent_cli.models import ModelRegistry, runtime_paths
 from agent_cli.orchestration import (
     DELEGATED_ROLES,
@@ -1221,7 +1221,7 @@ class ScriptedProvider(ProviderAdapter):
         if self.failure is not None:
             raise AdapterError(self.failure, "scripted provider failed")
         payload = json.loads(request.prompt)
-        if request.system == ROUTER_SYSTEM:
+        if request.system == SUPERVISOR_SYSTEM:
             verdict = {
                 "action": "ship",
                 "confident": True,
@@ -1573,7 +1573,7 @@ def test_the_shell_routes_requested_work_to_orchestration(
     adapters = AdapterRegistry(providers=[provider])
     cli.run_shell(build_registry(), read_line, write_line, "", config, adapters, store)
 
-    assert provider.requests[0].system == ROUTER_SYSTEM
+    assert provider.requests[0].system == SUPERVISOR_SYSTEM
     assert provider.requests[1].system == planner_module.SYSTEM
     assert "Add TTL expiration to CacheStore." in output[1]
     assert "role: orchestrator" in output[2]
