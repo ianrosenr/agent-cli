@@ -80,8 +80,8 @@ class HarnessConfig:
     compatibility. Runtime facts are never stored here.
     """
 
-    type: str = constrained("cli", kind="nonempty")
-    profile: str | None = constrained(None, kind="nonempty")
+    type: str = constrained("", kind="required")
+    profile: str = constrained("", kind="required")
     enabled: bool = True
     command: str | None = None
     version: str = constrained("latest", kind="nonempty")
