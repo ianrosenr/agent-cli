@@ -234,6 +234,20 @@ def test_latest_session_prefers_open_sessions(store: TaskStore) -> None:
     assert latest is not None and latest.id == open_session.id
 
 
+def test_root_task_persists_supervisor_shape(store: TaskStore) -> None:
+    session = store.start_session()
+    root, _ = store.start_root_task(
+        session.id,
+        "Check the tests",
+        kind="scout",
+        complexity="trivial",
+    )
+
+    restored = store.task(root.id)
+    assert restored is not None
+    assert (restored.kind, restored.complexity) == ("scout", "trivial")
+
+
 # -- Durability ---------------------------------------------------------------------------------
 
 
