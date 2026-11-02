@@ -165,6 +165,11 @@ class OrchestrationService:
             else:
                 response = self.authorize_ship(child, config, registry, complexity)
             if self.store.pending_authorization(child.session_id) is not None:
+                pending = self.store.pending_authorization(child.session_id)
+                if pending is not None and self.worker_notify is not None:
+                    self.worker_notify(
+                        f"Approval required: {child.goal}. Reply approve/reject in the CLI."
+                    )
                 break  # one user-facing gate at a time
         return response
 
@@ -439,6 +444,8 @@ class OrchestrationService:
                 task, "ship", complexity, scope, IMPLEMENTATION_AUTHORITY
             )
         except WorkerLaunchError as problem:
+            if "concurrency limit reached" in str(problem):
+                return info("Implementation queued.", "Waiting for a worker slot.")
             return error("Implementation authorized but could not start.", str(problem))
         return info("Implementation started.", started)
 
