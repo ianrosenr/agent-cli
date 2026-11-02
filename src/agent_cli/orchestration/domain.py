@@ -131,14 +131,26 @@ class PlanningInput:
         return tuple(item.text for item in (*self.requirements, *self.answers))
 
 
+type TaskKind = Literal["scout", "ship"]
+type TaskComplexity = Literal["trivial", "moderate", "complex"]
+
+
 @dataclass(frozen=True, slots=True)
-class Handoff:
-    """A request the root-prompt router resolved against conversation, for planning."""
+class TaskBrief:
+    """Supervisor handoff for repository work.
+
+    The literal user turn remains the authoritative requirement in TaskStore. The goal is the
+    supervisor's self-contained restatement; context only resolves conversational references;
+    kind and complexity guide workflow/resource allocation without granting authority.
+    """
 
     goal: str
-    """The request restated in full, references resolved."""
     context: str = ""
-    """The recent conversation it was resolved from."""
+    kind: TaskKind = "ship"
+    complexity: TaskComplexity = "moderate"
+
+
+Handoff = TaskBrief
 
 
 # -- Planner output ----------------------------------------------------------------------------
