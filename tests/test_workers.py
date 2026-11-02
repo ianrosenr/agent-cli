@@ -476,3 +476,18 @@ def test_recovery_preserves_independent_queued_tasks(tmp_path: Path) -> None:
     parent_state = store.task(parent.id)
     assert parent_state is not None and not parent_state.status.finished
     assert reconcile_orphaned_workers(store) == 0
+
+
+def test_three_stage_worktree_handoff_preserves_transitive_changes(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    manager = WorktreeManager(root, Config())
+    first = manager.create("chain-a", "ship")
+    (first / "a.py").write_text("A = 1\\n")
+    second = manager.create("chain-b", "ship")
+    manager.inherit(second, [first])
+    (second / "b.py").write_text("B = 2\\n")
+    third = manager.create("chain-c", "ship")
+    manager.inherit(third, [second])
+    assert (third / "a.py").read_text() == "A = 1\\n"
+    assert (third / "b.py").read_text() == "B = 2\\n"
+    assert not (root / "a.py").exists()
