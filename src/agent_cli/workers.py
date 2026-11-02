@@ -112,11 +112,7 @@ class WorkerDispatcher:
                         candidate.model_id,
                     )
                 )
-            paths = [
-                (candidate.model_id, path)
-                for candidate in ranked
-                for path in candidate.paths
-            ]
+            paths = [(candidate.model_id, path) for candidate in ranked for path in candidate.paths]
 
         for _, path in paths:
             if provider_pin and path.provider.id != provider_pin:
@@ -227,11 +223,7 @@ def reconcile_orphaned_workers(store: TaskStore) -> int:
                 task.id,
                 "worker-summary",
                 f"worker:{worker.id}",
-                {
-                    "summary": (
-                        "Worker was active when Agent CLI restarted; it was not replayed."
-                    )
-                },
+                {"summary": ("Worker was active when Agent CLI restarted; it was not replayed.")},
             )
             reconciled += 1
     return reconciled
@@ -433,9 +425,7 @@ class WorkerExecutor:
         if routing is None or not routing.selected:
             return ()
         try:
-            catalog = load_catalog(
-                skill_sources(self.config.skills.paths, self.root)
-            )
+            catalog = load_catalog(skill_sources(self.config.skills.paths, self.root))
         except SkillError as error:
             raise WorkerLaunchError(f"cannot load routed skills: {error}") from error
         rendered: list[str] = []
