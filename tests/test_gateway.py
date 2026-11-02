@@ -371,7 +371,7 @@ def test_routing_failures_answer_as_chat(failure: Callable[[], Any]) -> None:
 
 def test_routing_disabled_answers_every_turn_as_chat(project: Path, isolated_home: Path) -> None:
     config = config_for(isolated_home, project)
-    config.set_session({"routing": {"classifier": {"mode": "disabled"}}})
+    config.set_session({"routing": {"supervisor": {"mode": "disabled"}}})
     provider = ModelProvider(route=judge(**{"fix this bug": "orchestration"}))
     plans = Recorder()
     gateway(config, provider, orchestrate=plans).handle("fix this bug")
@@ -490,7 +490,7 @@ def test_auto_router_uses_medium_cost_model_when_no_cheaper_router_exists(
 def test_a_selected_router_model_is_used_even_when_medium_cost(isolated_home: Path) -> None:
     config = config_for(isolated_home, None)
     config.set_session(
-        {"routing": {"classifier": {"mode": "selected", "selected_model": "chat-model"}}}
+        {"routing": {"supervisor": {"mode": "selected", "selected_model": "chat-model"}}}
     )
     provider = ModelProvider(route=judge(**{"what is a daemon": "chat"}))
     gateway(config, provider).handle("what is a daemon")
