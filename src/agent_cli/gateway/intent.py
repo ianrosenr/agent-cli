@@ -128,9 +128,7 @@ class ProviderSupervisor:
         self, message: str, conversation: Sequence[dict[str, str]], in_repository: bool
     ) -> Verdict:
         prompt = render_supervisor_prompt(message, conversation, in_repository)
-        reply, self.described = self.call(
-            SUPERVISOR_SYSTEM, prompt, SUPERVISOR_OUTPUT_TOKENS
-        )
+        reply, self.described = self.call(SUPERVISOR_SYSTEM, prompt, SUPERVISOR_OUTPUT_TOKENS)
         return parse_verdict(reply)
 
 
@@ -162,11 +160,13 @@ def parse_verdict(reply: str) -> Verdict:
         raise ModelOutputError("decision.repository must be a boolean")
     complexity = text(data, "complexity", "decision", default="trivial")
     if complexity not in COMPLEXITIES:
-        raise ModelOutputError(
-            f"decision.complexity must be one of {', '.join(COMPLEXITIES)}"
-        )
+        raise ModelOutputError(f"decision.complexity must be one of {', '.join(COMPLEXITIES)}")
     return Verdict(
-        action, confident, request, repository, complexity  # type: ignore[arg-type]
+        action,
+        confident,
+        request,
+        repository,
+        complexity,  # type: ignore[arg-type]
     )
 
 
