@@ -313,7 +313,6 @@ def test_parse_command_rejects_non_command_input() -> None:
         parse_command("help")
 
 
-
 def test_cancel_rejects_pending_authorization_and_cancels_request(
     context: CommandContext, tmp_path: Path
 ) -> None:
