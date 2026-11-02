@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_cli.adapters import HarnessIdentity, ProviderIdentity
+from agent_cli.adapters import Capability, HarnessCapabilities, HarnessIdentity, ProviderIdentity
 from agent_cli.adapters.cli_harness import CliHarnessAdapter
 from agent_cli.adapters.factories import (
     AdapterFactoryError,
@@ -16,9 +16,8 @@ from agent_cli.config.model import HarnessConfig, ProviderConfig
 from agent_cli.runtime import default_adapters
 
 
-def harness(profile: str, **changes: object) -> HarnessConfig:
-    values = {"type": "cli", "profile": profile, **changes}
-    return HarnessConfig(**values)
+def harness(profile: str, command: str | None = None) -> HarnessConfig:
+    return HarnessConfig(type="cli", profile=profile, command=command)
 
 
 def test_builtin_cli_harnesses_require_explicit_type_and_profile() -> None:
@@ -69,7 +68,8 @@ def test_new_supported_harness_type_can_be_registered_without_runtime_changes() 
     factories.register(
         "fake",
         lambda harness_id, config: FakeHarnessAdapter(
-            harness_identity=HarnessIdentity(harness_id, harness_id, "1.0")
+            harness_identity=HarnessIdentity(harness_id, harness_id, "1.0"),
+            harness_capabilities=HarnessCapabilities(frozenset({Capability.START_WORKER})),
         ),
     )
 
@@ -78,8 +78,9 @@ def test_new_supported_harness_type_can_be_registered_without_runtime_changes() 
         harness_factories=factories,
     )
 
-    assert registry.harness("custom") is not None
-    assert registry.harness("custom").identity().id == "custom"
+    adapter = registry.harness("custom")
+    assert adapter is not None
+    assert adapter.identity().id == "custom"
 
 
 def test_provider_factory_registry_supports_new_provider_type_without_runtime_changes() -> None:
