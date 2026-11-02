@@ -26,6 +26,10 @@ from agent_cli.adapters.domain import (
     HarnessCapabilities,
     HarnessIdentity,
     HarnessReadiness,
+    ModelDescriptor,
+    ProviderIdentity,
+    ProviderRequest,
+    ProviderResponse,
     ReadinessState,
     Usage,
     WorkerHandle,
@@ -43,6 +47,8 @@ SUBSCRIPTION_PROVIDER_ID = "claude-subscription"
 READINESS_TIMEOUT_S = 5.0
 INTERRUPT_TIMEOUT_S = 2.0
 MAX_TURNS = 25
+DIRECT_MODEL_TIMEOUT_S = 120.0
+DIRECT_MODEL_ID = "claude-sonnet-5-5"
 
 # Claude Code gives environment-based provider credentials precedence over a saved claude.ai
 # login. This subscription-only harness removes them from its child environment.
@@ -78,6 +84,10 @@ type ProcessLauncher = Callable[
 type GitRunner = Callable[[tuple[str, ...], Path], subprocess.CompletedProcess[str]]
 type InteractiveRunner = Callable[
     [tuple[str, ...], Mapping[str, str]], subprocess.CompletedProcess[str]
+]
+type DirectModelRunner = Callable[
+    [tuple[str, ...], Mapping[str, str], str, Path, float],
+    subprocess.CompletedProcess[str],
 ]
 
 
@@ -121,6 +131,25 @@ def run_interactive(
     return subprocess.run(argv, env=dict(env), text=True, check=False)
 
 
+def run_direct_model(
+    argv: tuple[str, ...],
+    env: Mapping[str, str],
+    prompt: str,
+    cwd: Path,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        env=dict(env),
+        cwd=cwd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
 def run_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
@@ -152,6 +181,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
     git_runner: GitRunner = field(default=run_git, repr=False)
     environ: Mapping[str, str] = field(default_factory=lambda: dict(os.environ), repr=False)
     interactive_runner: InteractiveRunner = field(default=run_interactive, repr=False)
+    direct_model_runner: DirectModelRunner = field(default=run_direct_model, repr=False)
     _version: str | None = None
     _workers: dict[str, _Worker] = field(default_factory=dict, repr=False)
 
@@ -233,6 +263,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
                     Capability.START_WORKER,
                     Capability.INSTALL,
                     Capability.UPDATE,
+                    Capability.DIRECT_MODEL,
                     Capability.LOGIN,
                     Capability.INTERRUPT,
                     Capability.MODEL_SELECTION,
@@ -244,6 +275,78 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             ),
             providers=frozenset({SUBSCRIPTION_PROVIDER_ID}),
         )
+
+    def direct_provider(self) -> ProviderIdentity:
+        return ProviderIdentity(
+            SUBSCRIPTION_PROVIDER_ID,
+            "Claude subscription",
+            "harness-subscription",
+            "subscription",
+        )
+
+    def direct_models(self) -> tuple[ModelDescriptor, ...]:
+        return (
+            ModelDescriptor(
+                SUBSCRIPTION_PROVIDER_ID,
+                DIRECT_MODEL_ID,
+                "Claude Sonnet 5.5",
+                1_000_000,
+            ),
+        )
+
+    def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
+        blocking = self.readiness().blocking_error()
+        if blocking is not None:
+            raise blocking
+        if request.model_id != DIRECT_MODEL_ID:
+            raise AdapterError(
+                ErrorKind.INCOMPATIBLE,
+                f"Claude Code subscription does not advertise model {request.model_id!r}",
+            )
+        argv = (
+            self.command(),
+            "--print",
+            "--output-format",
+            "json",
+            "--no-session-persistence",
+            "--permission-mode",
+            "plan",
+            "--max-turns",
+            "1",
+            "--model",
+            request.model_id,
+        )
+        prompt = direct_model_prompt(request)
+        try:
+            with tempfile.TemporaryDirectory(prefix="agent-cli-model-") as directory:
+                result = self.direct_model_runner(
+                    argv,
+                    self.subscription_env(),
+                    prompt,
+                    Path(directory),
+                    DIRECT_MODEL_TIMEOUT_S,
+                )
+        except FileNotFoundError:
+            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code executable disappeared") from None
+        except subprocess.TimeoutExpired:
+            raise AdapterError(ErrorKind.TIMEOUT, "Claude Code model call timed out") from None
+        except OSError as error:
+            raise AdapterError(
+                ErrorKind.HARNESS_ERROR,
+                f"cannot run Claude Code model call ({type(error).__name__})",
+            ) from None
+        if result.returncode != 0:
+            raise AdapterError(
+                ErrorKind.PROVIDER_ERROR,
+                f"Claude Code model call exited with status {result.returncode}",
+            )
+        payload = json_object(result.stdout)
+        if payload is None or payload.get("is_error") is True:
+            raise AdapterError(ErrorKind.PROVIDER_ERROR, "Claude Code returned invalid model output")
+        text = payload.get("result")
+        if not isinstance(text, str):
+            raise AdapterError(ErrorKind.PROVIDER_ERROR, "Claude Code returned no model text")
+        return ProviderResponse(request.model_id, text, usage_from_payload(payload))
 
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
@@ -503,6 +606,18 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             return self.git_changes(cwd)
         except AdapterError:
             return None
+
+
+def direct_model_prompt(request: ProviderRequest) -> str:
+    sections = []
+    if request.system:
+        sections.append("System instructions:\n" + request.system)
+    sections.append("User request:\n" + request.prompt)
+    if request.max_output_tokens is not None:
+        sections.append(
+            f"Keep the final answer within approximately {request.max_output_tokens} output tokens."
+        )
+    return "\n\n".join(sections)
 
 
 def render_worker_prompt(request: WorkerRequest) -> str:
