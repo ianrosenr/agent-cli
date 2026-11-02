@@ -202,6 +202,16 @@ def check_cost_order(cost: CostConfig, layer: Mapping[str, Any], source: str) ->
         )
 
 
+def check_global_only(layer: Layer, data: Mapping[str, Any], source: str) -> None:
+    """Executable harness profile definitions are trusted global configuration only."""
+    if layer is not Layer.GLOBAL and "harness_profiles" in data:
+        raise ConfigError(
+            source,
+            "harness_profiles",
+            "may only be defined in global config",
+        )
+
+
 def check_classifier(merged: Mapping[str, Any], layer: Mapping[str, Any], source: str) -> None:
     """``selected`` classifier mode needs a model once the layer touching it is merged."""
     if "classifier" not in layer.get("routing", {}):
@@ -234,7 +244,9 @@ class ConfigService:
         return {} if path is None else read_layer(path, self.source(layer))
 
     def set_session(self, overrides: Mapping[str, Any]) -> None:
-        validate_layer(Config, overrides, self.source(Layer.SESSION))
+        source = self.source(Layer.SESSION)
+        validate_layer(Config, overrides, source)
+        check_global_only(Layer.SESSION, overrides, source)
         self.session = dict(overrides)
 
     def resolve(
@@ -267,6 +279,7 @@ class ConfigService:
                     data = self.read(layer)
             source = self.source(layer)
             validate_layer(Config, data, source)
+            check_global_only(layer, data, source)
             if layer is not Layer.GLOBAL:
                 check_cost_ceilings(ceilings, data, source)
             merged = merge(merged, data)
