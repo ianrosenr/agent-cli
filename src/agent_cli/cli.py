@@ -182,7 +182,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             adapters,
             tasks,
             reloader(config, adapters),
-            auto_startup=needs_onboarding(config, interactive),
+            needs_onboarding(config, interactive),
         )
     except KeyboardInterrupt:
         return 130
