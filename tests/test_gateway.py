@@ -203,6 +203,22 @@ def test_improving_this_router_is_a_repository_answer(project: Path, isolated_ho
     assert git(project, "status", "--porcelain", "--untracked-files=no") == ""
 
 
+def test_checking_pytest_is_a_read_only_repository_task(
+    project: Path, isolated_home: Path
+) -> None:
+    question = "are there any pytests failing on this feature branch"
+    provider = ModelProvider(route=judge(**{question: ("repository_task", question)}))
+    plans = Recorder()
+
+    output = gateway(config_for(isolated_home, project), provider, orchestrate=plans).handle(question)
+
+    assert output == f"planned: {question}"
+    [(text, handoff)] = plans.seen
+    assert text == question
+    assert handoff == Handoff(question, "")
+    assert provider.answered() == []
+
+
 def test_fix_this_bug_is_delegated_to_the_orchestrator(project: Path, isolated_home: Path) -> None:
     provider = ModelProvider(
         route=judge(**{"fix this bug": ("orchestration", "Fix the retry bug in route()")})
@@ -421,25 +437,24 @@ def test_routing_uses_the_cheap_model_and_answering_the_stronger_one(isolated_ho
     assert answered.model_id == "chat-model"
 
 
-def test_auto_router_never_promotes_a_medium_cost_model(isolated_home: Path) -> None:
+def test_auto_router_uses_medium_cost_model_when_no_cheaper_router_exists(
+    isolated_home: Path,
+) -> None:
     provider = ModelProvider(
         model_ids=("chat-model",),
-        route=judge(**{"fix this bug": "orchestration"}),
-    )
-    plans = Recorder()
-
-    output = plain(
-        gateway(
-            config_for(isolated_home, None, "verbose"),
-            provider,
-            orchestrate=plans,
-            registry=registry(model("chat-model", cost="medium")),
-        ).handle("fix this bug")
+        route=judge(**{"what is a daemon": "chat"}),
     )
 
-    assert provider.routed() == []
-    assert plans.seen == []
-    assert ANSWER in output and "no router model is available" in output
+    gateway(
+        config_for(isolated_home, None),
+        provider,
+        registry=registry(model("chat-model", cost="medium")),
+    ).handle("what is a daemon")
+
+    [routed, answered] = provider.requests
+    assert routed.system == ROUTER_SYSTEM
+    assert routed.model_id == "chat-model"
+    assert answered.model_id == "chat-model"
 
 
 def test_a_selected_router_model_is_used_even_when_medium_cost(isolated_home: Path) -> None:
