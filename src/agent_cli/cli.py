@@ -167,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = make_console()
     try:
         registry = build_registry()
-        problem = config_problem(config)
+        problem = blocks(config_problem(config), adapter_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
         adapters = session_adapters(config)
@@ -204,6 +204,19 @@ def needs_onboarding(config: ConfigService, interactive: bool) -> bool:
         return False
     paths = (config.paths.global_file, config.paths.project_file)
     return not any(path is not None and path.exists() for path in paths)
+
+
+def adapter_problem(config: ConfigService) -> RenderableType | None:
+    """Report unknown adapter types/profiles without partially constructing runtime."""
+    from agent_cli.adapters.factories import AdapterFactoryError
+
+    try:
+        default_adapters(config.resolve())
+    except ConfigError:
+        return None
+    except AdapterFactoryError as problem:
+        return error("Adapter configuration error.", str(problem))
+    return None
 
 
 def config_problem(config: ConfigService) -> RenderableType | None:
