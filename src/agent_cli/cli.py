@@ -137,6 +137,7 @@ def orchestrator(
                 login_harnesses=login_harnesses,
                 worker_notify=worker_notify,
             )
+            service.resume_queued()
         return service.handle(text, handoff)
 
     return orchestrate
