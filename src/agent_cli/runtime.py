@@ -84,6 +84,7 @@ def session_adapters(
     except (ConfigError, ValueError):
         return AdapterRegistry()
 
+
 def provider_estimators(adapters: AdapterRegistry) -> ProviderEstimators:
     """Trusted cost estimators for the registered providers that have one.
 
