@@ -225,7 +225,9 @@ def verbose_routing(config: Config, decision: SupervisorDecision) -> tuple[str, 
     return (f"Routed as {decision.describe()}.", *resolved)
 
 
-def render_supervisor_answer(text: str, decision: SupervisorDecision, config: Config) -> RenderableType:
+def render_supervisor_answer(
+    text: str, decision: SupervisorDecision, config: Config
+) -> RenderableType:
     """Render an answer completed by semantic intake without a second model call."""
     body: RenderableType = Markdown(text) if text else Text("(empty answer)")
     if config.ui.verbosity == "concise" or decision.source == "fast-path":
