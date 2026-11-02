@@ -163,7 +163,6 @@ def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
     assert summary.metadata["summary"] == "pytest: 42 passed"
 
 
-
 def test_background_completion_notifies_and_finishes_parent(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
