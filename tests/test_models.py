@@ -106,7 +106,7 @@ def test_builtin_subscription_models_meet_orchestrator_floor() -> None:
     builtin = load_registry()
     runtime = paths(
         provider("claude-subscription", "subscription", "claude-sonnet-5-5"),
-        provider("openai-subscription", "subscription", "gpt-6.1-sol"),
+        provider("openai-subscription", "subscription", "gpt-6-sol"),
     )
 
     candidates = ranked_model_candidates(
@@ -118,7 +118,7 @@ def test_builtin_subscription_models_meet_orchestrator_floor() -> None:
     )
 
     ids = {candidate.model_id for candidate in candidates}
-    assert {"claude-sonnet-5-5", "gpt-6.1-sol"} <= ids
+    assert {"claude-sonnet-5-5", "gpt-6-sol"} <= ids
 
 
 # -- Registry schema ---------------------------------------------------------------------------
