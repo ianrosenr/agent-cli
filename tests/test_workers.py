@@ -9,6 +9,7 @@ import pytest
 
 from agent_cli.adapters import (
     AdapterRegistry,
+    DIAGNOSTIC_AUTHORITY,
     HarnessIdentity,
     ModelDescriptor,
     ProviderIdentity,
@@ -141,7 +142,8 @@ def test_scout_launch_is_non_blocking_and_uses_isolated_read_only_worker(tmp_pat
     [recorded] = store.workers(child.id)
     assert recorded.status is WorkerStatus.RUNNING
     [worker] = harness.workers.values()
-    assert worker.request.mode == "plan-only"
+    assert worker.request.authority == DIAGNOSTIC_AUTHORITY
+    assert worker.request.mode is None
     assert worker.request.working_directory != root
     assert worker.request.working_directory.is_dir()
     assert git(root, "diff", "--name-only") == ""
@@ -239,3 +241,48 @@ def test_restart_reconciliation_never_replays_active_worker(tmp_path: Path) -> N
     updated = store.task(child.id)
     assert updated is not None and updated.status is TaskStatus.FAILED
     assert reconcile_orphaned_workers(store) == 0
+
+
+
+def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    child = task(store)
+    provider = FakeProviderAdapter(
+        provider_identity=ProviderIdentity("sub", "Subscription", "fake", "subscription"),
+        provider_readiness=ProviderReadiness(ReadinessState.READY),
+        models=(ModelDescriptor("sub", "small"),),
+    )
+    harness = FakeHarnessAdapter(
+        harness_identity=HarnessIdentity("crew", "Crew"),
+        auto_finish=True,
+        outcome=WorkerResult(
+            WorkerStatus.COMPLETED,
+            "done",
+            changes=__import__("agent_cli.adapters", fromlist=["Changes"]).Changes(
+                files=("src/example.py",),
+                diff="diff --git a/src/example.py b/src/example.py\n",
+            ),
+        ),
+    )
+    adapters = AdapterRegistry([harness], [provider])
+
+    WorkerExecutor(store, adapters, registry(), Config(), root).launch(
+        child, "scout", "trivial", child.goal
+    )
+
+    [recorded] = store.workers(child.id)
+    assert recorded.status is WorkerStatus.FAILED
+    updated = store.task(child.id)
+    assert updated is not None and updated.status is TaskStatus.FAILED
+    [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
+    assert "exceeded source-modification authority" in (
+        summary.metadata["summary"] + " "
+        + str(
+            [
+                a.metadata.get("summary", "")
+                for a in store.artifacts(child.id)
+                if a.kind == "worker-summary"
+            ]
+        )
+    ) or "modified tracked source" in summary.metadata["summary"]
