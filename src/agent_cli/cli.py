@@ -57,8 +57,9 @@ def run_shell(
     adapters: AdapterRegistry | None = None,
     tasks: TaskStore | None = None,
     reload_adapters: Callable[[], None] | None = None,
+    auto_startup: bool = False,
 ) -> int:
-    """Show ``startup``, then read and answer input until EOF. Ctrl-C discards the line."""
+    """Show startup, optionally onboard once, then read input until EOF. Ctrl-C clears a line."""
     context = CommandContext(
         registry=registry,
         config=config,
@@ -70,6 +71,9 @@ def run_shell(
         reload_adapters=reload_adapters,
     )
     write_line(startup)
+    if auto_startup:
+        response = context.registry.dispatch("/startup", context)
+        write_line(Group(response, Text("")))
     while True:
         try:
             line = read_line(PROMPT)
@@ -168,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
         adapters = session_adapters(config)
+        interactive = sys.stdin.isatty()
         return run_shell(
             registry,
             terminal_reader(registry),
@@ -177,9 +182,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             adapters,
             tasks,
             reloader(config, adapters),
+            auto_startup=needs_onboarding(config, interactive),
         )
     except KeyboardInterrupt:
         return 130
+
+
+def needs_onboarding(config: ConfigService, interactive: bool) -> bool:
+    """First interactive launch only: any existing file means the user has configured Agent CLI."""
+    if not interactive:
+        return False
+    paths = (config.paths.global_file, config.paths.project_file)
+    return not any(path is not None and path.exists() for path in paths)
 
 
 def config_problem(config: ConfigService) -> RenderableType | None:
