@@ -197,6 +197,7 @@ def auth_harness(harness_id: str, state: ReadinessState) -> FakeHarnessAdapter:
 def configure_harnesses(config: ConfigService, *harness_ids: str) -> None:
     config.set_session(
         {
+            "ui": {"verbosity": "normal"},
             "harnesses": {
                 harness_id: {
                     "type": "cli",
@@ -204,7 +205,7 @@ def configure_harnesses(config: ConfigService, *harness_ids: str) -> None:
                     "enabled": True,
                 }
                 for harness_id in harness_ids
-            }
+            },
         }
     )
 
