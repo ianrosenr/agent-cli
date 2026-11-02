@@ -31,6 +31,7 @@ REQUIRED_COMMANDS = {
     "providers",
     "models",
     "autopilot",
+    "verbosity",
     "cancel",
     "review",
     "diff",
@@ -118,6 +119,7 @@ IMPLEMENTED_COMMANDS = {
     "models",
     "budget",
     "autopilot",
+    "verbosity",
     "cancel",
 }
 
@@ -147,6 +149,27 @@ def test_implemented_commands_are_not_placeholders(context: CommandContext, name
 def test_startup_is_listed_as_available_in_help(context: CommandContext) -> None:
     available = run(context, "/help").split("Coming in later issues")[0]
     assert "/startup" in available
+
+
+def test_verbosity_defaults_to_concise_and_can_be_saved(
+    context: CommandContext, paths: ConfigPaths
+) -> None:
+    service = ConfigService(paths)
+    configured = replace(context, config=service)
+
+    assert "Verbosity: concise" in run(configured, "/verbosity")
+
+    output = run(configured, "/verbosity verbose")
+
+    assert "Verbosity set to verbose" in output
+    assert service.resolve().ui.verbosity == "verbose"
+
+
+def test_verbosity_rejects_unknown_value(context: CommandContext, paths: ConfigPaths) -> None:
+    output = run(replace(context, config=ConfigService(paths)), "/verbosity noisy")
+
+    assert output.startswith("Error  Unrecognized verbosity.")
+    assert "/verbosity [concise | normal | verbose]" in output
 
 
 def test_status_without_task_state_reports_no_active_task(

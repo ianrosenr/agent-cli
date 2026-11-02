@@ -110,6 +110,15 @@ harnesses:
 `type` selects a reusable adapter protocol. `profile` selects declarative behavior for that protocol. Both are required for every configured harness. A second instance can reuse a profile without Python changes, for example `work-claude: {type: cli, profile: claude-code, command: /opt/work/claude}`.\n\nCustom CLI behavior can be defined once in the **global** config and then reused by harness instances:
 
 ```yaml
+UI output defaults to concise:
+
+```yaml
+ui:
+  verbosity: concise
+```
+
+Use `/verbosity` to show the effective setting, or `/verbosity concise|normal|verbose` to save it globally. This changes only what Agent CLI renders; planning, routing, review, and persistence still run normally.
+
 harness_profiles:
   example:
     display_name: Example CLI

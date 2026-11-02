@@ -171,6 +171,7 @@ class OrchestrationService:
             plan.unpinned,
             problems,
             [reply.describe() for reply in replies],
+            config.ui.verbosity,
         )
 
     # -- Phases --------------------------------------------------------------------------------
