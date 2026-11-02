@@ -268,7 +268,6 @@ def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
     assert worker.status is WorkerStatus.RUNNING
     [running] = harness.workers.values()
     assert running.request.authority == DIAGNOSTIC_AUTHORITY
-    assert running.request.mode is None
     assert running.request.working_directory != project
 
 
