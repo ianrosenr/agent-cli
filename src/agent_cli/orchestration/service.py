@@ -32,7 +32,7 @@ from agent_cli.models import (
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
-    Handoff,
+    TaskBrief,
     PlanningInput,
     PlanProposal,
     PlanRejected,
@@ -93,7 +93,7 @@ class OrchestrationService:
     """Optional shell-safe notification sink for background worker completion."""
     _index: RepositoryIndex | None = None
 
-    def handle(self, text: str, handoff: Handoff | None = None) -> RenderableType:
+    def handle(self, text: str, handoff: TaskBrief | None = None) -> RenderableType:
         """Plan ``text`` as a new request, or take it as the answer to a pending question.
 
         A ``handoff`` carries the request as the root-prompt router resolved it: its goal
@@ -126,7 +126,7 @@ class OrchestrationService:
         except TaskStateError as problem:
             return error("Cannot use task state.", str(problem))
 
-    def prepare_single_task(self, root: Task, handoff: Handoff) -> RenderableType:
+    def prepare_single_task(self, root: Task, handoff: TaskBrief) -> RenderableType:
         """Persist one bounded worker task without paying for a decomposition model call."""
         try:
             config = self.config.resolve()
