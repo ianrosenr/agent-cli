@@ -106,6 +106,14 @@ class HarnessAdapter(ABC):
     def result(self, handle: WorkerHandle) -> WorkerResult:
         """The worker's result so far; final once ``status`` is finished."""
 
+    def install(self) -> HarnessReadiness:
+        """Install the harness through its supported native/package-manager path."""
+        raise unsupported(self.identity(), Capability.INSTALL)
+
+    def update(self) -> HarnessReadiness:
+        """Update the harness according to its configured version policy."""
+        raise unsupported(self.identity(), Capability.UPDATE)
+
     def login(self) -> HarnessReadiness:
         """Launch the harness's native interactive login, then return fresh readiness."""
         raise unsupported(self.identity(), Capability.LOGIN)

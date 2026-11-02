@@ -102,15 +102,24 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
         config = context.config.resolve()
     except ConfigError as problem:
         return blocks(result, error("Cannot read saved configuration.", str(problem)))
+    from agent_cli.harness_lifecycle import HarnessLifecycleService
+
+    lifecycle = HarnessLifecycleService(
+        adapters_of(context),
+        config,
+        context.read_line,
+        context.write_line,
+    )
+    installation = lifecycle.offer_install()
     if "subscription" not in config.access.preference:
-        return result
+        return blocks(result, installation) if installation is not None else result
     login = HarnessLoginService(
         adapters_of(context),
         config,
         context.read_line,
         context.write_line,
     ).offer()
-    return blocks(result, login) if login is not None else result
+    return blocks(result, installation, login)
 
 
 def login_command(context: CommandContext, args: str) -> RenderableType:

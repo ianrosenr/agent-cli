@@ -168,11 +168,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = make_console()
     try:
         registry = build_registry()
-        startup = blocks(home(registry, unicode=is_unicode(console)), config_problem(config))
+        problem = config_problem(config)
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
         adapters = session_adapters(config)
         interactive = sys.stdin.isatty()
+        first_run = needs_onboarding(config, interactive)
+        maintenance = None
+        if interactive and not first_run and problem is None:
+            from agent_cli.harness_lifecycle import HarnessLifecycleService
+
+            settings = config.resolve()
+            cache = config.paths.global_file.parent / "state" / "harness-updates.json"
+            maintenance = HarnessLifecycleService(
+                adapters, settings, cache_file=cache
+            ).refresh_latest()
+        startup = blocks(home(registry, unicode=is_unicode(console)), problem, maintenance)
         return run_shell(
             registry,
             terminal_reader(registry),
@@ -182,7 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             adapters,
             tasks,
             reloader(config, adapters),
-            needs_onboarding(config, interactive),
+            first_run,
         )
     except KeyboardInterrupt:
         return 130

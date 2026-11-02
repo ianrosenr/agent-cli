@@ -188,6 +188,78 @@ def test_exact_claude_version_mismatch_fails_closed_before_auth() -> None:
     assert len(commands.calls) == 1
 
 
+def test_install_uses_latest_npm_package_and_rechecks_readiness() -> None:
+    commands = FakeCommands(missing=True)
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        commands.missing = False
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(),
+        commands,
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    after = harness.install()
+
+    assert calls == [("npm", "install", "-g", "@anthropic-ai/claude-code@latest")]
+    assert after.state is ReadinessState.READY
+
+
+def test_latest_update_uses_claude_native_updater() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(version="latest"),
+        FakeCommands(),
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    harness.update()
+
+    assert calls == [("claude", "update")]
+
+
+def test_exact_update_uses_exact_claude_npm_version() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = ClaudeCodeHarnessAdapter(
+        HarnessConfig(version="2.1.307"),
+        FakeCommands(version="2.1.307 (Claude Code)\n"),
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    harness.update()
+
+    assert calls == [("npm", "install", "-g", "@anthropic-ai/claude-code@2.1.307")]
+
+
 def test_missing_executable_is_not_detected() -> None:
     readiness = adapter(commands=FakeCommands(missing=True)).readiness()
     assert readiness.state is ReadinessState.NOT_DETECTED

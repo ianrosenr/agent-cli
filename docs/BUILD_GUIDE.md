@@ -566,6 +566,12 @@ Second real coding harness: Codex CLI using the user's existing ChatGPT subscrip
 ### V1-10.7
 Seamless subscription login. `/startup` persists enabled harnesses and offers native sign-in when needed; `/login` later repairs only configured harnesses whose cached native auth is missing or expired.
 
+### V1-10.11
+Automatic first-run onboarding: an unconfigured interactive install enters the existing `/startup` flow automatically; configured or noninteractive launches do not.
+
+### V1-10.12
+Harness lifecycle: generic install/update capabilities, `/startup` installation offers, and cached startup-only `latest` refreshes. No per-query update checks.
+
 ### V1-11
 Git worktrees and worker lifecycle.
 

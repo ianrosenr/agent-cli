@@ -753,7 +753,7 @@ def test_shell_without_a_reloader_keeps_its_adapters(service: ConfigService) -> 
     from agent_cli.commands import build_registry
 
     adapters = default_adapters(anthropic_config(), resolver(), FakeAnthropic().factory)
-    answers = Conversation("/startup", *ENTER_THROUGH, "")
+    answers = Conversation("/startup", *ENTER_THROUGH, "n", "")
     cli.run_shell(build_registry(), answers.read_line, lambda s: None, "", service, adapters)
     assert isinstance(adapters.provider("anthropic"), AnthropicProviderAdapter)
 
