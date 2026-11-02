@@ -14,6 +14,7 @@ from rich.console import RenderableType
 
 from agent_cli import cli
 from agent_cli.adapters import (
+    DIAGNOSTIC_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     ErrorKind,
@@ -25,7 +26,6 @@ from agent_cli.adapters import (
     ProviderRequest,
     ProviderResponse,
     ReadinessState,
-    DIAGNOSTIC_AUTHORITY,
     Usage,
     WorkerStatus,
 )
