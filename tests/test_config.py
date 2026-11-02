@@ -239,6 +239,28 @@ def test_invalid_config_names_the_file_and_key(
     assert str(paths.project_file) in str(caught.value)
 
 
+def test_harness_entries_require_explicit_type_and_profile(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.global_file, {"harnesses": {"claude-code": {"enabled": True}}})
+
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+
+    assert caught.value.key == "harnesses.claude-code.type"
+    assert caught.value.problem == "is required"
+
+    write(
+        paths.global_file,
+        {"harnesses": {"claude-code": {"type": "cli", "enabled": True}}},
+    )
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+
+    assert caught.value.key == "harnesses.claude-code.profile"
+    assert caught.value.problem == "is required"
+
+
 def test_unknown_key_in_session_overrides_is_rejected(service: ConfigService) -> None:
     with pytest.raises(ConfigError, match="session overrides: bogus: unknown key"):
         service.set_session({"bogus": 1})
