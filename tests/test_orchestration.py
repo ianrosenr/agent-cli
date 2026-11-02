@@ -15,6 +15,7 @@ from rich.console import RenderableType
 from agent_cli import cli
 from agent_cli.adapters import (
     DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     AdapterError,
     AdapterRegistry,
     ErrorKind,
@@ -269,6 +270,127 @@ def test_trivial_scout_launches_background_worker_instead_of_stopping_at_plan(
     [running] = harness.workers.values()
     assert running.request.authority == DIAGNOSTIC_AUTHORITY
     assert running.request.working_directory != project
+
+
+def ship_runtime() -> tuple[AdapterRegistry, FakeHarnessAdapter, ModelRegistry]:
+    provider = FakeProviderAdapter(
+        ProviderIdentity("sub", "Subscription", "fake", "subscription"),
+        ProviderReadiness(ReadinessState.READY),
+        (ModelDescriptor("sub", "small"),),
+    )
+    harness = FakeHarnessAdapter(auto_finish=False)
+    models = registry(model("small", cost="low", latency="fast"))
+    return AdapterRegistry([harness], [provider]), harness, models
+
+
+def test_trivial_ship_autopilot_authorizes_and_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+
+    assert "Implementation started" in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None
+    assert authorization.approval if False else True
+    assert authorization.status is Approval.APPROVED
+    assert authorization.decided_by == "policy:autopilot"
+    [running] = harness.workers.values()
+    assert running.request.authority == IMPLEMENTATION_AUTHORITY
+
+
+def test_trivial_ship_checkpoint_waits_then_launches_on_go_ahead(
+    store: TaskStore, config: ConfigService
+) -> None:
+    config.set_session(
+        {
+            "ui": {"verbosity": "normal"},
+            "implementation": {"mode": "checkpoint"},
+        }
+    )
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    first = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+    assert "Authorization required" in first
+    assert harness.workers == {}
+
+    second = plain(orchestration.handle("go ahead"))
+    assert "Implementation started" in second
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is Approval.APPROVED
+    assert authorization.decided_by == "user"
+    assert len(harness.workers) == 1
+
+
+def test_trivial_ship_plan_only_never_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    config.set_session(
+        {
+            "ui": {"verbosity": "normal"},
+            "implementation": {"mode": "plan-only"},
+        }
+    )
+    adapters, harness, models = ship_runtime()
+    orchestration = OrchestrationService(
+        store,
+        config,
+        adapters,
+        planner=FakePlanner([]),
+        spec_author=FakeSpecAuthor(),
+        registry=models,
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "fix the typo",
+            TaskBrief("Fix the bounded typo", "", "ship", "trivial"),
+        )
+    )
+
+    assert "Not authorized" in output
+    assert harness.workers == {}
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is Approval.REJECTED
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
