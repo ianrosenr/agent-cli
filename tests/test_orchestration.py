@@ -356,6 +356,65 @@ def test_trivial_ship_checkpoint_waits_then_launches_on_go_ahead(
     assert len(harness.workers) == 1
 
 
+def test_moderate_single_ship_authorizes_after_spec_and_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=adapters,
+        registry=models,
+    )
+
+    output = plain(
+        orchestration.handle(
+            GOAL,
+            TaskBrief(GOAL, "", "ship", "moderate"),
+        )
+    )
+
+    assert "Implementation started" in output
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    spec = store.latest_spec(child.id)
+    authorization = store.latest_authorization(child.id)
+    assert spec is not None and spec.approval is Approval.APPROVED
+    assert authorization is not None and authorization.status is Approval.APPROVED
+    assert authorization.spec_version == spec.version
+    assert len(harness.workers) == 1
+
+
+def test_complex_single_ship_requires_checkpoint_even_in_autopilot(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, harness, models = ship_runtime()
+    orchestration = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=adapters,
+        registry=models,
+    )
+
+    output = plain(
+        orchestration.handle(
+            GOAL,
+            TaskBrief(GOAL, "", "ship", "complex"),
+        )
+    )
+
+    assert "Authorization required" in output
+    assert harness.workers == {}
+    root = store.task(root_of(store))
+    assert root is not None
+    [child] = store.subtasks(root.id)
+    authorization = store.latest_authorization(child.id)
+    assert authorization is not None and authorization.status is Approval.PENDING
+
+
 def test_trivial_ship_plan_only_never_launches(
     store: TaskStore, config: ConfigService
 ) -> None:
