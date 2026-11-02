@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent_cli.orchestration.scheduler import Readiness, evaluate_task, ready_tasks
 from agent_cli.state import TaskStatus, TaskStore
 
 
-def test_dependency_readiness_and_failure_propagation(tmp_path) -> None:
+def test_dependency_readiness_and_failure_propagation(tmp_path: Path) -> None:
     store = TaskStore.for_repository(tmp_path)
     session = store.start_session()
     root, _ = store.start_root_task(session.id, "Ship feature", kind="ship")
@@ -13,10 +15,10 @@ def test_dependency_readiness_and_failure_propagation(tmp_path) -> None:
     assert ready_tasks(store, root.id) == [first, second]
     assert evaluate_task(store, first).readiness is Readiness.READY
     store.set_status(first.id, TaskStatus.FAILED)
-    assert evaluate_task(store, first).readiness is Readiness.INACTIVE
+    assert evaluate_task(store, store.task(first.id) or first).readiness is Readiness.INACTIVE
 
 
-def test_pending_dependency_blocks_dispatch(tmp_path) -> None:
+def test_pending_dependency_blocks_dispatch(tmp_path: Path) -> None:
     store = TaskStore.for_repository(tmp_path)
     session = store.start_session()
     root, _ = store.start_root_task(session.id, "Ship feature", kind="ship")
