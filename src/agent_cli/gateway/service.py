@@ -37,20 +37,20 @@ from agent_cli.gateway.answers import (
 )
 from agent_cli.gateway.conversation import ANSWER_VIEW, HANDOFF_VIEW, ROUTER_VIEW, Conversation
 from agent_cli.gateway.intent import (
-    IntentRouter,
-    ProviderRouter,
-    RouteDecision,
-    SemanticRouter,
+    ProviderSupervisor,
+    SemanticSupervisor,
+    SupervisorDecision,
+    SupervisorRouter,
 )
 from agent_cli.models import SUPERVISOR_POLICY, ModelRegistry, RegistryError, load_registry
 from agent_cli.orchestration.calls import PlanningUnavailable
-from agent_cli.orchestration.domain import Handoff
+from agent_cli.orchestration.domain import TaskBrief
 from agent_cli.state import PinKind, TaskStateError, TaskStore
 from agent_cli.terms import TaskKind
 from agent_cli.ui import blocks, error, muted
 
-type Orchestrate = Callable[[str, Handoff | None], RenderableType]
-type RouterFactory = Callable[[Config, ModelRegistry], SemanticRouter | None]
+type Orchestrate = Callable[[str, TaskBrief | None], RenderableType]
+type RouterFactory = Callable[[Config, ModelRegistry], SemanticSupervisor | None]
 
 ANSWER_HINT = "See /models for reachable models, or /startup to configure a provider."
 ANSWERED_QUESTION = "(The user answered the planner's question.)"
@@ -97,7 +97,7 @@ class SupervisorService:
             return error("Cannot answer.", str(problem))
 
         in_repository = self.root is not None and self.orchestrate is not None
-        router = IntentRouter(lambda: self.build_router(config, calls))
+        router = SupervisorRouter(lambda: self.build_router(config, calls))
         decision = router.route(text, self.conversation.recent(ROUTER_VIEW), in_repository)
         if decision.action in {"scout", "ship"}:
             return self.delegate(text, decision, config)
@@ -129,12 +129,12 @@ class SupervisorService:
         self.conversation.add(text, answer.text, decision.action)
         return render_answer(answer, decision, config)
 
-    def delegate(self, text: str, decision: RouteDecision, config: Config) -> RenderableType:
+    def delegate(self, text: str, decision: SupervisorDecision, config: Config) -> RenderableType:
         """Hand the resolved request, and the conversation it came from, to the orchestrator."""
         if self.orchestrate is None:
             return NO_REPOSITORY
         kind: TaskKind = "scout" if decision.action == "scout" else "ship"
-        handoff = Handoff(
+        handoff = TaskBrief(
             decision.request or text,
             self.conversation.transcript(HANDOFF_VIEW),
             kind,
@@ -172,7 +172,7 @@ class SupervisorService:
         except TaskStateError:
             return True  # let orchestration report the broken state
 
-    def build_router(self, config: Config, calls: AnswerCalls) -> SemanticRouter | None:
+    def build_router(self, config: Config, calls: AnswerCalls) -> SemanticSupervisor | None:
         """Build semantic supervisor intake through generic model routing.
 
         Auto prefers the cheapest adequate reachable model. Selected uses the exact model.
@@ -192,7 +192,7 @@ class SupervisorService:
             reply = call(SUPERVISOR_POLICY, "supervisor_intake", system, prompt, max_output_tokens)
             return reply.text, reply.describe()
 
-        return ProviderRouter(route)
+        return ProviderSupervisor(route)
 
 
 def explicit_pins(
@@ -218,14 +218,14 @@ def explicit_pins(
     return pins
 
 
-def verbose_routing(config: Config, decision: RouteDecision) -> tuple[str, ...]:
+def verbose_routing(config: Config, decision: SupervisorDecision) -> tuple[str, ...]:
     if config.ui.verbosity != "verbose":
         return ()
     resolved = (f"Understood as: {decision.request}",) if decision.request else ()
     return (f"Routed as {decision.describe()}.", *resolved)
 
 
-def render_supervisor_answer(text: str, decision: RouteDecision, config: Config) -> RenderableType:
+def render_supervisor_answer(text: str, decision: SupervisorDecision, config: Config) -> RenderableType:
     """Render an answer completed by semantic intake without a second model call."""
     body: RenderableType = Markdown(text) if text else Text("(empty answer)")
     if config.ui.verbosity == "concise" or decision.source == "fast-path":
@@ -234,7 +234,7 @@ def render_supervisor_answer(text: str, decision: RouteDecision, config: Config)
     return blocks(body, Group(*(muted(note) for note in notes)))
 
 
-def render_answer(answer: Answer, decision: RouteDecision, config: Config) -> RenderableType:
+def render_answer(answer: Answer, decision: SupervisorDecision, config: Config) -> RenderableType:
     """The answer alone when concise; the model used when normal; routing too when verbose."""
     verbosity = config.ui.verbosity
     body: RenderableType = Markdown(answer.text) if answer.text else Text("(empty answer)")
@@ -245,6 +245,3 @@ def render_answer(answer: Answer, decision: RouteDecision, config: Config) -> Re
         notes.append("Repository context: " + ", ".join(answer.context) + ".")
     return blocks(body, Group(*(muted(note) for note in notes)))
 
-
-RootPromptGateway = SupervisorService
-"""Compatibility alias for the pre-supervisor V1-09.9 name."""
