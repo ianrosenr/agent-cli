@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+import threading
 
 from rich.console import RenderableType
 
@@ -419,7 +420,8 @@ class OrchestrationService:
         project_root = self.config.paths.project_root
         if project_root is None:
             return error("Authorized, but cannot launch implementation.", "No repository is open.")
-        auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+        login = self.login_harnesses if threading.current_thread() is threading.main_thread() else None
+        auth = HarnessAuthCoordinator(self.adapters, config, login)
         harness_pin = self.store.pins(task.id).get("harness")
         if harness_pin is not None:
             ready, reason = auth.repair_pinned((harness_pin.value,))
