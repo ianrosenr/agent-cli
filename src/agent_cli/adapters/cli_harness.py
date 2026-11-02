@@ -178,7 +178,7 @@ def run_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str
 
 def safe_process_diagnostic(stderr: str, *sensitive: str, limit: int = 240) -> str:
     """Return a bounded one-line diagnostic without echoing known prompt/system text."""
-    text = re.sub(r"\x1b\\[[0-?]*[ -/]*[@-~]", "", stderr)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", stderr)
     for value in sensitive:
         if value:
             text = text.replace(value, "[redacted input]")
