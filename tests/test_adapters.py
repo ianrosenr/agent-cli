@@ -521,9 +521,7 @@ def test_runtime_readiness_is_not_configuration() -> None:
     # This is user policy; the detected runtime version is still not persisted.
     config = Config(harnesses={"beta": HarnessConfig(type="cli", profile="beta")})
     adapter_status(status_registry(), config)
-    assert config == Config(
-        harnesses={"beta": HarnessConfig(type="cli", profile="beta")}
-    )
+    assert config == Config(harnesses={"beta": HarnessConfig(type="cli", profile="beta")})
 
 
 def test_startup_shows_adapter_readiness_and_saves_none_of_it(service: ConfigService) -> None:
