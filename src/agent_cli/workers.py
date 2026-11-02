@@ -36,7 +36,7 @@ from agent_cli.models import (
     runtime_paths,
 )
 from agent_cli.skills import SkillError, load_catalog, skill_sources
-from agent_cli.state import Approval, PinKind, Task, TaskStateError, TaskStatus, TaskStore
+from agent_cli.state import AuthorizationStatus, PinKind, Task, TaskStateError, TaskStatus, TaskStore
 from agent_cli.terms import Role, TaskComplexity, TaskKind
 
 
@@ -481,7 +481,7 @@ class WorkerExecutor:
         authority: WorkerAuthority,
     ) -> None:
         authorization = self.store.latest_authorization(task.id)
-        if authorization is None or authorization.status is not Approval.APPROVED:
+        if authorization is None or authorization.status is not AuthorizationStatus.APPROVED:
             raise WorkerLaunchError(
                 f"task {task.id} has no approved implementation authorization"
             )
