@@ -288,7 +288,7 @@ def test_direct_models_expose_openai_subscription_model() -> None:
     assert harness.direct_provider().id == SUBSCRIPTION_PROVIDER_ID
     assert harness.direct_provider().access == "subscription"
     assert model.provider_id == SUBSCRIPTION_PROVIDER_ID
-    assert model.model_id == "gpt-6.1-sol"
+    assert model.model_id == "gpt-6-sol"
 
 
 def test_direct_model_call_uses_exact_model_isolated_env_and_read_only_sandbox() -> None:
@@ -322,14 +322,14 @@ def test_direct_model_call_uses_exact_model_isolated_env_and_read_only_sandbox()
         direct_model_runner=direct,
     )
     response = harness.invoke_model(
-        ProviderRequest("gpt-6.1-sol", "what color is the sky", "answer briefly", 30)
+        ProviderRequest("gpt-6-sol", "what color is the sky", "answer briefly", 30)
     )
 
     assert response.text == "the sky is blue"
     assert response.usage is not None and response.usage.tokens == 12
     [call] = seen
     assert "--sandbox" in call["argv"] and "read-only" in call["argv"]
-    assert "--model" in call["argv"] and "gpt-6.1-sol" in call["argv"]
+    assert "--model" in call["argv"] and "gpt-6-sol" in call["argv"]
     assert "answer briefly" in call["prompt"] and "what color is the sky" in call["prompt"]
     assert all(name not in call["env"] for name in BILLING_OVERRIDE_ENV)
     assert call["cwd"].name.startswith("agent-cli-model-")
