@@ -332,14 +332,15 @@ def test_mode_change_invalidates_previous_write_authorization(tmp_path: Path) ->
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
     session = store.start_session()
-    parent, _ = store.start_root_task(
-        session.id, "Fix the typo", kind="ship", complexity="trivial"
-    )
+    parent, _ = store.start_root_task(session.id, "Fix the typo", kind="ship", complexity="trivial")
     child = store.create_task(
         session.id, "Fix the bounded typo", parent_id=parent.id, role="implementer"
     )
     store.add_authorization(
-        child.id, "autopilot", AuthorizationStatus.APPROVED, "prior mode",
+        child.id,
+        "autopilot",
+        AuthorizationStatus.APPROVED,
+        "prior mode",
         decided_by="policy:autopilot",
     )
     adapters, _ = runtime(auto_finish=True)
