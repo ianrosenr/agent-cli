@@ -259,10 +259,22 @@ def test_go_ahead_and_do_that_delegates_the_change_from_the_previous_answer(
 
     def decide(message: str, conversation: list[dict[str, str]], in_repo: bool) -> dict[str, Any]:
         if message == question:
-            return {"intent": "repository_question", "confident": True, "request": question}
-        # The router resolves "that" from the previous answer it was shown.
+            return {
+                "action": "answer",
+                "confident": True,
+                "request": question,
+                "repository": True,
+                "complexity": "trivial",
+            }
+        # The supervisor resolves "that" from the previous answer it was shown.
         assert conversation[-1] == {"user": question, "assistant": IMPROVE}
-        return {"intent": "orchestration", "confident": True, "request": resolved}
+        return {
+            "action": "ship",
+            "confident": True,
+            "request": resolved,
+            "repository": True,
+            "complexity": "moderate",
+        }
 
     provider = ModelProvider(answer=IMPROVE, route=decide)
     plans = Recorder()
@@ -438,7 +450,7 @@ def test_verbose_verbosity_explains_routing_and_the_resolved_request(
     )
     config = config_for(isolated_home, project, "verbose")
     output = plain(gateway(config, provider, orchestrate=Recorder()).handle("fix it"))
-    assert "Routed as ship/moderate (supervisor: supervisor@2 (tiny via" in output
+    assert "Routed as ship/moderate, repository (supervisor: supervisor@2 (tiny via" in output
     assert "Understood as: Fix the retry bug in route()" in output
 
 
