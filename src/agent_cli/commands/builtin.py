@@ -107,7 +107,11 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     try:
         config = context.config.resolve()
     except ConfigError as problem:
-        return blocks(result, error("Cannot read saved configuration.", str(problem)))
+        return blocks(
+            migration,
+            result,
+            error("Cannot read saved configuration.", str(problem)),
+        )
     from agent_cli.harness_lifecycle import HarnessLifecycleService
 
     lifecycle = HarnessLifecycleService(
