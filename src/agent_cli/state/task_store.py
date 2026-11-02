@@ -704,9 +704,7 @@ class TaskStore:
             if row is None:
                 raise TaskStateError(f"unknown task authorization: {authorization_id}")
             if row["status"] != AuthorizationStatus.PENDING:
-                raise TaskStateError(
-                    f"task authorization {authorization_id} is {row['status']}"
-                )
+                raise TaskStateError(f"task authorization {authorization_id} is {row['status']}")
             task_id: str = row["task_id"]
             decided_at = self._clock()
             db.execute(
