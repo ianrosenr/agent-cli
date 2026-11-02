@@ -266,7 +266,7 @@ def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
         config,
         plan(one_item),
         adapters=AdapterRegistry([claude, codex]),
-        login_harnesses=lambda ids: calls.append(ids) or True,
+        login_harnesses=lambda ids: (calls.append(ids), True)[1],
     )
 
     output = plain(orchestrator.handle(GOAL))
@@ -311,7 +311,7 @@ def test_declined_unpinned_repair_does_not_loop_or_block_planning(
         config,
         plan(one_item),
         adapters=AdapterRegistry([claude]),
-        login_harnesses=lambda ids: calls.append(ids) or False,
+        login_harnesses=lambda ids: (calls.append(ids), False)[1],
     )
 
     output = plain(orchestrator.handle(GOAL))
