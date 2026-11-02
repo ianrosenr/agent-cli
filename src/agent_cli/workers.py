@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from contextlib import suppress
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -366,10 +367,8 @@ class WorkerExecutor:
                     )
                     return
             except (AdapterError, TaskStateError):
-                try:
+                with suppress(TaskStateError):
                     self.store.update_worker(worker_id, WorkerStatus.FAILED)
-                except TaskStateError:
-                    pass
                 return
             time.sleep(self.poll_seconds)
 
