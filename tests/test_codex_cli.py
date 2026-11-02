@@ -10,11 +10,11 @@ from typing import IO, Any
 import pytest
 
 from agent_cli.adapters import (
-    AdapterError,
     DIAGNOSTIC_AUTHORITY,
+    RESEARCH_AUTHORITY,
+    AdapterError,
     ErrorKind,
     ProviderRequest,
-    RESEARCH_AUTHORITY,
     ReadinessState,
     Selection,
     WorkerRequest,
