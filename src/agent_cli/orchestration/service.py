@@ -245,6 +245,7 @@ class OrchestrationService:
                 spec_version=version,
                 decided_by=f"policy:{config.implementation.mode}",
             )
+            self.store.set_status(task.id, TaskStatus.BLOCKED, decision.reason)
             return render_authorization_result(authorization, decision.reason)
 
         if decision.action == "checkpoint":
@@ -301,8 +302,8 @@ class OrchestrationService:
         try:
             config = self.config.resolve()
             registry = self.registry if self.registry is not None else load_registry()
-        except (ConfigError, RegistryError) as error:
-            return error("Authorized, but cannot launch implementation.", str(error))
+        except (ConfigError, RegistryError) as problem:
+            return error("Authorized, but cannot launch implementation.", str(problem))
         root = self.store.task(self.store.root_task(task.id))
         complexity = "moderate" if root is None or root.complexity is None else root.complexity
         return self.launch_authorized_ship(task, config, registry, complexity, approved)
