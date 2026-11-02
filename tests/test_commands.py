@@ -111,6 +111,7 @@ IMPLEMENTED_COMMANDS = {
     "exit",
     "startup",
     "login",
+    "reload",
     "providers",
     "status",
     "skills",
