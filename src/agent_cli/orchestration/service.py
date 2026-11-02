@@ -105,7 +105,12 @@ class OrchestrationService:
             if pending is None and handoff is not None and handoff.goal.strip():
                 context = (handoff.context,) if handoff.context.strip() else ()
                 root, _ = self.store.start_root_task(
-                    session.id, handoff.goal.strip(), request=text, context=context
+                    session.id,
+                    handoff.goal.strip(),
+                    request=text,
+                    context=context,
+                    kind=handoff.kind,
+                    complexity=handoff.complexity,
                 )
                 if handoff.complexity == "trivial":
                     return self.prepare_single_task(root, handoff)
