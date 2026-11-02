@@ -258,12 +258,7 @@ def test_main_migrates_legacy_builtin_harness_config_before_validation(
 ) -> None:
     config = isolated_home / ".agent-cli" / "config.yaml"
     config.parent.mkdir()
-    config.write_text(
-        "harnesses:\n"
-        "  claude-code:\n"
-        "    enabled: true\n"
-        "    version: latest\n"
-    )
+    config.write_text("harnesses:\n  claude-code:\n    enabled: true\n    version: latest\n")
     monkeypatch.chdir(isolated_home)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(EOFError))
