@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from rich.console import RenderableType
@@ -473,7 +473,25 @@ class OrchestrationService:
             call = DirectModelCall(self.adapters, config, registry, guard, root.id, pins, replies)
             made = len(replies)
             try:
-                plan = validate_proposal(self.planner.propose(planning, call), planning)
+                proposal = self.planner.propose(planning, call)
+                try:
+                    plan = validate_proposal(proposal, planning)
+                except PlanRejected as rejected:
+                    if not rejected.problems or not all(
+                        "goal is over" in problem for problem in rejected.problems
+                    ):
+                        raise
+                    retry_input = replace(
+                        planning,
+                        constraints=(
+                            *planning.constraints,
+                            "Validation retry: every work item goal MUST be at most "
+                            "200 characters. Put details in why, not goal.",
+                        ),
+                    )
+                    plan = validate_proposal(
+                        self.planner.propose(retry_input, call), planning
+                    )
             except (PlanningUnavailable, ModelOutputError, PlanRejected) as error:
                 return self.stop(root, f"{failure(error)}: {error}")
             for pin in plan.planning_pins:
