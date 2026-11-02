@@ -87,12 +87,6 @@ UNAVAILABLE = "Configuration is unavailable in this session."
 def startup_command(context: CommandContext, args: str) -> RenderableType:
     if context.config is None:
         return error(UNAVAILABLE)
-    migrated = context.config.migrate_legacy_builtin_harnesses()
-    migration = (
-        info("Updated legacy Claude/Codex harness config to the current format.")
-        if migrated
-        else None
-    )
     adapters = adapters_of(context)
     setup = GuidedSetup(
         context.config,
@@ -102,7 +96,7 @@ def startup_command(context: CommandContext, args: str) -> RenderableType:
     )
     result = setup.run()
     if not setup.saved:
-        return blocks(migration, result)
+        return result
     if context.reload_adapters is not None:
         context.reload_adapters()
     try:
