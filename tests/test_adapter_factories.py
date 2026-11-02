@@ -12,7 +12,7 @@ from agent_cli.adapters.factories import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
-from agent_cli.config.model import HarnessConfig, ProviderConfig
+from agent_cli.config.model import CliProfileConfig, HarnessConfig, ProviderConfig
 from agent_cli.runtime import default_adapters
 
 
@@ -51,6 +51,33 @@ def test_cli_profile_can_be_reused_under_another_configured_instance_name() -> N
     assert adapter.command() == "/opt/work/claude"
     assert adapter.identity().id == "work-claude"
     assert adapter.provider_id() == "work-claude-subscription"
+
+
+def test_user_defined_cli_profile_needs_no_new_adapter_code() -> None:
+    profile = CliProfileConfig(
+        display_name="Example CLI",
+        default_command="example",
+        provider_id="example-subscription",
+        provider_name="Example subscription",
+        auth_label="Example subscription auth",
+        auth_status_args=("auth", "status"),
+        login_args=("auth", "login"),
+        auth_regexes=("signed in",),
+        worker_base_args=("run", "--json"),
+    )
+    registry = default_adapters(
+        Config(
+            harness_profiles={"example": profile},
+            harnesses={"example": harness("example")},
+        )
+    )
+
+    adapter = registry.harness("example")
+
+    assert isinstance(adapter, CliHarnessAdapter)
+    assert adapter.identity().display_name == "Example CLI"
+    assert adapter.command() == "example"
+    assert adapter.profile.auth_pattern.regexes == ("signed in",)
 
 
 def test_unknown_harness_type_and_profile_fail_explicitly() -> None:
