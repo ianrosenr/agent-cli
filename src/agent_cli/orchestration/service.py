@@ -186,9 +186,17 @@ class OrchestrationService:
                         notify=self.worker_notify,
                     ).launch(child, "scout", handoff.complexity, child.goal)
                     return info("Scout started.", started)
-                except WorkerLaunchError:
-                    # No worker route is not a planning failure. Keep the prepared scout resumable.
-                    pass
+                except WorkerLaunchError as problem:
+                    return render_plan(
+                        self.store,
+                        root.id,
+                        plan.proposal.summary,
+                        plan.unpinned,
+                        (f"Scout prepared but could not start: {problem}",),
+                        (),
+                        config.ui.verbosity,
+                        ready="Scout prepared but not started.",
+                    )
 
         return render_plan(
             self.store,
