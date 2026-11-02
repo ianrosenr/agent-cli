@@ -420,11 +420,8 @@ class OrchestrationService:
         project_root = self.config.paths.project_root
         if project_root is None:
             return error("Authorized, but cannot launch implementation.", "No repository is open.")
-        login = (
-            self.login_harnesses
-            if threading.current_thread() is threading.main_thread()
-            else None
-        )
+        foreground = threading.current_thread() is threading.main_thread()
+        login = self.login_harnesses if foreground else None
         auth = HarnessAuthCoordinator(self.adapters, config, login)
         harness_pin = self.store.pins(task.id).get("harness")
         if harness_pin is not None:
