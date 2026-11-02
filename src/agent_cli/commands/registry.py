@@ -61,8 +61,8 @@ class CommandContext:
     """Harness and provider adapters; ``None`` when none are available in this session."""
     tasks: TaskStore | None = None
     """Canonical task state; ``None`` outside a repository, where no task state exists."""
-    orchestrate: Callable[[str], RenderableType] | None = None
-    """Plans one line of ordinary input; ``None`` where orchestration cannot run."""
+    respond: Callable[[str], RenderableType] | None = None
+    """Answers or plans one line of ordinary input; ``None`` without configuration."""
     reload_adapters: Callable[[], str | None] | None = None
     """Rebuild adapters atomically; returns an error string without replacing them on failure."""
 

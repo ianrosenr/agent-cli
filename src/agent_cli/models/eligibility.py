@@ -128,6 +128,63 @@ def ranked_model_candidates(
 
 
 @dataclass(frozen=True, slots=True)
+class AnswerPolicy:
+    """Model choice for a direct answer at the root prompt (V1-09.9).
+
+    Not a delegated role: no configurable floor, no skills. Among models meeting a fixed,
+    moderate floor on ``primary``, cheaper and faster ones rank first.
+    """
+
+    name: str
+    primary: ModelCapability
+    minimum: int
+
+    def met_by(self, entry: ModelEntry) -> bool:
+        return entry.scores[self.primary] >= self.minimum
+
+
+CHAT_POLICY = AnswerPolicy("chat", C.REASONING, FLOOR_SCORES["mid"])
+"""Ordinary questions, explanations, and brainstorming."""
+REPOSITORY_ANSWER_POLICY = AnswerPolicy(
+    "repository_answer", C.REPOSITORY_ENGINEERING, FLOOR_SCORES["mid"]
+)
+"""Read-only questions about the current repository."""
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerCandidate:
+    model_id: str
+    entry: ModelEntry
+    paths: tuple[ModelPath, ...]
+
+
+def answer_candidates(
+    registry: ModelRegistry,
+    policy: AnswerPolicy,
+    runtime: RuntimePaths,
+    preference: Sequence[AccessKind],
+    context_tokens: int | None = None,
+) -> tuple[AnswerCandidate, ...]:
+    """Active models meeting ``policy`` with usable paths: cheapest, fastest, ablest first."""
+    eligible = sorted(
+        (entry for entry in registry.active() if policy.met_by(entry)),
+        key=lambda entry: (
+            entry.cost.rank,
+            entry.latency.rank,
+            -entry.scores[policy.primary],
+            -entry.confidence.rank,
+            entry.id,
+        ),
+    )
+    result: list[AnswerCandidate] = []
+    for entry in eligible:
+        paths = usable_paths(runtime.serving(entry.names), preference, context_tokens)
+        if paths:
+            result.append(AnswerCandidate(entry.id, entry, paths))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
 class ModelPin:
     """A model the user named for delegated work. A hard constraint, not routing evidence."""
 

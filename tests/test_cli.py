@@ -41,7 +41,7 @@ def recording() -> tuple[CommandContext, list[str]]:
         seen.append(text)
         return f"planned: {text}"
 
-    return CommandContext(registry=build_registry(), orchestrate=orchestrate), seen
+    return CommandContext(registry=build_registry(), respond=orchestrate), seen
 
 
 def test_ordinary_text_goes_straight_to_orchestration() -> None:
@@ -206,7 +206,7 @@ def test_piped_input_runs_without_a_terminal(tmp_path: Path) -> None:
     # Outside a repository, so the subprocess cannot write task state anywhere real.
     result = subprocess.run(
         [sys.executable, "-m", "agent_cli"],
-        input="/help\n\nhello\n",
+        input="/help\n\nhello\nadd a health endpoint\n",
         capture_output=True,
         text=True,
         check=True,
@@ -216,6 +216,7 @@ def test_piped_input_runs_without_a_terminal(tmp_path: Path) -> None:
     assert TAGLINE in result.stdout
     assert "\033[" not in result.stdout
     assert "Agent CLI help" in result.stdout
+    assert "Cannot answer" in result.stdout  # chat runs anywhere, but no model is configured
     assert cli.NO_ORCHESTRATION in result.stdout
     assert result.stderr == ""
 
@@ -319,6 +320,7 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.commands",
         "agent_cli.commands.builtin",
         "agent_cli.commands.registry",
+        "agent_cli.gateway",
         "agent_cli.config",
         "agent_cli.config.model",
         "agent_cli.config.schema",

@@ -1,9 +1,10 @@
-"""Direct model calls for the orchestrator's own reasoning: planning and spec authoring.
+"""Direct model calls for the control plane's own reasoning: planning, spec authoring, and
+direct root-prompt answers.
 
 These are control-plane calls, never coding workers: no harness, no worktree, no file edits.
 Each call takes its path through the existing routing seams, in order::
 
-    explicit model pin, or the role floor
+    explicit model pin, or the role floor (or a direct-answer policy)
     -> V1-07 ranked model candidates over READY provider paths
     -> V1-08 budget and access filtering
     -> BudgetGuard, immediately before the paid invocation
@@ -13,7 +14,7 @@ A pinned model is never substituted: if it cannot run, the call fails and the us
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
@@ -31,11 +32,15 @@ from agent_cli.budget import (
 )
 from agent_cli.config import Config
 from agent_cli.models import (
+    AnswerCandidate,
+    AnswerPolicy,
+    ModelCandidate,
     ModelPath,
     ModelPin,
     ModelRegistry,
     ModelRoutingError,
     RuntimePaths,
+    answer_candidates,
     pinned_paths,
     ranked_model_candidates,
     requirement,
@@ -86,15 +91,18 @@ class ModelCall(Protocol):
 
 @dataclass(slots=True)
 class DirectModelCall:
-    """Model calls for one root task: one budget scope, the root's planning pins."""
+    """Model calls for one root task: one budget scope, the root's planning pins.
+
+    With no root task (a direct answer), spend counts against the global limits only.
+    """
 
     adapters: AdapterRegistry
     config: Config
     registry: ModelRegistry
     guard: BudgetGuard
-    root_task_id: str
+    root_task_id: str | None
     pins: Mapping[PinKind, str] = field(default_factory=dict)
-    """Planning pins on the root task. A harness pin does not apply: no harness runs here."""
+    """Explicit model/provider pins. A harness pin does not apply: no harness runs here."""
     replies: list[ModelReply] = field(default_factory=list)
     _runtime: RuntimePaths | None = None
 
@@ -105,7 +113,12 @@ class DirectModelCall:
         return self._runtime
 
     def __call__(
-        self, role: Role, purpose: str, system: str, prompt: str, max_output_tokens: int
+        self,
+        role: Role | AnswerPolicy,
+        purpose: str,
+        system: str,
+        prompt: str,
+        max_output_tokens: int,
     ) -> ModelReply:
         failures: list[str] = []
         for quote in self.choices(role, purpose, system, prompt, max_output_tokens):
@@ -136,7 +149,7 @@ class DirectModelCall:
 
     def choices(
         self,
-        role: Role,
+        role: Role | AnswerPolicy,
         purpose: str,
         system: str,
         prompt: str,
@@ -152,7 +165,7 @@ class DirectModelCall:
 
     def choose(
         self,
-        role: Role,
+        role: Role | AnswerPolicy,
         purpose: str,
         system: str,
         prompt: str,
@@ -163,7 +176,7 @@ class DirectModelCall:
 
     def _budgeted(
         self,
-        role: Role,
+        role: Role | AnswerPolicy,
         purpose: str,
         system: str,
         prompt: str,
@@ -200,7 +213,7 @@ class DirectModelCall:
 
         try:
             if model is not None:
-                pin = ModelPin(model, f"task:{self.root_task_id}/role:{role}")
+                pin = ModelPin(model, self.scope(role))
                 pinned = pinned_paths(self.registry, self.runtime, preference, pin, context)
                 paths = pinned.paths
                 if provider is not None:
@@ -214,13 +227,17 @@ class DirectModelCall:
                     (quoted(pinned.model_id, path, 0) for path in paths), preference
                 )
             else:
-                candidates = ranked_model_candidates(
-                    self.registry,
-                    role,
-                    self.config.routing.role_floors,
-                    self.runtime,
-                    preference,
-                    context,
+                candidates: Sequence[ModelCandidate | AnswerCandidate] = (
+                    answer_candidates(self.registry, role, self.runtime, preference, context)
+                    if isinstance(role, AnswerPolicy)
+                    else ranked_model_candidates(
+                        self.registry,
+                        role,
+                        self.config.routing.role_floors,
+                        self.runtime,
+                        preference,
+                        context,
+                    )
                 )
                 quotes = []
                 for rank, candidate in enumerate(candidates):
@@ -234,10 +251,19 @@ class DirectModelCall:
         except (ModelRoutingError, BudgetBlocked) as error:
             raise PlanningUnavailable(str(error)) from error
 
-    def no_candidates(self, role: Role, provider: str | None) -> str:
-        need = requirement(role, self.config.routing.role_floors)
+    def scope(self, role: Role | AnswerPolicy) -> str:
+        name = role.name if isinstance(role, AnswerPolicy) else f"role:{role}"
+        return name if self.root_task_id is None else f"task:{self.root_task_id}/{name}"
+
+    def no_candidates(self, role: Role | AnswerPolicy, provider: str | None) -> str:
         where = f"pinned provider {provider}" if provider else "a ready provider"
         problems = "".join(f"; {problem}" for problem in self.runtime.problems)
+        if isinstance(role, AnswerPolicy):
+            return (
+                f"no model can answer: none with {role.primary} {role.minimum}+ is served by "
+                f"{where}{problems}"
+            )
+        need = requirement(role, self.config.routing.role_floors)
         return (
             f"no {role} model is available: none meeting the {need.floor} floor "
             f"({need.primary} {need.minimum}+) is served by {where}{problems}"
