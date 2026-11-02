@@ -32,12 +32,12 @@ from agent_cli.models import (
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
-    TaskBrief,
     PlanningInput,
     PlanProposal,
     PlanRejected,
     PriorDecision,
     RepositoryContext,
+    TaskBrief,
     UserText,
     ValidatedPlan,
     WorkItem,
