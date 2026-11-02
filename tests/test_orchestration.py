@@ -1886,3 +1886,55 @@ def test_autopilot_can_save_to_the_project_and_warns_about_overrides(
 @pytest.mark.parametrize("args", ["maybe", "on everywhere", "on global project", "status now"])
 def test_autopilot_rejects_unknown_arguments(config: ConfigService, args: str) -> None:
     assert "Usage: /autopilot" in autopilot(config, args)
+
+
+def test_completed_scout_dispatches_dependent_ship_without_model_polling(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, _, models = ship_runtime()
+    provider = next(iter(adapters.providers().values()))
+    harness = FakeHarnessAdapter(auto_finish=True)
+    runtime = AdapterRegistry([harness], [provider])
+    session = store.start_session()
+    root, _ = store.start_root_task(
+        session.id, "Implement feature", kind="ship", complexity="trivial"
+    )
+    scout = store.create_task(
+        session.id, "Gather evidence", parent_id=root.id, role="research_investigator"
+    )
+    ship = store.create_task(
+        session.id, "Implement change", parent_id=root.id, role="implementer"
+    )
+    store.add_dependency(ship.id, scout.id)
+    orchestration = service(store, config, adapters=runtime, registry=models)
+
+    orchestration.advance(root.id)
+
+    assert store.task(scout.id).status is TaskStatus.COMPLETED
+    assert store.task(ship.id).status is TaskStatus.COMPLETED
+    assert len(store.workers(scout.id)) == 1
+    assert len(store.workers(ship.id)) == 1
+    assert store.task(root.id).status is TaskStatus.COMPLETED
+
+
+def test_restart_resumes_queued_work_without_replaying_completed_launches(
+    store: TaskStore, config: ConfigService
+) -> None:
+    adapters, _, models = ship_runtime()
+    provider = next(iter(adapters.providers().values()))
+    harness = FakeHarnessAdapter(auto_finish=True)
+    runtime = AdapterRegistry([harness], [provider])
+    session = store.start_session()
+    root, _ = store.start_root_task(
+        session.id, "Resume feature", kind="ship", complexity="trivial"
+    )
+    child = store.create_task(
+        session.id, "Do work", parent_id=root.id, role="implementer"
+    )
+    recovered = service(store, config, adapters=runtime, registry=models)
+
+    recovered.resume_queued()
+    recovered.resume_queued()
+
+    assert len(store.workers(child.id)) == 1
+    assert store.task(root.id).status is TaskStatus.COMPLETED
