@@ -264,8 +264,6 @@ class CliHarnessAdapter(HarnessAdapter):
     def capabilities(self) -> HarnessCapabilities:
         supported = {
             Capability.START_WORKER,
-            Capability.INSTALL,
-            Capability.UPDATE,
             Capability.LOGIN,
             Capability.INTERRUPT,
             Capability.MODEL_SELECTION,
@@ -274,6 +272,10 @@ class CliHarnessAdapter(HarnessAdapter):
             Capability.DIFF,
             Capability.USAGE,
         }
+        if self.profile.install_latest or self.profile.install_exact:
+            supported.add(Capability.INSTALL)
+        if self.profile.update_latest or self.profile.update_exact:
+            supported.add(Capability.UPDATE)
         if self.profile.direct_model_id is not None:
             supported.add(Capability.DIRECT_MODEL)
         return HarnessCapabilities(
