@@ -20,10 +20,10 @@ from typing import Protocol
 from agent_cli.adapters import AdapterError, AdapterRegistry, ErrorKind, ProviderRequest
 from agent_cli.budget import (
     BudgetBlocked,
+    BudgetedPaths,
     BudgetError,
     BudgetGuard,
     BudgetRejected,
-    BudgetedPaths,
     CallBounds,
     PathQuote,
     quote_path,
