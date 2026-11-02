@@ -64,9 +64,7 @@ class PlanRejected(ValueError):
         self.problems = tuple(problems)
         super().__init__("; ".join(self.problems))
 
-
 # -- Planner input -----------------------------------------------------------------------------
-
 
 @dataclass(frozen=True, slots=True)
 class UserText:
@@ -75,13 +73,11 @@ class UserText:
     id: str
     text: str
 
-
 @dataclass(frozen=True, slots=True)
 class PriorDecision:
     question: str
     decision: str
     decided_by: str
-
 
 @dataclass(frozen=True, slots=True)
 class FileFacts:
@@ -91,7 +87,6 @@ class FileFacts:
     reasons: tuple[str, ...]
     facts: tuple[str, ...]
     symbols: tuple[str, ...]
-
 
 @dataclass(frozen=True, slots=True)
 class RepositoryContext:
@@ -107,7 +102,6 @@ class RepositoryContext:
     @property
     def paths(self) -> tuple[str, ...]:
         return tuple(file.path for file in self.files)
-
 
 @dataclass(frozen=True, slots=True)
 class PlanningInput:
@@ -130,7 +124,6 @@ class PlanningInput:
         """Everything that can authorize a pin: only what the user actually said."""
         return tuple(item.text for item in (*self.requirements, *self.answers))
 
-
 @dataclass(frozen=True, slots=True)
 class TaskBrief:
     """Supervisor handoff for repository work.
@@ -146,16 +139,13 @@ class TaskBrief:
     complexity: TaskComplexity = "moderate"
 
 
-
 # -- Planner output ----------------------------------------------------------------------------
-
 
 @dataclass(frozen=True, slots=True)
 class ProposedQuestion:
     question: str
     why: str
     """Why the answer is consequential."""
-
 
 @dataclass(frozen=True, slots=True)
 class WorkItem:
@@ -178,7 +168,6 @@ class WorkItem:
     def needs_spec(self) -> bool:
         return self.role == "implementer" and self.changes_code and not self.trivial
 
-
 @dataclass(frozen=True, slots=True)
 class PlanProposal:
     summary: str
@@ -186,7 +175,6 @@ class PlanProposal:
     questions: tuple[ProposedQuestion, ...] = ()
     work_items: tuple[WorkItem, ...] = ()
     pins: tuple[PlannedPin, ...] = ()
-
 
 @dataclass(frozen=True, slots=True)
 class ValidatedPlan:
@@ -212,7 +200,6 @@ class ValidatedPlan:
             self.proposal.assumptions,
             self.delegated_pins,
         )
-
 
 # -- Validation --------------------------------------------------------------------------------
 
