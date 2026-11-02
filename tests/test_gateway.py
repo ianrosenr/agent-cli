@@ -421,7 +421,25 @@ def test_routing_uses_the_cheap_model_and_answering_the_stronger_one(isolated_ho
     assert answered.model_id == "chat-model"
 
 
-def test_a_selected_router_model_is_used_for_routing(isolated_home: Path) -> None:
+def test_auto_router_never_promotes_a_medium_cost_model(isolated_home: Path) -> None:
+    provider = ModelProvider(model_ids=("chat-model",), route=judge(**{"fix this bug": "orchestration"}))
+    plans = Recorder()
+
+    output = plain(
+        gateway(
+            config_for(isolated_home, None, "verbose"),
+            provider,
+            orchestrate=plans,
+            registry=registry(model("chat-model", cost="medium")),
+        ).handle("fix this bug")
+    )
+
+    assert provider.routed() == []
+    assert plans.seen == []
+    assert ANSWER in output and "no router model is available" in output
+
+
+def test_a_selected_router_model_is_used_even_when_medium_cost(isolated_home: Path) -> None:
     config = config_for(isolated_home, None)
     config.set_session(
         {"routing": {"classifier": {"mode": "selected", "selected_model": "chat-model"}}}
@@ -433,7 +451,7 @@ def test_a_selected_router_model_is_used_for_routing(isolated_home: Path) -> Non
 
 def test_an_unpriced_paid_router_path_is_filtered_by_budget(isolated_home: Path) -> None:
     paid = ModelProvider(id="paid", access="api", model_ids=("tiny",))
-    free = ModelProvider(id="free", model_ids=("chat-model",))
+    free = ModelProvider(id="free", model_ids=("tiny", "chat-model"))
     config = config_for(isolated_home, None, "verbose")
     service = gateway(config, paid, free)
 
