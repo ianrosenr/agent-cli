@@ -133,16 +133,17 @@ class OrchestrationService:
             if attempt + 1 == PLANNING_ATTEMPTS:
                 return self.stop(root, "planning could not be made under the pinned model")
 
-        auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
-        harness_pins = tuple(
-            pin.value for pin in plan.delegated_pins if pin.kind == "harness"
-        )
-        if harness_pins:
-            ready, reason = auth.repair_pinned(harness_pins)
-            if not ready:
-                return self.stop(root, reason)
-        else:
-            auth.ensure_any_ready()
+        if plan.proposal.work_items:
+            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+            harness_pins = tuple(
+                pin.value for pin in plan.delegated_pins if pin.kind == "harness"
+            )
+            if harness_pins:
+                ready, reason = auth.repair_pinned(harness_pins)
+                if not ready:
+                    return self.stop(root, reason)
+            else:
+                auth.ensure_any_ready()
 
         if plan.question is not None:
             if len(self.store.planning_questions(root.id)) >= MAX_QUESTIONS:
