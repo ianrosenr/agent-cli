@@ -34,8 +34,7 @@ def evaluate_task(store: TaskStore, task: Task) -> ScheduledTask:
     if any(dependency is None for dependency in dependencies):
         return ScheduledTask(task, Readiness.FAILED, "dependency was deleted")
     if any(
-        dependency is not None
-        and dependency.status in (TaskStatus.CANCELED, TaskStatus.FAILED)
+        dependency is not None and dependency.status in (TaskStatus.CANCELED, TaskStatus.FAILED)
         for dependency in dependencies
     ):
         return ScheduledTask(task, Readiness.FAILED, "dependency failed or was canceled")
