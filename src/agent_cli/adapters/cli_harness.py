@@ -251,6 +251,7 @@ class CliHarnessAdapter(HarnessAdapter):
         if auth.returncode != 0 or not auth_matches(auth, self.profile.auth_pattern):
             return HarnessReadiness(
                 ReadinessState.AUTH_REQUIRED,
+                f"{self.profile.auth_label} required; "
                 f"run {command} {' '.join(self.profile.login_args)}",
             )
         return HarnessReadiness(
@@ -515,7 +516,7 @@ class CliHarnessAdapter(HarnessAdapter):
 
     def run_lifecycle(self, argv: tuple[str, ...], action: str) -> None:
         try:
-            result = self.interactive_runner(argv, dict(self.environ))
+            result = self.interactive_runner(argv, self.subscription_env())
         except FileNotFoundError:
             raise AdapterError(
                 ErrorKind.NOT_FOUND,
