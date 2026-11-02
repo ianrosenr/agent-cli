@@ -49,8 +49,8 @@ from agent_cli.orchestration.domain import (
 from agent_cli.orchestration.inspection import MAX_FILES, goal_anchors, repository_context
 from agent_cli.orchestration.output import ModelOutputError
 from agent_cli.orchestration.planner import Planner, ProviderPlanner
-from agent_cli.orchestration.scheduler import Readiness, evaluate_task
 from agent_cli.orchestration.render import render_plan, render_question, render_stopped
+from agent_cli.orchestration.scheduler import Readiness, evaluate_task
 from agent_cli.orchestration.spec_author import (
     ProviderSpecAuthor,
     SpecAuthor,
@@ -384,7 +384,9 @@ class OrchestrationService:
         root = self.store.task(self.store.root_task(task.id))
         complexity = "moderate" if root is None or root.complexity is None else root.complexity
         result = self.launch_authorized_ship(task, config, registry, complexity, approved)
-        self.worker_finished(task.id) if self.store.task(task.id).status.finished else None
+        refreshed = self.store.task(task.id)
+        if refreshed is not None and refreshed.status.finished:
+            self.worker_finished(task.id)
         return result
 
     def launch_authorized_ship(
