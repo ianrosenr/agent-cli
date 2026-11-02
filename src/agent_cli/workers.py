@@ -6,7 +6,6 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
