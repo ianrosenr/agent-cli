@@ -8,6 +8,7 @@ routing, budgets, retries, and fallback are decided elsewhere.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from agent_cli.adapters.domain import (
     AdapterError,
@@ -17,6 +18,10 @@ from agent_cli.adapters.domain import (
     HarnessCapabilities,
     HarnessIdentity,
     HarnessReadiness,
+    ModelDescriptor,
+    ProviderIdentity,
+    ProviderRequest,
+    ProviderResponse,
     Selection,
     Usage,
     WorkerHandle,
@@ -105,6 +110,18 @@ class HarnessAdapter(ABC):
     @abstractmethod
     def result(self, handle: WorkerHandle) -> WorkerResult:
         """The worker's result so far; final once ``status`` is finished."""
+
+    def direct_provider(self) -> ProviderIdentity:
+        """Provider identity exposed when this harness can serve bounded model calls."""
+        raise unsupported(self.identity(), Capability.DIRECT_MODEL)
+
+    def direct_models(self) -> Sequence[ModelDescriptor]:
+        """Models this harness can serve through its direct-model capability."""
+        raise unsupported(self.identity(), Capability.DIRECT_MODEL)
+
+    def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
+        """Run one bounded control-plane model call through this harness."""
+        raise unsupported(self.identity(), Capability.DIRECT_MODEL)
 
     def install(self) -> HarnessReadiness:
         """Install the harness through its supported native/package-manager path."""
