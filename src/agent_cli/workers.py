@@ -489,9 +489,7 @@ class WorkerExecutor:
     ) -> None:
         authorization = self.store.latest_authorization(task.id)
         if authorization is None or authorization.status is not AuthorizationStatus.APPROVED:
-            raise WorkerLaunchError(
-                f"task {task.id} has no approved implementation authorization"
-            )
+            raise WorkerLaunchError(f"task {task.id} has no approved implementation authorization")
         if authorization.authority_profile != authority.profile:
             raise WorkerLaunchError(
                 f"task {task.id} is authorized for {authorization.authority_profile}, "
