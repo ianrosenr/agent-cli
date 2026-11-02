@@ -113,7 +113,9 @@ class HarnessLifecycleService:
             else:
                 current = adapter.identity().version
                 if current and current != before:
-                    messages.append(info(f"{adapter.identity().display_name} updated to {current}."))
+                    messages.append(
+                        info(f"{adapter.identity().display_name} updated to {current}.")
+                    )
                 elif not after.ready and after.state is not ReadinessState.AUTH_REQUIRED:
                     messages.append(
                         warning(
