@@ -62,7 +62,7 @@ PIN_PHRASE = re.compile(
 
 
 @dataclass(slots=True)
-class RootPromptGateway:
+class SupervisorService:
     config: ConfigService
     adapters: AdapterRegistry = field(default_factory=AdapterRegistry)
     orchestrate: Orchestrate | None = None
@@ -75,7 +75,7 @@ class RootPromptGateway:
     """The paid-spend ledger; the global one, opened once, when ``None``."""
     estimator: CostEstimator = NO_PRICING
     router: RouterFactory | None = None
-    """Builds the semantic router; the low-cost router model path when ``None``."""
+    """Optional semantic-supervisor factory override; automatic model routing when ``None``."""
     conversation: Conversation = field(default_factory=Conversation)
     _calls: AnswerCalls | None = None
     _chat: DirectAnswerService | None = None
@@ -225,3 +225,7 @@ def render_answer(answer: Answer, decision: RouteDecision, config: Config) -> Re
     if verbosity == "verbose" and answer.context:
         notes.append("Repository context: " + ", ".join(answer.context) + ".")
     return blocks(body, Group(*(muted(note) for note in notes)))
+
+
+RootPromptGateway = SupervisorService
+"""Compatibility alias for the pre-supervisor V1-09.9 name."""
