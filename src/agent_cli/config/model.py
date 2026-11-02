@@ -75,14 +75,16 @@ class SkillsConfig:
 class HarnessConfig:
     """A configured external harness.
 
-    Only what the user set. Runtime facts (detected, version, signed in) come from adapters and
-    are never stored here; see ``agent_cli.adapters``.
+    `type` chooses a reusable adapter protocol. `profile` chooses declarative behavior for
+    that protocol; when omitted, the harness config key is used as the profile for backwards
+    compatibility. Runtime facts are never stored here.
     """
 
+    type: str = constrained("cli", kind="nonempty")
+    profile: str | None = constrained(None, kind="nonempty")
     enabled: bool = True
     command: str | None = None
     version: str = constrained("latest", kind="nonempty")
-
 
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
