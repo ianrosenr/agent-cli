@@ -28,13 +28,13 @@ from agent_cli.adapters.cli_harness import (
     run_interactive,
 )
 from agent_cli.adapters.cli_profiles import CLAUDE_CODE
+from agent_cli.config import Config
+from agent_cli.config.model import HarnessConfig
+from agent_cli.runtime import default_adapters
 
 HARNESS_ID = CLAUDE_CODE.id
 SUBSCRIPTION_PROVIDER_ID = CLAUDE_CODE.provider_id
 BILLING_OVERRIDE_ENV = CLAUDE_CODE.env_remove
-from agent_cli.config import Config
-from agent_cli.config.model import HarnessConfig
-from agent_cli.runtime import default_adapters
 
 
 @dataclass
@@ -199,18 +199,25 @@ def adapter(
 
 
 def test_latest_version_policy_accepts_detected_claude_version() -> None:
-    readiness = adapter(config=HarnessConfig(type="cli", profile=HARNESS_ID, version="latest")).readiness()
+    readiness = adapter(
+        config=HarnessConfig(type="cli", profile=HARNESS_ID, version="latest")
+    ).readiness()
     assert readiness.state is ReadinessState.READY
 
 
 def test_exact_claude_version_policy_accepts_detected_version_token() -> None:
-    readiness = adapter(config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.1.307")).readiness()
+    readiness = adapter(
+        config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.1.307")
+    ).readiness()
     assert readiness.state is ReadinessState.READY
 
 
 def test_exact_claude_version_mismatch_fails_closed_before_auth() -> None:
     commands = FakeCommands()
-    readiness = adapter(commands=commands, config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.0.0")).readiness()
+    readiness = adapter(
+        commands=commands,
+        config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.0.0"),
+    ).readiness()
 
     assert readiness.state is ReadinessState.MISCONFIGURED
     assert "configured version '2.0.0'" in readiness.reason
@@ -663,7 +670,13 @@ def test_runtime_registers_claude_code_without_persisting_auth() -> None:
 
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
-    registry = default_adapters(Config(harnesses={"claude-code": HarnessConfig(type="cli", profile=HARNESS_ID)}))
+    registry = default_adapters(
+        Config(
+            harnesses={
+                "claude-code": HarnessConfig(type="cli", profile=HARNESS_ID)
+            }
+        )
+    )
     harness = registry.harness("claude-code")
     assert isinstance(harness, CliHarnessAdapter)
     harness.runner = FakeCommands()
