@@ -146,7 +146,8 @@ class OrchestrationService:
                     )
                     response = info("Scout started.", started)
                 except WorkerLaunchError as problem:
-                    self.block([child.id], str(problem))
+                    if "concurrency limit reached" not in str(problem):
+                        self.block([child.id], str(problem))
                 continue
             authorization = self.store.latest_authorization(child.id)
             if authorization is not None and authorization.status is AuthorizationStatus.PENDING:
