@@ -706,11 +706,7 @@ def test_runtime_registers_codex_without_persisting_auth() -> None:
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(
-        Config(
-            harnesses={
-                "codex-cli": HarnessConfig(type="cli", profile=HARNESS_ID)
-            }
-        )
+        Config(harnesses={"codex-cli": HarnessConfig(type="cli", profile=HARNESS_ID)})
     )
     harness = registry.harness("codex-cli")
     assert isinstance(harness, CliHarnessAdapter)
