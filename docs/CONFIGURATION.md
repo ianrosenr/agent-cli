@@ -94,16 +94,20 @@ Claude Code and Codex CLI are auto-detected. `/startup` persists whether each su
 ```yaml
 harnesses:
   claude-code:
+    type: cli
+    profile: claude-code
     enabled: true
     command: claude
     version: latest
   codex-cli:
+    type: cli
+    profile: codex-cli
     enabled: true
     command: codex
     version: latest
 ```
 
-Harness `version` defaults to `latest`. `latest` means the user has not pinned Agent CLI to an older harness release. An exact value such as `0.120.0` requires the detected CLI version to match and fails closed on mismatch. Supported harnesses may implement generic install/update capabilities; future descriptor/factory work can add more harnesses without changing this config contract.
+`type` selects a reusable adapter protocol. `profile` selects declarative behavior for that protocol. Both are optional for the built-in `claude-code` and `codex-cli` keys: `type` defaults to `cli`, and an omitted `profile` uses the harness key. This keeps existing config valid. A second instance can reuse a profile without Python changes, for example `work-claude: {type: cli, profile: claude-code, command: /opt/work/claude}`.\n\nHarness `version` defaults to `latest`. `latest` means the user has not pinned Agent CLI to an older harness release. An exact value such as `0.120.0` requires the detected CLI version to match and fails closed on mismatch. Supported harnesses may implement generic install/update capabilities; future descriptor/factory work can add more harnesses without changing this config contract.
 
 On first interactive launch, Agent CLI runs `/startup` automatically when neither global nor project config exists. After harness choices are saved, `/startup` can install enabled missing Claude/Codex CLIs, then reuse the same native login flow. Install/update operations are adapter capabilities, not startup vendor branches.
 
@@ -145,7 +149,7 @@ Like other sections, provider and harness entries merge by key across layers, so
 
 ## Validation
 
-Config is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them. Keys that look like secret values (`api_key`, `token`, `password`, …) are rejected with a pointer to `api_key_env` / `api_key_keyring`.
+Use `/reload` after editing global/project config while Agent CLI is running. Reload validates the complete layered config and adapter factory graph first, then atomically swaps the runtime. Invalid edits leave the previous runtime active.\n\nConfig is validated on load. Unknown keys and invalid values are errors that name the file and key. Agent CLI does not silently ignore them. Keys that look like secret values (`api_key`, `token`, `password`, …) are rejected with a pointer to `api_key_env` / `api_key_keyring`.
 
 ## Writing
 
