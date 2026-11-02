@@ -30,7 +30,7 @@ def version_matches(policy: str, detected: str) -> bool:
     """Whether a detected CLI version satisfies the generic harness version policy."""
     if policy == "latest":
         return True
-    return detected == policy or detected.rsplit(maxsplit=1)[-1] == policy
+    return detected == policy or policy in detected.split()
 
 
 def unsupported(identity: HarnessIdentity, capability: Capability) -> AdapterError:
