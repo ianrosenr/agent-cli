@@ -21,6 +21,7 @@ from agent_cli.models.access import (
     usable_paths,
 )
 from agent_cli.models.domain import (
+    Cost,
     ModelCapability,
     ModelEntry,
     ModelRegistry,
@@ -124,6 +125,71 @@ def ranked_model_candidates(
         paths = usable_paths(runtime.serving(entry.names), preference, context_tokens)
         if paths:
             result.append(ModelCandidate(need, entry.id, entry, paths))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerPolicy:
+    """Model choice for direct root-prompt/control-plane calls.
+
+    Not a delegated role: no configurable floor, no skills. Automatic selection may also
+    restrict coarse registry cost; explicit model pins still bypass automatic ranking.
+    """
+
+    name: str
+    primary: ModelCapability
+    minimum: int
+    costs: frozenset[Cost] | None = None
+
+    def met_by(self, entry: ModelEntry) -> bool:
+        return entry.scores[self.primary] >= self.minimum and (
+            self.costs is None or entry.cost in self.costs
+        )
+
+
+CHAT_POLICY = AnswerPolicy("chat", C.REASONING, FLOOR_SCORES["mid"])
+"""Ordinary questions, explanations, and brainstorming."""
+REPOSITORY_ANSWER_POLICY = AnswerPolicy(
+    "repository_answer", C.REPOSITORY_ENGINEERING, FLOOR_SCORES["mid"]
+)
+"""Read-only questions about the current repository."""
+SUPERVISOR_POLICY = AnswerPolicy("supervisor", C.REASONING, FLOOR_SCORES["low"])
+"""Root supervisor intake: prefer the cheapest adequate reachable model."""
+
+ROUTER_POLICY = SUPERVISOR_POLICY
+"""Compatibility alias for the pre-supervisor name."""
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerCandidate:
+    model_id: str
+    entry: ModelEntry
+    paths: tuple[ModelPath, ...]
+
+
+def answer_candidates(
+    registry: ModelRegistry,
+    policy: AnswerPolicy,
+    runtime: RuntimePaths,
+    preference: Sequence[AccessKind],
+    context_tokens: int | None = None,
+) -> tuple[AnswerCandidate, ...]:
+    """Active models meeting ``policy`` with usable paths: cheapest, fastest, ablest first."""
+    eligible = sorted(
+        (entry for entry in registry.active() if policy.met_by(entry)),
+        key=lambda entry: (
+            entry.cost.rank,
+            entry.latency.rank,
+            -entry.scores[policy.primary],
+            -entry.confidence.rank,
+            entry.id,
+        ),
+    )
+    result: list[AnswerCandidate] = []
+    for entry in eligible:
+        paths = usable_paths(runtime.serving(entry.names), preference, context_tokens)
+        if paths:
+            result.append(AnswerCandidate(entry.id, entry, paths))
     return tuple(result)
 
 

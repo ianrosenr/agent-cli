@@ -53,7 +53,7 @@ from agent_cli.state.models import (
     Worker,
 )
 from agent_cli.state.paths import ensure_private_dir, project_state_dir
-from agent_cli.terms import CANONICAL_ROLES
+from agent_cli.terms import CANONICAL_ROLES, TaskComplexity, TaskKind
 
 TASKS_FILE = "tasks.sqlite"
 BUSY_TIMEOUT = 5.0
@@ -209,9 +209,13 @@ class TaskStore:
         goal: str,
         parent_id: str | None = None,
         role: str | None = None,
+        kind: TaskKind | None = None,
+        complexity: TaskComplexity | None = None,
     ) -> Task:
         with self._write() as db:
-            return self._insert_task(db, session_id, goal, parent_id, role)
+            return self._insert_task(
+                db, session_id, goal, parent_id, role, kind=kind, complexity=complexity
+            )
 
     def _insert_task(
         self,
@@ -221,18 +225,59 @@ class TaskStore:
         parent_id: str | None,
         role: str | None,
         status: TaskStatus = TaskStatus.PENDING,
+        *,
+        kind: TaskKind | None = None,
+        complexity: TaskComplexity | None = None,
     ) -> Task:
         now = self._clock()
-        task = Task(new_id("task"), session_id, parent_id, goal, status, role, now, now)
+        task = Task(
+            new_id("task"),
+            session_id,
+            parent_id,
+            goal,
+            status,
+            role,
+            now,
+            now,
+            kind,
+            complexity,
+        )
         if parent_id is not None and self._session_of(db, parent_id) != session_id:
             raise TaskStateError(f"parent task {parent_id} belongs to another session")
-        db.execute(
-            "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-            "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (task.id, session_id, parent_id, goal, task.status, role, now, now),
-        )
+        if kind is None and complexity is None:
+            # Keep test/upgrade helpers able to seed an older migration intentionally.
+            db.execute(
+                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (task.id, session_id, parent_id, goal, task.status, role, now, now),
+            )
+        else:
+            db.execute(
+                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+                "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task.id,
+                    session_id,
+                    parent_id,
+                    goal,
+                    task.status,
+                    role,
+                    now,
+                    now,
+                    kind,
+                    complexity,
+                ),
+            )
         self._event(
-            db, session_id, task.id, "task_created", task.id, goal=goal, parent=parent_id or ""
+            db,
+            session_id,
+            task.id,
+            "task_created",
+            task.id,
+            goal=goal,
+            parent=parent_id or "",
+            task_kind=kind or "",
+            complexity=complexity or "",
         )
         return task
 
@@ -973,13 +1018,37 @@ class TaskStore:
     # -- Planning ------------------------------------------------------------------------------
 
     def start_root_task(
-        self, session_id: str, goal: str, role: str = "orchestrator"
+        self,
+        session_id: str,
+        goal: str,
+        role: str = "orchestrator",
+        request: str | None = None,
+        context: Sequence[str] = (),
+        kind: TaskKind | None = None,
+        complexity: TaskComplexity | None = None,
     ) -> tuple[Task, Requirement]:
         """Create a root task for a user request, ``in_progress``, with the literal request
-        recorded as its user requirement."""
+        recorded as its user requirement.
+
+        ``goal`` defaults to the request. When a request was resolved against conversation
+        (``request`` is what the user typed, ``goal`` what it meant), ``context`` is recorded as
+        derived requirements: evidence of what the user referred to, never the user's words.
+        """
         with self._write() as db:
-            task = self._insert_task(db, session_id, goal, None, role, TaskStatus.IN_PROGRESS)
-            requirement = self._insert_requirement(db, session_id, goal, "user", task.id)
+            task = self._insert_task(
+                db,
+                session_id,
+                goal,
+                None,
+                role,
+                TaskStatus.IN_PROGRESS,
+                kind=kind,
+                complexity=complexity,
+            )
+            literal = goal if request is None else request
+            requirement = self._insert_requirement(db, session_id, literal, "user", task.id)
+            for text in context:
+                self._insert_requirement(db, session_id, text, "derived", task.id)
         return task, requirement
 
     def task_requirements(self, task_id: str) -> list[Requirement]:

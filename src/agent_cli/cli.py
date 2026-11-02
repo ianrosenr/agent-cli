@@ -1,7 +1,7 @@
 """Process startup and the interactive shell loop.
 
-Ordinary text is the primary input and goes to orchestration; slash commands are secondary
-controls, recognized only when input begins with ``/``.
+Ordinary text goes to one continuous supervisor conversation. The supervisor answers directly or
+delegates scout/ship work; slash commands remain secondary controls.
 """
 
 from __future__ import annotations
@@ -20,17 +20,18 @@ from agent_cli.adapters import AdapterRegistry
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
 from agent_cli.config import ConfigError, ConfigPaths, ConfigService
+from agent_cli.gateway import NO_REPOSITORY
 from agent_cli.runtime import default_adapters, provider_estimators, session_adapters
 from agent_cli.state import TaskStore
 from agent_cli.ui import blocks, error, home, info, is_unicode, make_console
 
 if TYPE_CHECKING:
+    from agent_cli.gateway.service import SupervisorService
     from agent_cli.orchestration import OrchestrationService
+    from agent_cli.orchestration.domain import Handoff
 
 PROMPT = "> "
-NO_ORCHESTRATION = (
-    "Agent CLI plans work inside a Git repository. Start it from your project's directory."
-)
+NO_ORCHESTRATION = NO_REPOSITORY
 
 type ReadLine = Callable[[str], str]
 type WriteLine = Callable[[RenderableType], None]
@@ -43,9 +44,9 @@ def handle_input(line: str, context: CommandContext) -> RenderableType | None:
         return None
     if is_command(text):
         return context.registry.dispatch(text, context)
-    if context.orchestrate is None:
+    if context.respond is None:
         return NO_ORCHESTRATION
-    return context.orchestrate(text)
+    return context.respond(text)
 
 
 def run_shell(
@@ -67,7 +68,7 @@ def run_shell(
         write_line=write_line,
         adapters=adapters,
         tasks=tasks,
-        orchestrate=orchestrator(config, adapters, tasks, read_line, write_line),
+        respond=gateway(config, adapters, tasks, read_line, write_line),
         reload_adapters=reload_adapters,
     )
     write_line(startup)
@@ -95,13 +96,13 @@ def orchestrator(
     tasks: TaskStore | None,
     read_line: ReadLine | None = None,
     write_line: WriteLine | None = None,
-) -> Callable[[str], RenderableType] | None:
+) -> Callable[[str, Handoff | None], RenderableType] | None:
     """The orchestration entry point, built on first use so planning stays out of startup."""
     if config is None or tasks is None:
         return None
     service: OrchestrationService | None = None
 
-    def orchestrate(text: str) -> RenderableType:
+    def orchestrate(text: str, handoff: Handoff | None = None) -> RenderableType:
         nonlocal service
         if service is None:
             from agent_cli.orchestration import OrchestrationService
@@ -129,9 +130,41 @@ def orchestrator(
                 estimator=provider_estimators(registry),
                 login_harnesses=login_harnesses,
             )
-        return service.handle(text)
+        return service.handle(text, handoff)
 
     return orchestrate
+
+
+def gateway(
+    config: ConfigService | None,
+    adapters: AdapterRegistry | None,
+    tasks: TaskStore | None,
+    read_line: ReadLine | None = None,
+    write_line: WriteLine | None = None,
+) -> Callable[[str], RenderableType] | None:
+    """The root-prompt supervisor: answer directly or delegate scout/ship repository work.
+    Built on first use so semantic intake stays out of startup."""
+    if config is None:
+        return None
+    registry = adapters or AdapterRegistry()
+    orchestrate = orchestrator(config, registry, tasks, read_line, write_line)
+    service: SupervisorService | None = None
+
+    def respond(text: str) -> RenderableType:
+        nonlocal service
+        if service is None:
+            from agent_cli.gateway.service import SupervisorService
+
+            service = SupervisorService(
+                config,
+                registry,
+                orchestrate,
+                tasks,
+                estimator=provider_estimators(registry),
+            )
+        return service.handle(text)
+
+    return respond
 
 
 def reloader(config: ConfigService, adapters: AdapterRegistry) -> Callable[[], str | None]:

@@ -356,6 +356,7 @@ def test_direct_model_call_uses_exact_model_isolated_env_and_temp_directory() ->
     assert response.usage is not None and response.usage.tokens == 16
     [call] = seen
     assert call["argv"][-2:] == ("--model", "claude-sonnet-5-5")
+    assert "--permission-mode" not in call["argv"]
     assert "answer briefly" in call["prompt"] and "what color is the sky" in call["prompt"]
     assert all(name not in call["env"] for name in BILLING_OVERRIDE_ENV)
     assert call["cwd"].name.startswith("agent-cli-model-")

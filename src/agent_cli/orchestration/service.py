@@ -32,7 +32,9 @@ from agent_cli.models import (
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
+    Handoff,
     PlanningInput,
+    PlanProposal,
     PlanRejected,
     PriorDecision,
     RepositoryContext,
@@ -88,14 +90,31 @@ class OrchestrationService:
     """Interactive native-login callback supplied by the shell; absent in noninteractive uses."""
     _index: RepositoryIndex | None = None
 
-    def handle(self, text: str) -> RenderableType:
-        """Plan ``text`` as a new request, or take it as the answer to a pending question."""
+    def handle(self, text: str, handoff: Handoff | None = None) -> RenderableType:
+        """Plan ``text`` as a new request, or take it as the answer to a pending question.
+
+        A ``handoff`` carries the request as the root-prompt router resolved it: its goal
+        becomes the root goal, ``text`` stays the user requirement, and the conversation it was
+        resolved from is kept as derived context.
+        """
         try:
             session = self.store.latest_session() if self.store.exists() else None
             if session is None or not session.open:
                 session = self.store.start_session()
             pending = self.store.pending_planning_question(session.id)
-            if pending is None:
+            if pending is None and handoff is not None and handoff.goal.strip():
+                context = (handoff.context,) if handoff.context.strip() else ()
+                root, _ = self.store.start_root_task(
+                    session.id,
+                    handoff.goal.strip(),
+                    request=text,
+                    context=context,
+                    kind=handoff.kind,
+                    complexity=handoff.complexity,
+                )
+                if handoff.complexity == "trivial":
+                    return self.prepare_single_task(root, handoff)
+            elif pending is None:
                 root, _ = self.store.start_root_task(session.id, text)
             else:
                 self.store.answer_planning_question(pending.id, text)
@@ -103,6 +122,61 @@ class OrchestrationService:
             return self.plan(root)
         except TaskStateError as problem:
             return error("Cannot use task state.", str(problem))
+
+    def prepare_single_task(self, root: Task, handoff: Handoff) -> RenderableType:
+        """Persist one bounded worker task without paying for a decomposition model call."""
+        try:
+            config = self.config.resolve()
+            registry = self.registry if self.registry is not None else load_registry()
+        except (ConfigError, RegistryError) as error:
+            return self.stop(root, str(error))
+
+        guard = BudgetGuard.from_config(config, self.ledger, self.estimator, self.store)
+        repository, facts = self.inspect(root.goal)
+        pins = {kind: pin.value for kind, pin in self.store.pins(root.id).items()}
+        planning = self.planning_input(root, repository, pins)
+        if not planning.requirements:
+            return self.stop(root, "the request has no authoritative user requirement")
+
+        role = "research_investigator" if handoff.kind == "scout" else "implementer"
+        item = WorkItem(
+            id="work",
+            goal=handoff.goal,
+            role=role,
+            depends_on=(),
+            changes_code=handoff.kind == "ship",
+            why="The request is bounded and does not need decomposition.",
+            requirements=(planning.requirements[0].id,),
+            trivial=True,
+        )
+        try:
+            plan = validate_proposal(
+                PlanProposal(
+                    summary=f"Single {handoff.kind} task; no decomposition needed.",
+                    work_items=(item,),
+                ),
+                planning,
+            )
+            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+            auth.ensure_any_ready()
+            ids = self.store.persist_plan(plan.write(root.id))
+        except (PlanRejected, TaskStateError) as error:
+            return self.stop(root, f"the direct task could not be saved: {error}")
+
+        items = {ids[item.id]: item}
+        problems = self.route_skills(config, guard, registry, items, facts)
+        if problems:
+            self.block([root.id], "task preparation is incomplete: " + "; ".join(problems))
+        return render_plan(
+            self.store,
+            root.id,
+            plan.proposal.summary,
+            plan.unpinned,
+            problems,
+            (),
+            config.ui.verbosity,
+            ready="Ready for worker execution. Nothing has been run yet.",
+        )
 
     def plan(self, root: Task) -> RenderableType:
         try:
@@ -192,7 +266,8 @@ class OrchestrationService:
     def planning_input(
         self, root: Task, repository: RepositoryContext, pins: Mapping[PinKind, str]
     ) -> PlanningInput:
-        requirements = [r for r in self.store.task_requirements(root.id) if r.source == "user"]
+        current = self.store.task_requirements(root.id)
+        requirements = [r for r in current if r.source == "user"]
         decisions = self.store.task_decisions(root.id)
         return PlanningInput(
             goal=root.goal,
@@ -201,6 +276,7 @@ class OrchestrationService:
             answers=tuple(UserText(d.id, d.decision) for d in decisions if d.decided_by == "user"),
             repository=repository,
             constraints=tuple(f"{kind}={value}" for kind, value in pins.items()),
+            context=tuple(r.text for r in current if r.source == "derived"),
         )
 
     def route_skills(

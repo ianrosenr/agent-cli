@@ -1,9 +1,7 @@
-"""Root-prompt orchestration planning (V1-09).
+"""Supervisor task preparation and conditional decomposition (V1-09).
 
-Ordinary text at the prompt becomes a root ``orchestrator`` task, a validated role-explicit child
-graph, V1-06 skill routing, and pending short specs, then planning stops. The planner proposes
-typed work; validation and ``TaskStore.persist_plan`` decide what becomes canonical state. See
-docs/ORCHESTRATION.md.
+Trivial scout/ship work becomes one typed task directly. Moderate/complex work may use the planner
+to produce a validated role-explicit graph. See docs/ORCHESTRATION.md.
 """
 
 from agent_cli.orchestration.calls import (
@@ -15,12 +13,14 @@ from agent_cli.orchestration.calls import (
 from agent_cli.orchestration.domain import (
     DELEGATED_ROLES,
     FileFacts,
+    Handoff,
     PlanningInput,
     PlanProposal,
     PlanRejected,
     PriorDecision,
     ProposedQuestion,
     RepositoryContext,
+    TaskBrief,
     UserText,
     ValidatedPlan,
     WorkItem,
@@ -49,6 +49,7 @@ __all__ = [
     "FakePlanner",
     "FakeSpecAuthor",
     "FileFacts",
+    "Handoff",
     "ModelCall",
     "ModelOutputError",
     "ModelReply",
@@ -67,6 +68,7 @@ __all__ = [
     "SpecContext",
     "SpecDraft",
     "SpecRequest",
+    "TaskBrief",
     "UserText",
     "ValidatedPlan",
     "WorkItem",

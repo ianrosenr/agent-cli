@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from agent_cli.state import ALL_CHILDREN, PIN_KINDS, PlannedPin, PlannedTask, PlanWrite
-from agent_cli.terms import CANONICAL_ROLES
+from agent_cli.terms import CANONICAL_ROLES, TaskComplexity, TaskKind
 
 ROOT_ROLE = "orchestrator"
 PLANNING_SCOPE = ROOT_ROLE
@@ -121,11 +121,32 @@ class PlanningInput:
     constraints: tuple[str, ...] = ()
     """Execution pins already in force for planning, such as ``model=x``."""
     roles: tuple[str, ...] = DELEGATED_ROLES
+    context: tuple[str, ...] = ()
+    """Earlier conversation the request referred to ("do that"). Evidence of what the user
+    meant, never the user's words: it cannot authorize a pin or stand in for a requirement."""
 
     @property
     def user_texts(self) -> tuple[str, ...]:
         """Everything that can authorize a pin: only what the user actually said."""
         return tuple(item.text for item in (*self.requirements, *self.answers))
+
+
+@dataclass(frozen=True, slots=True)
+class TaskBrief:
+    """Supervisor handoff for repository work.
+
+    The literal user turn remains the authoritative requirement in TaskStore. The goal is the
+    supervisor's self-contained restatement; context only resolves conversational references;
+    kind and complexity guide workflow/resource allocation without granting authority.
+    """
+
+    goal: str
+    context: str = ""
+    kind: TaskKind = "ship"
+    complexity: TaskComplexity = "moderate"
+
+
+Handoff = TaskBrief
 
 
 # -- Planner output ----------------------------------------------------------------------------

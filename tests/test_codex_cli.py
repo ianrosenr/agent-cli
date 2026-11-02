@@ -354,6 +354,7 @@ def test_direct_model_call_uses_exact_model_isolated_env_and_read_only_sandbox()
     assert response.usage is not None and response.usage.tokens == 12
     [call] = seen
     assert "--sandbox" in call["argv"] and "read-only" in call["argv"]
+    assert "--ask-for-approval" not in call["argv"]
     assert "--model" in call["argv"] and "gpt-6-sol" in call["argv"]
     assert "answer briefly" in call["prompt"] and "what color is the sky" in call["prompt"]
     assert all(name not in call["env"] for name in BILLING_OVERRIDE_ENV)
@@ -489,8 +490,7 @@ def test_start_uses_stdin_context_cwd_exact_model_and_workspace_sandbox(tmp_path
     assert 'openai_base_url=""' in argv
     exec_index = argv.index("exec")
     assert argv[exec_index : exec_index + 3] == ("exec", "--json", "--ephemeral")
-    approval_index = argv.index("--ask-for-approval")
-    assert argv[approval_index + 1] == "never"
+    assert "--ask-for-approval" not in argv
     sandbox_index = argv.index("--sandbox")
     assert argv[sandbox_index + 1] == "workspace-write"
     model_index = argv.index("--model")

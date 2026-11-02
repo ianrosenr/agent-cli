@@ -3,111 +3,136 @@
 ## Components
 
 ```
-                ┌──────────────────────────────┐
-  user ───────► │ CLI shell (REPL, /commands)  │
-                └──────────────┬───────────────┘
+                         user
+                          │
+                          ▼
+                ┌──────────────────┐
+                │ Supervisor       │
+                │ continuous chat  │
+                └────────┬─────────┘
+                         │ answer | scout | ship + complexity
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+           answer      scout       ship
+                         │           │
+                         └─────┬─────┘
+                               ▼
+                    optional decomposition
+                    only when complexity needs it
                                │
-                ┌──────────────▼───────────────┐
-                │ Orchestrator                 │──► Memory store
-                │  planner · coordinator       │──► Role + skill selector
-                └──────────────┬───────────────┘
-                               │ task + spec + skills
-                ┌──────────────▼───────────────┐
-                │ Router                       │──► Model registry
-                │  floors · budget · health    │──► Budget ledger
-                └──────────────┬───────────────┘──► Provider health
-                               │ (model, provider, harness)
-                ┌──────────────▼───────────────┐
-                │ Worker manager               │──► Git worktrees
-                └──────────────┬───────────────┘
+                               ▼
+                    role + skill selection
+                               │
+                               ▼
+                     Dispatch router
+                 model · provider · harness
+                 cost · latency · capability
+                               │
+                               ▼
+                     Worker manager
+                    isolated worktrees
                                │
               ┌────────────────┴────────────────┐
      Harness adapter                    Provider adapter
-   (Claude Code, Codex CLI, Pi, OpenCode)   (subscription, local, API)
+   Claude/Codex/Pi/OpenCode          subscription/local/API
 ```
 
 | Component | Owns | Does not own |
 | --- | --- | --- |
-| CLI shell | input, slash commands, status and diff display | decisions about work |
-| Orchestrator | decomposition, canonical planning state, coordination, escalation, user questions | direct code edits, coding-agent runtime, model choice, spend enforcement |
-| Memory store | canonical task state ([MEMORY.md](MEMORY.md)) | worker scratch reasoning |
-| Repository fact index | cached structural repository facts and task inspection ([REPOSITORY_INSPECTION.md](REPOSITORY_INSPECTION.md)) | semantic decisions or worker authority |
-| Role + skill selector | assigns role authority and minimum sufficient skills ([SKILLS.md](SKILLS.md), [SKILL_ROUTING.md](SKILL_ROUTING.md)) | skill content or model choice |
-| Router | choosing model + provider + harness ([ROUTING.md](ROUTING.md)) | task content |
-| Model registry | model capability scores, active/candidate policy | live provider health or provider topology |
-| Budget ledger | global spend, atomic reservations, settlement, paid-call allow/deny | model capability or harness execution |
-| Provider health | cooldowns and normalized failure state | model quality |
-| Worker manager | worker lifecycle, worktrees, recovery | what workers should do |
-| Harness adapter | translating Agent CLI worker requests to an existing coding-agent harness ([ADAPTERS.md](ADAPTERS.md)) | the coding-agent tool loop/runtime itself |
-| Provider adapter | sending requests to a model and reporting usage and errors ([ADAPTERS.md](ADAPTERS.md)) | agent behavior |
+| CLI shell | input, slash commands, status/diff display | decisions about work |
+| Supervisor | conversational context, project resolution, answer/scout/ship intake, complexity estimate, coordination, escalation | coding-agent runtime, direct repository edits |
+| Optional decomposer | multi-task decomposition only when useful | mandatory planning for every task |
+| Memory store | canonical task/work/decision state | ordinary chat history or worker scratch reasoning |
+| Repository fact index | cached structural repository facts and bounded inspection | semantic decisions or worker authority |
+| Role + skill selector | authority and minimum sufficient skills | model/provider/harness choice |
+| Dispatch router | minimum-sufficient model + provider + harness under capability, cost, latency, health and pins | task scope |
+| Model registry | model capability evidence and active/candidate policy | live provider health |
+| Budget ledger | hard paid-spend admission/reservation/settlement | model quality |
+| Worker manager | isolated worker/worktree lifecycle and recovery | deciding what the user meant |
+| Harness adapter | translating normalized worker requests to an existing coding-agent harness | reimplementing the harness tool loop |
+| Provider adapter | bounded direct model calls and usage/errors | agent behavior |
 
 ## Control plane, not coding-agent harness
 
-Agent CLI owns orchestration. It MUST NOT grow its own general-purpose coding-agent runtime.
+Agent CLI follows Firstmate's strongest architectural lesson: one supervisor coordinates existing
+agent harnesses instead of rebuilding a coding-agent runtime.
 
-Existing harnesses already solve low-level execution concerns such as tool loops, model streaming, harness sessions, terminal interaction, and file-edit tooling. Agent CLI should integrate with those systems through adapters.
+The supervisor owns:
 
-Agent CLI owns:
-
-- decomposition and coordination
+- continuous conversation and follow-up resolution
+- answer vs scout vs ship intake
+- project/repository context
+- complexity estimation
+- conditional decomposition
 - role authority and selected skills
-- repository/context selection
-- model/provider/harness routing
+- model/provider/harness allocation
 - budgets and provider health
 - canonical task state
 - worktree assignment
-- review and escalation policy
+- review, escalation, and synthesis
 
-Harnesses own the mechanics of executing a coding agent.
+Harnesses own tool loops, file editing, terminal interaction, streaming, and worker-local reasoning.
 
-Claude Code, Codex CLI, Pi, and OpenCode are examples of external harnesses. Claude Code and Codex CLI are the first two real integrations; Pi is the next portability test. None is an architectural dependency.
+A simple request should not pay for architecture it does not need. An ordinary answer is returned
+directly. A trivial scout/ship becomes one worker task without a decomposition-model call. Complex
+work may invoke a decomposer and multiple independent workers.
 
 ## Model, provider, harness
 
-These are three independent choices:
+These remain independent:
 
-- **Model** — the intelligence (e.g. a specific model version).
-- **Provider** — the access path to that model (subscription, local vLLM, paid API).
-- **Harness** — the existing coding-agent environment that executes the work (Pi, Codex CLI, Claude Code, OpenCode).
+- **Model** — the intelligence.
+- **Provider** — how Agent CLI reaches it: subscription, local, or API.
+- **Harness** — the coding-agent runtime that executes delegated work.
 
-Keeping them separate allows the same model to be reached through another provider during an outage, and lets routing prefer subscription access.
+The worker/session backend and workspace provider are also separate lifecycle concerns as V1-11
+lands; a harness should not become an architectural dependency merely because it currently owns a
+terminal process.
 
 ## Boundaries
 
-- **Trust.** Repository content, model output, and tool output are untrusted input. Credentials come from environment variables or the OS credential store, never from ordinary YAML.
-- **State.** Only the orchestration layer writes canonical memory. Untrusted planner/worker model output is validated before persistence; workers return results and do not write shared truth directly.
-- **Filesystem.** Each implementer writes only inside its own worktree. The user's checkout is changed only when the user accepts a final diff.
-- **Spend.** Paid calls require a conservative upper-bound estimate and atomic ledger reservation before dispatch. An LLM or plain approval cannot override hard ceilings. Opaque paid harnesses are eligible only when their integration exposes an enforceable bound.
-- **Planning.** Root natural-language input may use direct provider reasoning for decomposition/spec authoring, but planning never launches a coding harness or edits repository files. Paid planning calls use the same budget guard as every other paid provider call.
-- **Failure.** A worker or provider failure is contained to that task and surfaces to the orchestrator. It does not crash the session.
-- **Presentation.** `agent_cli.ui` owns terminal rendering through Rich: one console, semantic styles (`agent_cli/ui/styles.py`), and message, table, and home-screen helpers. prompt_toolkit owns input. Services and status views return Rich renderables built with those helpers, never markup strings or raw ANSI; markup is disabled, so user and model text is shown verbatim. Every styled state is also named in words, so output stays readable under `NO_COLOR` and in pipes.
+- **Trust.** Repository content, model output, and tool output are untrusted input.
+- **Authority.** The literal user request remains authoritative. Supervisor restatements, context,
+  scout findings, and worker output clarify evidence but cannot silently widen scope.
+- **State.** Ordinary conversation is transient. Scout/ship work, decisions, workers, reviews, and
+  artifacts are canonical durable state.
+- **Filesystem.** The supervisor is read-only over project files. Workers write only inside isolated
+  worktrees/workspaces.
+- **Spend.** Paid calls require hard budget admission. Complexity/capability routing should start
+  with the cheapest sufficient option and escalate only when needed.
+- **Planning.** Planning/decomposition is a conditional supervisor tool, not a mandatory gateway.
+- **Failure.** Worker/provider failure is contained and returned to the supervisor for retry,
+  fallback, or escalation.
+- **Presentation.** Internal routing/decomposition chatter is hidden at concise verbosity.
 
 ## Product and runtime layout
 
 ```
 builtins/skills/                     shipped default skill packages
-builtins/policies/                   shipped default skill-routing policy
-builtins/models/                     shipped model-registry seed
-~/.agent-cli/                        user config, skill overrides, model registry
-~/.agent-cli/state/spend.sqlite      global canonical paid-spend ledger
-<repo>/.agent-cli/                   project config, skill overrides, policies, task state
-<repo>/.agent-cli/worktrees/         worker worktrees (git-ignored)
+builtins/policies/                   shipped routing/skill policy
+builtins/models/                     model-registry seed
+~/.agent-cli/                        user config and overrides
+~/.agent-cli/state/spend.sqlite      global spend ledger
+<repo>/.agent-cli/                   project config + canonical task state
+<repo>/.agent-cli/worktrees/         isolated worker worktrees
 ```
-
-Built-ins are product assets. User and project paths override them at runtime without modifying shipped files.
 
 ## Prior art: Firstmate
 
-Firstmate already solves supervisor/worker coordination well. Agent CLI keeps these concepts rather than redesigning them:
+Firstmate is the main architectural inspiration. Agent CLI intentionally keeps its proven shape:
 
-- one supervisor coordinating many workers
-- Git worktrees for concurrent workers
-- persistent worker/task state and recovery after restart
+- one conversational supervisor
+- answer existing questions without manufacturing work
+- scout/investigation work separated from ship/change work
+- isolated workers and Git worktrees
 - multiple harness support
+- durable task/worker recovery
 - event-driven supervision
 - explicit authority boundaries
-- worker questions routed through the supervisor
-- lazy skill loading
-- worker status and artifact tracking
+- worker questions/escalations through the supervisor
+- lazy/conditional skills
 
-Agent CLI is not "Firstmate rewritten in Python." Its differences are model intelligence (registry and role floors), subscription-first economics with hard budgets, spec-driven implementation, adversarial review, and a CLI-first experience. Do not change a borrowed concept unless a V1 requirement needs the change.
+Agent CLI's differentiation is **intelligence allocation**. For each real task it estimates
+complexity, chooses minimum-sufficient skills/model/provider/harness under cost and availability,
+records the routing decision, and can escalate when cheap execution is insufficient. The long-term
+product is an adaptive compute scheduler for software engineering, not a Python clone of Firstmate.

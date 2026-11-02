@@ -6,6 +6,8 @@ from typing import Literal, get_args
 
 type ImplementationMode = Literal["autopilot", "checkpoint", "plan-only"]
 type AccessKind = Literal["subscription", "local", "api"]
+type TaskKind = Literal["scout", "ship"]
+type TaskComplexity = Literal["trivial", "moderate", "complex"]
 type Role = Literal[
     "orchestrator",
     "spec_author",
@@ -22,4 +24,6 @@ type Role = Literal[
 
 IMPLEMENTATION_MODES: tuple[str, ...] = get_args(ImplementationMode.__value__)
 ACCESS_KINDS: tuple[str, ...] = get_args(AccessKind.__value__)
+TASK_KINDS: tuple[str, ...] = get_args(TaskKind.__value__)
+TASK_COMPLEXITIES: tuple[str, ...] = get_args(TaskComplexity.__value__)
 CANONICAL_ROLES: tuple[str, ...] = get_args(Role.__value__)

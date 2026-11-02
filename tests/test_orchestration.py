@@ -39,6 +39,7 @@ from agent_cli.budget import (
 )
 from agent_cli.commands import CommandContext, build_registry
 from agent_cli.config import ConfigPaths, ConfigService, Layer
+from agent_cli.gateway.intent import ROUTER_SYSTEM
 from agent_cli.models import ModelRegistry, runtime_paths
 from agent_cli.orchestration import (
     DELEGATED_ROLES,
@@ -53,6 +54,7 @@ from agent_cli.orchestration import (
     PlanRejected,
     ProposedQuestion,
     SpecDraft,
+    TaskBrief,
     WorkItem,
     goal_anchors,
     parse_proposal,
@@ -184,6 +186,41 @@ def planning_input(goal: str = GOAL, *answers: str) -> PlanningInput:
         tuple(UserText(f"d{i}", text) for i, text in enumerate(answers)),
         RepositoryContext(),
     )
+
+
+# -- Supervisor fast path ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("kind", "role"),
+    [("scout", "research_investigator"), ("ship", "implementer")],
+)
+def test_trivial_task_brief_bypasses_planner(
+    store: TaskStore, config: ConfigService, kind: str, role: str
+) -> None:
+    planner = FakePlanner([])
+    orchestration = OrchestrationService(
+        store,
+        config,
+        planner=planner,
+        spec_author=FakeSpecAuthor(),
+        classifier=lambda *_: None,
+    )
+
+    output = plain(
+        orchestration.handle(
+            "do the bounded task",
+            TaskBrief("Do the bounded task", "", kind, "trivial"),  # type: ignore[arg-type]
+        )
+    )
+
+    assert planner.inputs == []
+    root = store.task(root_of(store))
+    assert root is not None and root.kind == kind and root.complexity == "trivial"
+    [child] = store.subtasks(root.id)
+    assert child.role == role
+    assert store.latest_spec(child.id) is None
+    assert f"Single {kind} task" in output
 
 
 # -- Auth-aware harness routing ----------------------------------------------------------------
@@ -1135,6 +1172,15 @@ class ScriptedProvider(ProviderAdapter):
         if self.failure is not None:
             raise AdapterError(self.failure, "scripted provider failed")
         payload = json.loads(request.prompt)
+        if request.system == ROUTER_SYSTEM:
+            verdict = {
+                "action": "ship",
+                "confident": True,
+                "request": payload["message"],
+                "repository": True,
+                "complexity": "moderate",
+            }
+            return ProviderResponse(request.model_id, json.dumps(verdict))
         if request.system == planner_module.SYSTEM:
             make = self.plan_reply or default_plan_reply
             reply = make(payload)
@@ -1459,7 +1505,7 @@ def test_paid_planning_without_trusted_pricing_fails_closed(
 # -- CLI and /autopilot ------------------------------------------------------------------------
 
 
-def test_the_shell_sends_its_first_line_straight_to_orchestration(
+def test_the_shell_routes_requested_work_to_orchestration(
     store: TaskStore, config: ConfigService
 ) -> None:
     lines = iter([GOAL, "/status"])
@@ -1474,9 +1520,13 @@ def test_the_shell_sends_its_first_line_straight_to_orchestration(
     def write_line(renderable: RenderableType) -> None:
         output.append(plain(renderable))
 
-    cli.run_shell(build_registry(), read_line, write_line, "", config, AdapterRegistry(), store)
+    provider = ScriptedProvider("subscription", model_ids=("claude-sonnet-5-5",))
+    adapters = AdapterRegistry(providers=[provider])
+    cli.run_shell(build_registry(), read_line, write_line, "", config, adapters, store)
 
-    assert output[1].startswith("Error  Planning stopped: no planning model can run")
+    assert provider.requests[0].system == ROUTER_SYSTEM
+    assert provider.requests[1].system == planner_module.SYSTEM
+    assert "Add TTL expiration to CacheStore." in output[1]
     assert "role: orchestrator" in output[2]
     assert GOAL in output[2]
 

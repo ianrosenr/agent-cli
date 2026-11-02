@@ -56,6 +56,9 @@ routing:
     security_investigator: high
     skill_author: high
     skill_evaluator: high
+  supervisor:
+    mode: auto
+    selected_model: null
   classifier:
     mode: auto
     selected_model: null
@@ -130,6 +133,29 @@ def test_nested_partial_overrides_inherit_sibling_keys(
 
 def test_role_floor_fields_are_exactly_the_canonical_roles() -> None:
     assert tuple(f.name for f in dataclasses.fields(RoleFloors)) == CANONICAL_ROLES
+
+
+def test_supervisor_and_skill_classifier_are_independent(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(
+        paths.global_file,
+        {
+            "routing": {
+                "supervisor": {"mode": "selected", "selected_model": "supervisor-model"},
+                "classifier": {"mode": "disabled", "selected_model": "classifier-model"},
+            }
+        },
+    )
+    routing = service.resolve().routing
+    assert (routing.supervisor.mode, routing.supervisor.selected_model) == (
+        "selected",
+        "supervisor-model",
+    )
+    assert (routing.classifier.mode, routing.classifier.selected_model) == (
+        "disabled",
+        "classifier-model",
+    )
 
 
 def test_selected_classifier_model_may_come_from_a_more_general_layer(
@@ -228,9 +254,15 @@ def test_discover_finds_the_repository_root(tmp_path: Path) -> None:
         ({"git": {"branch_prefix": "has space/"}}, "git.branch_prefix", "branch prefix"),
         ({"routing": {"role_floors": {"intern": "low"}}}, "routing.role_floors.intern", ""),
         ({"routing": {"role_floors": {"implementer": "top"}}}, "routing.role_floors", "one of"),
+        ({"routing": {"supervisor": {"mode": "cheap"}}}, "routing.supervisor.mode", "one of"),
         ({"routing": {"classifier": {"mode": "cheap"}}}, "routing.classifier.mode", "one of"),
         ({"routing": {"classifier": {"selected_model": ""}}}, "routing.classifier", "empty"),
         ({"routing": {"classifier": {"selected_model": "  "}}}, "routing.classifier", "empty"),
+        (
+            {"routing": {"supervisor": {"mode": "selected"}}},
+            "routing.supervisor.selected_model",
+            "required when mode is selected",
+        ),
         (
             {"routing": {"classifier": {"mode": "selected"}}},
             "routing.classifier.selected_model",

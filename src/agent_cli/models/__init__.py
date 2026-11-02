@@ -34,8 +34,14 @@ from agent_cli.models.domain import (
     Scores,
 )
 from agent_cli.models.eligibility import (
+    CHAT_POLICY,
     FLOOR_SCORES,
+    REPOSITORY_ANSWER_POLICY,
     ROLE_CAPABILITIES,
+    ROUTER_POLICY,
+    SUPERVISOR_POLICY,
+    AnswerCandidate,
+    AnswerPolicy,
     ModelCandidate,
     ModelPin,
     ModelSelection,
@@ -43,6 +49,7 @@ from agent_cli.models.eligibility import (
     PinnedPaths,
     RoleRequirement,
     SelectionKind,
+    answer_candidates,
     eligible_models,
     pinned_paths,
     ranked_model_candidates,
@@ -54,9 +61,15 @@ from agent_cli.models.registry import load_registry, parse_registry
 from agent_cli.models.status import models_view
 
 __all__ = [
+    "CHAT_POLICY",
     "CLASSIFIER_MINIMUM",
     "FLOOR_SCORES",
+    "REPOSITORY_ANSWER_POLICY",
     "ROLE_CAPABILITIES",
+    "ROUTER_POLICY",
+    "SUPERVISOR_POLICY",
+    "AnswerCandidate",
+    "AnswerPolicy",
     "ClassifierChoice",
     "Confidence",
     "Cost",
@@ -78,6 +91,7 @@ __all__ = [
     "RuntimePaths",
     "Scores",
     "SelectionKind",
+    "answer_candidates",
     "auto_candidates",
     "build_classifier",
     "choose_path",

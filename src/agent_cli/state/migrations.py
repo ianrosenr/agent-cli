@@ -241,7 +241,15 @@ V3 = (
 )
 """Planning questions (at most one pending per root task) and scoped user pins (V1-09)."""
 
-MIGRATIONS: tuple[Migration, ...] = (V1, V2, V3)
+V4 = (
+    "ALTER TABLE tasks ADD COLUMN kind TEXT CHECK (kind IS NULL OR kind IN ('scout', 'ship'))",
+    "ALTER TABLE tasks ADD COLUMN complexity TEXT "
+    "CHECK (complexity IS NULL OR complexity IN ('trivial', 'moderate', 'complex'))",
+)
+"""Persist supervisor task shape on root tasks for restart-safe dispatch."""
+
+
+MIGRATIONS: tuple[Migration, ...] = (V1, V2, V3, V4)
 """``MIGRATIONS[n]`` upgrades the schema from version ``n`` to ``n + 1``."""
 
 
