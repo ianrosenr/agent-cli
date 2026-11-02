@@ -156,6 +156,14 @@ class RoleFloors:
 
 
 @dataclass(frozen=True, slots=True)
+class SupervisorConfig:
+    """Model selection for root conversational intake."""
+
+    mode: ClassifierSelection = "auto"
+    selected_model: str | None = constrained(None, kind="nonempty")
+
+
+@dataclass(frozen=True, slots=True)
 class ClassifierConfig:
     """Which model, if any, classifies skill-routing signals.
 
@@ -172,6 +180,7 @@ class RoutingConfig:
     """Advanced settings. Loaded from config but never shown by ``/startup``."""
 
     role_floors: RoleFloors = field(default_factory=RoleFloors)
+    supervisor: SupervisorConfig = field(default_factory=SupervisorConfig)
     classifier: ClassifierConfig = field(default_factory=ClassifierConfig)
 
 
