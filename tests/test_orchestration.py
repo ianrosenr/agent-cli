@@ -105,7 +105,9 @@ def store(project: Path) -> TaskStore:
 
 @pytest.fixture
 def config(project: Path, isolated_home: Path) -> ConfigService:
-    return ConfigService(ConfigPaths(isolated_home / ".agent-cli" / "config.yaml", project))
+    service = ConfigService(ConfigPaths(isolated_home / ".agent-cli" / "config.yaml", project))
+    service.set_session({"ui": {"verbosity": "normal"}})
+    return service
 
 
 def service(
@@ -424,6 +426,19 @@ def test_a_plan_is_persisted_routed_and_specced_then_planning_stops(
     assert "   Spec     v1 · pending review" in output
     assert "Ready for spec review. Nothing has been implemented." in output
     assert "{" not in output  # never raw model JSON
+
+
+def test_concise_verbosity_hides_routine_plan_decomposition(
+    store: TaskStore, config: ConfigService
+) -> None:
+    config.set_session({"ui": {"verbosity": "concise"}})
+
+    output = plain(service(store, config, plan(one_item)).handle(GOAL))
+
+    assert output.startswith("Add expiration to the cache store.")
+    assert "Plan" not in output
+    assert "implementer" not in output
+    assert "Ready for spec review" not in output
 
 
 def test_every_child_has_exactly_one_delegated_role(
