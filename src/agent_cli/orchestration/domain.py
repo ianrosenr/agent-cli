@@ -146,8 +146,6 @@ class TaskBrief:
     complexity: TaskComplexity = "moderate"
 
 
-Handoff = TaskBrief
-
 
 # -- Planner output ----------------------------------------------------------------------------
 
