@@ -72,6 +72,9 @@ routing:
     security_investigator: high
     skill_author: high
     skill_evaluator: high
+  supervisor:
+    mode: auto                  # auto | selected | disabled
+    selected_model: null
   classifier:
     mode: auto                  # auto | selected | disabled
     selected_model: null
@@ -80,7 +83,16 @@ routing:
 `workers.max_concurrency` is a ceiling, not a target: the orchestrator should launch only as many independent workers as useful, up to the configured limit. V1 accepts 1–16 workers, defaults to 3, and recommends 2–4 for normal local use.
 Role floors are capability minimums: `low = 2`, `mid = 3`, and `high = 4` on V1's integer 1–5 score scale. Each canonical role maps to one primary capability as defined in [ROUTING.md](ROUTING.md#role-floors).
 
-Classifier mode is also advanced configuration. `auto` only uses an active low-cost classifier model that meets the built-in classifier floor; if none exists, Agent CLI uses deterministic skill routing. `selected` uses the exact configured model without silent substitution. `disabled` never calls a semantic classifier. No cheap classifier is required for Agent CLI to function. The same setting chooses the root-prompt router model (see [ORCHESTRATION.md](ORCHESTRATION.md#root-prompt-conversation)): `auto` prefers the cheapest adequate reachable model, favoring free/low-cost models when present but falling back to the cheapest adequate model so semantic routing remains available; `selected` uses the exact model; `disabled` turns semantic routing off so every turn is answered read-only.
+Supervisor intake and skill classification are separate advanced settings.
+
+`routing.supervisor` chooses the model used to understand each root conversational turn. `auto`
+uses the cheapest adequate reachable reasoning model; `selected` uses the exact configured model;
+`disabled` skips semantic intake and keeps root turns read-only.
+
+`routing.classifier` controls only the optional semantic skill classifier. Its `auto` mode uses
+only an active free/low-cost model meeting the classifier floor; if none exists, deterministic
+skill routing continues. `selected` uses the exact configured model and `disabled` never invokes
+the classifier. Changing skill-classifier settings never changes the conversational supervisor.
 
 
 Relative `skills.paths` entries resolve against the repository root (the working directory outside a repository); `~` expands to the home directory. A configured path that does not exist is an error. `skills.context_budget_tokens` budgets skill text only, not the worker's whole context window.
