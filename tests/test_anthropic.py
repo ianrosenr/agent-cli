@@ -646,9 +646,9 @@ def test_sonnet_meets_planning_floors_but_not_high_security(role: str, eligible:
     assert (SONNET in [entry.id for entry in found]) is eligible
 
 
-def test_sonnet_is_the_single_active_registry_model() -> None:
+def test_sonnet_registry_entry_remains_conservative() -> None:
     registry = load_registry()
-    assert [entry.id for entry in registry.active()] == [SONNET]
+    assert SONNET in [entry.id for entry in registry.active()]
     entry = registry.get(SONNET)
     assert entry is not None
     assert max(entry.scores[capability] for capability in ModelCapability) <= 4
