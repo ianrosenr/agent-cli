@@ -21,6 +21,7 @@ from agent_cli.models.access import (
     usable_paths,
 )
 from agent_cli.models.domain import (
+    Cost,
     ModelCapability,
     ModelEntry,
     ModelRegistry,
@@ -129,18 +130,21 @@ def ranked_model_candidates(
 
 @dataclass(frozen=True, slots=True)
 class AnswerPolicy:
-    """Model choice for a direct answer at the root prompt (V1-09.9).
+    """Model choice for direct root-prompt/control-plane calls.
 
-    Not a delegated role: no configurable floor, no skills. Among models meeting a fixed,
-    moderate floor on ``primary``, cheaper and faster ones rank first.
+    Not a delegated role: no configurable floor, no skills. Automatic selection may also
+    restrict coarse registry cost; explicit model pins still bypass automatic ranking.
     """
 
     name: str
     primary: ModelCapability
     minimum: int
+    costs: frozenset[Cost] | None = None
 
     def met_by(self, entry: ModelEntry) -> bool:
-        return entry.scores[self.primary] >= self.minimum
+        return entry.scores[self.primary] >= self.minimum and (
+            self.costs is None or entry.cost in self.costs
+        )
 
 
 CHAT_POLICY = AnswerPolicy("chat", C.REASONING, FLOOR_SCORES["mid"])
@@ -149,8 +153,16 @@ REPOSITORY_ANSWER_POLICY = AnswerPolicy(
     "repository_answer", C.REPOSITORY_ENGINEERING, FLOOR_SCORES["mid"]
 )
 """Read-only questions about the current repository."""
-ROUTER_POLICY = AnswerPolicy("router", C.REASONING, FLOOR_SCORES["low"])
-"""Root-prompt turn routing: the cheapest adequate model, since it runs on every turn."""
+ROUTER_POLICY = AnswerPolicy(
+    "router",
+    C.REASONING,
+    FLOOR_SCORES["low"],
+    frozenset({Cost.FREE, Cost.LOW}),
+)
+"""Root-prompt routing: auto mode only uses free/low-cost adequate models.
+
+A user-selected router model is an explicit pin and may be medium/high cost.
+"""
 
 
 @dataclass(frozen=True, slots=True)
