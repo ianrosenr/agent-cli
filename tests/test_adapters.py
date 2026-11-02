@@ -105,6 +105,7 @@ def test_capability_set_is_exactly_the_contract() -> None:
         "start_worker",
         "install",
         "update",
+        "direct_model",
         "login",
         "follow_up",
         "interrupt",
