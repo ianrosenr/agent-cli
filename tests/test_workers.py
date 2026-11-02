@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from agent_cli.adapters import (
     AdapterRegistry,
@@ -11,14 +14,21 @@ from agent_cli.adapters import (
     ProviderIdentity,
     ProviderReadiness,
     ReadinessState,
+    WorkerHandle,
     WorkerResult,
     WorkerStatus,
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
+from agent_cli.config.model import WorkersConfig
 from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
-from agent_cli.state import Task, TaskStore
-from agent_cli.workers import WorkerDispatcher, WorkerExecutor
+from agent_cli.state import Task, TaskStatus, TaskStore
+from agent_cli.workers import (
+    WorkerDispatcher,
+    WorkerExecutor,
+    WorkerLaunchError,
+    reconcile_orphaned_workers,
+)
 
 
 def git(root: Path, *args: str) -> str:
@@ -151,3 +161,82 @@ def test_completed_scout_persists_summary_for_status(tmp_path: Path) -> None:
     assert recorded.status is WorkerStatus.COMPLETED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
     assert summary.metadata["summary"] == "pytest: 42 passed"
+
+
+
+def test_background_completion_notifies_and_finishes_parent(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    child = task(store)
+    adapters, harness = runtime(auto_finish=False)
+    notifications: list[str] = []
+    executor = WorkerExecutor(
+        store,
+        adapters,
+        registry(),
+        Config(),
+        root,
+        poll_seconds=0.01,
+        notify=notifications.append,
+    )
+
+    executor.launch(child, "scout", "trivial", child.goal)
+    [token] = harness.workers
+    harness.finish(WorkerHandle("crew", token))
+
+    deadline = time.monotonic() + 1
+    while not notifications and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert notifications and "completed" in notifications[-1]
+    updated = store.task(child.id)
+    assert updated is not None and updated.status is TaskStatus.COMPLETED
+    parent = store.task(child.parent_id or "")
+    assert parent is not None and parent.status is TaskStatus.COMPLETED
+    [recorded] = store.workers(child.id)
+    assert recorded.worktree is not None and not Path(recorded.worktree).exists()
+
+
+def test_worker_concurrency_limit_is_enforced_before_second_launch(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    first = task(store)
+    assert first.parent_id is not None
+    second = store.create_task(
+        first.session_id,
+        "Run another check",
+        parent_id=first.parent_id,
+        role="research_investigator",
+    )
+    adapters, _ = runtime(auto_finish=False)
+    config = Config(workers=WorkersConfig(max_concurrency=1))
+    executor = WorkerExecutor(store, adapters, registry(), config, root)
+
+    executor.launch(first, "scout", "trivial", first.goal)
+
+    with pytest.raises(WorkerLaunchError, match="concurrency limit"):
+        executor.launch(second, "scout", "trivial", second.goal)
+    assert store.workers(second.id) == []
+
+
+def test_restart_reconciliation_never_replays_active_worker(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    child = task(store)
+    store.set_status(child.id, TaskStatus.IN_PROGRESS)
+    worker = store.record_worker(
+        child.id,
+        "research_investigator",
+        WorkerStatus.RUNNING,
+        model="small",
+        provider="sub",
+        harness="crew",
+        worktree="some-worktree",
+    )
+
+    assert reconcile_orphaned_workers(store) == 1
+    assert store.workers(child.id)[0].id == worker.id
+    assert store.workers(child.id)[0].status is WorkerStatus.FAILED
+    updated = store.task(child.id)
+    assert updated is not None and updated.status is TaskStatus.FAILED
+    assert reconcile_orphaned_workers(store) == 0
