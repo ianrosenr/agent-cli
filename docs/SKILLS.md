@@ -2,9 +2,10 @@
 
 Agent CLI separates **roles** from **skills**.
 
-- A role defines a worker's responsibility and authority.
+- A role defines a worker's responsibility.
 - A skill provides policy, knowledge, or methods relevant to the assigned work.
-- Adding a skill never expands role authority.
+- Worker authority is a separate technical-permissions contract.
+- Adding a skill never expands worker authority.
 
 ## Built-ins and overrides
 
@@ -90,7 +91,7 @@ The flow is:
 
 No skill is global to every worker.
 
-With dynamic escalation enabled, a worker may request missing policy when newly discovered work crosses an uncovered skill domain. The orchestrator may add that skill without changing the worker's role authority.
+With dynamic escalation enabled, a worker may request missing policy when newly discovered work crosses an uncovered skill domain. The orchestrator may add that skill without changing the worker's authority.
 
 ## Context budget
 
