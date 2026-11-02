@@ -15,6 +15,8 @@ from rich.console import RenderableType
 from agent_cli import cli
 from agent_cli.adapters import (
     AdapterRegistry,
+    HarnessIdentity,
+    HarnessReadiness,
     ModelDescriptor,
     ProviderIdentity,
     ProviderReadiness,
@@ -178,6 +180,163 @@ def planning_input(goal: str = GOAL, *answers: str) -> PlanningInput:
         tuple(UserText(f"d{i}", text) for i, text in enumerate(answers)),
         RepositoryContext(),
     )
+
+
+# -- Auth-aware harness routing ----------------------------------------------------------------
+
+
+def auth_harness(harness_id: str, state: ReadinessState) -> FakeHarnessAdapter:
+    return FakeHarnessAdapter(
+        HarnessIdentity(harness_id, harness_id, "1.0"),
+        HarnessReadiness(state),
+    )
+
+
+def test_pinned_harness_auth_is_repaired_before_plan_is_persisted(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    calls: list[tuple[str, ...]] = []
+
+    def login(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        claude.login()
+        return True
+
+    instruction = "Use claude-code for implementer."
+    proposed = plan(
+        one_item,
+        pins=(PlannedPin("harness", "claude-code", "implementer", instruction),),
+    )
+    orchestrator = service(
+        store,
+        config,
+        proposed,
+        adapters=AdapterRegistry([claude]),
+        login_harnesses=login,
+    )
+
+    output = plain(orchestrator.handle(f"{GOAL} {instruction}"))
+
+    assert calls == [("claude-code",)]
+    [child] = store.subtasks(root_of(store))
+    assert store.pins(child.id)["harness"].value == "claude-code"
+    assert "Ready for spec review" in output
+
+
+def test_pinned_harness_declined_reauth_blocks_without_fallback(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    codex = auth_harness("codex-cli", ReadinessState.READY)
+    calls: list[tuple[str, ...]] = []
+
+    def decline(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        return False
+
+    instruction = "Use claude-code for implementer."
+    proposed = plan(
+        one_item,
+        pins=(PlannedPin("harness", "claude-code", "implementer", instruction),),
+    )
+    orchestrator = service(
+        store,
+        config,
+        proposed,
+        adapters=AdapterRegistry([claude, codex]),
+        login_harnesses=decline,
+    )
+
+    output = plain(orchestrator.handle(f"{GOAL} {instruction}"))
+
+    assert calls == [("claude-code",)]
+    assert store.subtasks(root_of(store)) == []
+    assert "required harness not ready: claude-code" in output
+
+
+def test_unpinned_ready_fallback_does_not_interrupt_for_expired_auth(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    codex = auth_harness("codex-cli", ReadinessState.READY)
+    calls: list[tuple[str, ...]] = []
+    orchestrator = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=AdapterRegistry([claude, codex]),
+        login_harnesses=lambda ids: calls.append(ids) or True,
+    )
+
+    output = plain(orchestrator.handle(GOAL))
+
+    assert calls == []
+    assert len(store.subtasks(root_of(store))) == 1
+    assert "Ready for spec review" in output
+
+
+def test_unpinned_no_ready_harness_offers_repair_once_and_continues(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    calls: list[tuple[str, ...]] = []
+
+    def login(ids: tuple[str, ...]) -> bool:
+        calls.append(ids)
+        claude.login()
+        return True
+
+    orchestrator = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=AdapterRegistry([claude]),
+        login_harnesses=login,
+    )
+
+    orchestrator.handle(GOAL)
+
+    assert calls == [("claude-code",)]
+    assert len(store.subtasks(root_of(store))) == 1
+
+
+def test_declined_unpinned_repair_does_not_loop_or_block_planning(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    calls: list[tuple[str, ...]] = []
+    orchestrator = service(
+        store,
+        config,
+        plan(one_item),
+        adapters=AdapterRegistry([claude]),
+        login_harnesses=lambda ids: calls.append(ids) or False,
+    )
+
+    output = plain(orchestrator.handle(GOAL))
+
+    assert calls == [("claude-code",)]
+    assert len(store.subtasks(root_of(store))) == 1
+    assert "Ready for spec review" in output
+
+
+def test_planning_question_does_not_trigger_harness_login(
+    store: TaskStore, config: ConfigService
+) -> None:
+    claude = auth_harness("claude-code", ReadinessState.AUTH_REQUIRED)
+    calls: list[tuple[str, ...]] = []
+    orchestrator = service(
+        store,
+        config,
+        ask(),
+        adapters=AdapterRegistry([claude]),
+        login_harnesses=lambda ids: calls.append(ids) or True,
+    )
+
+    orchestrator.handle(GOAL)
+
+    assert calls == []
 
 
 # -- Root lifecycle ----------------------------------------------------------------------------
