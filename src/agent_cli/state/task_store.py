@@ -727,7 +727,11 @@ class TaskStore:
                     str(approval),
                     "blocker_resolved",
                 )
-            next_status = TaskStatus.PENDING if approval is Approval.APPROVED else TaskStatus.CANCELED
+            next_status = (
+                TaskStatus.PENDING
+                if approval is Approval.APPROVED
+                else TaskStatus.CANCELED
+            )
             self._set_task(
                 db,
                 task_id,
