@@ -82,6 +82,46 @@ class HarnessLoginService:
                 return self.run()
             self.write_line(warning("Type y for yes or n for no."))
 
+    def repair(self, harness_ids: tuple[str, ...]) -> bool:
+        selected = tuple(
+            adapter
+            for harness_id in harness_ids
+            if self.enabled(harness_id)
+            and (adapter := self.adapters.harness(harness_id)) is not None
+        )
+        pending = tuple(
+            adapter
+            for adapter in selected
+            if adapter.readiness().state is ReadinessState.AUTH_REQUIRED
+        )
+        if not pending:
+            return all(adapter.readiness().ready for adapter in selected) and len(selected) == len(
+                harness_ids
+            )
+
+        names = ", ".join(adapter.identity().display_name for adapter in pending)
+        while True:
+            answer = self.read_line(
+                f"{names} authentication expired. Reauthenticate now? (Y/n): "
+            ).strip().lower()
+            if answer in {"n", "no"}:
+                return False
+            if answer in {"", "y", "yes"}:
+                break
+            self.write_line(warning("Type y for yes or n for no."))
+
+        for adapter in pending:
+            self.write_line(info(f"Opening {adapter.identity().display_name} login..."))
+            try:
+                after = adapter.login()
+            except AdapterError as problem:
+                self.write_line(error(problem.message))
+                return False
+            if not after.ready:
+                self.write_line(error(after.describe()))
+                return False
+        return all(adapter.readiness().ready for adapter in selected)
+
     def run(self, target: str = "") -> RenderableType:
         selected = self.selected(target)
         if not isinstance(selected, tuple):
