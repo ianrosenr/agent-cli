@@ -282,7 +282,6 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     assert "modified tracked source" in summary.metadata["summary"]
 
 
-
 def test_write_worker_requires_current_approved_authorization(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
@@ -329,7 +328,6 @@ def test_write_worker_requires_current_approved_authorization(tmp_path: Path) ->
     assert "completed" in started
 
 
-
 def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) -> None:
     root = repository(tmp_path)
     store = TaskStore.for_repository(root)
@@ -367,7 +365,6 @@ def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) ->
             "Bounded spec v2",
             IMPLEMENTATION_AUTHORITY,
         )
-
 
 
 def test_current_plan_only_overrides_previous_write_authorization(tmp_path: Path) -> None:
