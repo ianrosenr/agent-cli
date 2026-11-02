@@ -50,11 +50,12 @@ from agent_cli.state.models import (
     SkillRouting,
     SpecVersion,
     Task,
+    TaskAuthorization,
     TaskStatus,
     Worker,
 )
 from agent_cli.state.paths import ensure_private_dir, project_state_dir
-from agent_cli.terms import CANONICAL_ROLES, TaskComplexity, TaskKind
+from agent_cli.terms import CANONICAL_ROLES, ImplementationMode, TaskComplexity, TaskKind
 
 TASKS_FILE = "tasks.sqlite"
 BUSY_TIMEOUT = 5.0
@@ -544,6 +545,7 @@ class TaskStore:
         """Store a new spec version, awaiting approval. Earlier versions are never overwritten."""
         with self._write() as db:
             session_id = self._session_of(db, task_id)
+            self._void_authorizations_in(db, (task_id,), "spec changed")
             previous = db.execute(
                 "SELECT version, body FROM spec_versions WHERE task_id = ? "
                 "ORDER BY version DESC LIMIT 1",
@@ -587,6 +589,8 @@ class TaskStore:
         """Withdraw approval of the affected tasks' approved specs; return the tasks affected."""
         voided = []
         with self._write() as db:
+            task_ids = tuple(task_ids)
+            self._void_authorizations_in(db, task_ids, reason)
             for task_id in task_ids:
                 session_id = self._session_of(db, task_id)
                 if changed(
@@ -608,6 +612,275 @@ class TaskStore:
     def latest_spec(self, task_id: str) -> SpecVersion | None:
         versions = self.spec_versions(task_id)
         return versions[-1] if versions else None
+
+    # -- Implementation authorization -----------------------------------------------------------
+
+    def add_authorization(
+        self,
+        task_id: str,
+        mode: ImplementationMode,
+        status: Approval,
+        reason: str,
+        *,
+        authority_profile: str = "implementation",
+        spec_version: int | None = None,
+        decided_by: str | None = None,
+    ) -> TaskAuthorization:
+        """Append one authorization decision, voiding any earlier active decision."""
+        with self._write() as db:
+            self._void_authorizations_in(db, (task_id,), "superseded")
+            return self._insert_authorization(
+                db,
+                task_id,
+                mode,
+                status,
+                reason,
+                authority_profile=authority_profile,
+                spec_version=spec_version,
+                decided_by=decided_by,
+            )
+
+    def request_authorization(
+        self,
+        task_id: str,
+        mode: ImplementationMode,
+        reason: str,
+        *,
+        authority_profile: str = "implementation",
+        spec_version: int | None = None,
+    ) -> TaskAuthorization:
+        """Persist one checkpoint gate and block the task until the user answers."""
+        with self._write() as db:
+            self._void_authorizations_in(db, (task_id,), "superseded")
+            blocker = self._insert_blocker(
+                db,
+                task_id,
+                "Waiting for implementation authorization.",
+                "user",
+            )
+            record = self._insert_authorization(
+                db,
+                task_id,
+                mode,
+                Approval.PENDING,
+                reason,
+                authority_profile=authority_profile,
+                spec_version=spec_version,
+                blocker_id=blocker.id,
+            )
+            self._set_task(
+                db,
+                task_id,
+                "status",
+                TaskStatus.BLOCKED,
+                "status_changed",
+                reason="authorization",
+            )
+            return record
+
+    def decide_authorization(
+        self,
+        authorization_id: str,
+        approval: Approval,
+        decided_by: str,
+        reason: str = "",
+    ) -> TaskAuthorization:
+        """Resolve a pending authorization gate. Only approved/rejected are terminal answers."""
+        if approval not in (Approval.APPROVED, Approval.REJECTED):
+            raise TaskStateError(f"authorization decision cannot be {approval}")
+        with self._write() as db:
+            row = db.execute(
+                "SELECT * FROM task_authorizations WHERE id = ?",
+                (authorization_id,),
+            ).fetchone()
+            if row is None:
+                raise TaskStateError(f"unknown task authorization: {authorization_id}")
+            if row["status"] != Approval.PENDING:
+                raise TaskStateError(
+                    f"task authorization {authorization_id} is {row['status']}"
+                )
+            task_id: str = row["task_id"]
+            decided_at = self._clock()
+            db.execute(
+                "UPDATE task_authorizations SET status = ?, decided_by = ?, reason = ?, "
+                "decided_at = ? WHERE id = ?",
+                (
+                    approval,
+                    decided_by,
+                    reason or row["reason"],
+                    decided_at,
+                    authorization_id,
+                ),
+            )
+            if row["blocker_id"] is not None:
+                self._resolve_in(
+                    db,
+                    "blockers",
+                    row["blocker_id"],
+                    str(approval),
+                    "blocker_resolved",
+                )
+            next_status = TaskStatus.PENDING if approval is Approval.APPROVED else TaskStatus.CANCELED
+            self._set_task(
+                db,
+                task_id,
+                "status",
+                next_status,
+                "status_changed",
+                reason="authorization decided",
+            )
+            if approval is Approval.APPROVED and row["spec_version"] is not None:
+                db.execute(
+                    "UPDATE spec_versions SET approval = 'approved' "
+                    "WHERE task_id = ? AND version = ?",
+                    (task_id, row["spec_version"]),
+                )
+            self._event(
+                db,
+                self._session_of(db, task_id),
+                task_id,
+                "authorization_decided",
+                authorization_id,
+                approval=str(approval),
+                by=decided_by,
+            )
+            updated = db.execute(
+                "SELECT * FROM task_authorizations WHERE id = ?",
+                (authorization_id,),
+            ).fetchone()
+        return to_authorization(updated)
+
+    def authorizations(self, task_id: str) -> list[TaskAuthorization]:
+        rows = self._read(
+            "SELECT * FROM task_authorizations WHERE task_id = ? ORDER BY rowid",
+            task_id,
+        )
+        return [to_authorization(row) for row in rows]
+
+    def latest_authorization(self, task_id: str) -> TaskAuthorization | None:
+        records = self.authorizations(task_id)
+        return records[-1] if records else None
+
+    def pending_authorization(self, session_id: str) -> TaskAuthorization | None:
+        rows = self._read(
+            "SELECT task_authorizations.* FROM task_authorizations "
+            "JOIN tasks ON tasks.id = task_authorizations.task_id "
+            "WHERE tasks.session_id = ? AND task_authorizations.status = 'pending' "
+            "ORDER BY task_authorizations.rowid DESC LIMIT 1",
+            session_id,
+        )
+        return to_authorization(rows[0]) if rows else None
+
+    def void_authorizations(self, task_ids: Iterable[str], reason: str) -> list[str]:
+        with self._write() as db:
+            return self._void_authorizations_in(db, task_ids, reason)
+
+    def _insert_authorization(
+        self,
+        db: sqlite3.Connection,
+        task_id: str,
+        mode: ImplementationMode,
+        status: Approval,
+        reason: str,
+        *,
+        authority_profile: str,
+        spec_version: int | None,
+        decided_by: str | None = None,
+        blocker_id: str | None = None,
+    ) -> TaskAuthorization:
+        session_id = self._session_of(db, task_id)
+        now = self._clock()
+        record = TaskAuthorization(
+            new_id("authz"),
+            task_id,
+            status,
+            mode,
+            authority_profile,
+            spec_version,
+            reason,
+            decided_by,
+            blocker_id,
+            now,
+            now if status is not Approval.PENDING else None,
+        )
+        db.execute(
+            "INSERT INTO task_authorizations "
+            "(id, task_id, status, mode, authority_profile, spec_version, reason, decided_by, "
+            "blocker_id, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.id,
+                task_id,
+                status,
+                mode,
+                authority_profile,
+                spec_version,
+                reason,
+                decided_by,
+                blocker_id,
+                record.created_at,
+                record.decided_at,
+            ),
+        )
+        self._event(
+            db,
+            session_id,
+            task_id,
+            "authorization_recorded",
+            record.id,
+            status=str(status),
+            mode=mode,
+            authority=authority_profile,
+        )
+        return record
+
+    def _void_authorizations_in(
+        self,
+        db: sqlite3.Connection,
+        task_ids: Iterable[str],
+        reason: str,
+    ) -> list[str]:
+        voided: list[str] = []
+        for task_id in task_ids:
+            rows = db.execute(
+                "SELECT * FROM task_authorizations WHERE task_id = ? "
+                "AND status IN ('pending', 'approved')",
+                (task_id,),
+            ).fetchall()
+            for row in rows:
+                db.execute(
+                    "UPDATE task_authorizations SET status = 'voided', reason = ?, decided_at = ? "
+                    "WHERE id = ?",
+                    (reason, self._clock(), row["id"]),
+                )
+                if row["blocker_id"] is not None:
+                    self._resolve_in(
+                        db,
+                        "blockers",
+                        row["blocker_id"],
+                        "voided",
+                        "blocker_resolved",
+                    )
+                voided.append(task_id)
+                self._event(
+                    db,
+                    self._session_of(db, task_id),
+                    task_id,
+                    "authorization_voided",
+                    row["id"],
+                    reason=reason,
+                )
+            if rows:
+                task = db.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if task is not None and task["status"] == TaskStatus.BLOCKED:
+                    self._set_task(
+                        db,
+                        task_id,
+                        "status",
+                        TaskStatus.PENDING,
+                        "status_changed",
+                        reason="authorization voided",
+                    )
+        return list(dict.fromkeys(voided))
 
     # -- Execution pins ------------------------------------------------------------------------
 
@@ -1383,6 +1656,15 @@ def to_decision(row: sqlite3.Row) -> Decision:
 
 def to_spec(row: sqlite3.Row) -> SpecVersion:
     return record(SpecVersion, row, approval=Approval(row["approval"]))
+
+
+def to_authorization(row: sqlite3.Row) -> TaskAuthorization:
+    return record(
+        TaskAuthorization,
+        row,
+        status=Approval(row["status"]),
+        mode=cast(ImplementationMode, row["mode"]),
+    )
 
 
 def to_pin(row: sqlite3.Row) -> Pin:
