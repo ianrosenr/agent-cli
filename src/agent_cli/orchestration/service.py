@@ -29,6 +29,7 @@ from agent_cli.models import (
     runtime_paths,
     select_classifier,
 )
+from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
     PlanningInput,
@@ -83,6 +84,8 @@ class OrchestrationService:
     classifier: ClassifierFactory | None = None
     """Builds the skill classifier; the configured one (V1-07) when ``None``."""
     home: Path | None = None
+    login_harnesses: LoginHarnesses | None = None
+    """Interactive native-login callback supplied by the shell; absent in noninteractive uses."""
     _index: RepositoryIndex | None = None
 
     def handle(self, text: str) -> RenderableType:
@@ -129,6 +132,16 @@ class OrchestrationService:
                 break
             if attempt + 1 == PLANNING_ATTEMPTS:
                 return self.stop(root, "planning could not be made under the pinned model")
+
+        if plan.proposal.work_items:
+            auth = HarnessAuthCoordinator(self.adapters, config, self.login_harnesses)
+            harness_pins = tuple(pin.value for pin in plan.delegated_pins if pin.kind == "harness")
+            if harness_pins:
+                ready, reason = auth.repair_pinned(harness_pins)
+                if not ready:
+                    return self.stop(root, reason)
+            else:
+                auth.ensure_any_ready()
 
         if plan.question is not None:
             if len(self.store.planning_questions(root.id)) >= MAX_QUESTIONS:

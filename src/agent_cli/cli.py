@@ -66,7 +66,7 @@ def run_shell(
         write_line=write_line,
         adapters=adapters,
         tasks=tasks,
-        orchestrate=orchestrator(config, adapters, tasks),
+        orchestrate=orchestrator(config, adapters, tasks, read_line, write_line),
         reload_adapters=reload_adapters,
     )
     write_line(startup)
@@ -86,7 +86,11 @@ def run_shell(
 
 
 def orchestrator(
-    config: ConfigService | None, adapters: AdapterRegistry | None, tasks: TaskStore | None
+    config: ConfigService | None,
+    adapters: AdapterRegistry | None,
+    tasks: TaskStore | None,
+    read_line: ReadLine | None = None,
+    write_line: WriteLine | None = None,
 ) -> Callable[[str], RenderableType] | None:
     """The orchestration entry point, built on first use so planning stays out of startup."""
     if config is None or tasks is None:
@@ -99,8 +103,27 @@ def orchestrator(
             from agent_cli.orchestration import OrchestrationService
 
             registry = adapters or AdapterRegistry()
+            login_harnesses = None
+            if read_line is not None and write_line is not None:
+                from agent_cli.login import HarnessLoginService
+
+                def login_harnesses(harness_ids: tuple[str, ...]) -> bool:
+                    try:
+                        settings = config.resolve()
+                    except ConfigError:
+                        return False
+                    if "subscription" not in settings.access.preference:
+                        return False
+                    return HarnessLoginService(registry, settings, read_line, write_line).repair(
+                        harness_ids
+                    )
+
             service = OrchestrationService(
-                tasks, config, registry, estimator=provider_estimators(registry)
+                tasks,
+                config,
+                registry,
+                estimator=provider_estimators(registry),
+                login_harnesses=login_harnesses,
             )
         return service.handle(text)
 
