@@ -416,7 +416,7 @@ class OrchestrationService:
         problems += self.write_specs(call, items, planning, plan, repository)
         if problems:
             self.block([root.id], "planning is incomplete: " + "; ".join(problems))
-        elif len(items) == 1:
+        elif root.kind == "ship" and len(items) == 1:
             task_id, item = next(iter(items.items()))
             if item.changes_code:
                 child = self.store.task(task_id)
