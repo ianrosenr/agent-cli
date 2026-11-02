@@ -93,7 +93,6 @@ class CliProfileConfig:
     env_remove: tuple[str, ...] = ()
     output_protocol: Literal["json-result", "jsonl-agent"] = "json-result"
     worker_base_args: tuple[str, ...] = ()
-    worker_plan_args: tuple[str, ...] = ()
     worker_research_args: tuple[str, ...] | None = None
     worker_diagnostic_args: tuple[str, ...] | None = None
     worker_write_args: tuple[str, ...] = ()
