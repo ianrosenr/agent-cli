@@ -17,7 +17,7 @@ import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, get_args
+from typing import Literal, Protocol, cast, get_args
 
 from agent_cli.orchestration.output import ModelOutputError, load_object, only, text
 
@@ -162,11 +162,11 @@ def parse_verdict(reply: str) -> Verdict:
     if complexity not in COMPLEXITIES:
         raise ModelOutputError(f"decision.complexity must be one of {', '.join(COMPLEXITIES)}")
     return Verdict(
-        action,
+        cast(RootAction, action),
         confident,
         request,
         repository,
-        complexity,  # type: ignore[arg-type]
+        cast(Complexity, complexity),
     )
 
 
