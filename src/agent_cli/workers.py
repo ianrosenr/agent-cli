@@ -262,7 +262,13 @@ class WorktreeManager:
                 name = relative.decode("utf-8")
                 origin = source / name
                 destination = target / name
-                if not origin.is_file() or origin.is_symlink() or destination.exists():
+                if (
+                    not origin.is_file()
+                    or origin.is_symlink()
+                    or not origin.resolve().is_relative_to(source.resolve())
+                    or not destination.resolve().is_relative_to(target.resolve())
+                    or destination.exists()
+                ):
                     raise WorkerLaunchError("unsafe or conflicting predecessor file")
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(origin, destination)
