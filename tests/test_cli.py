@@ -150,7 +150,7 @@ def test_main_runs_shell_through_prompt_toolkit(
         def __init__(self, **options: object) -> None:
             pass
 
-        def prompt(self, message: str) -> str:
+        def prompt(self, message: str, **options: object) -> str:
             raise EOFError
 
     monkeypatch.setattr("prompt_toolkit.PromptSession", FakeSession)
@@ -302,3 +302,35 @@ def test_each_response_is_followed_by_a_blank_line() -> None:
     console = make_console(stream, width=80)
     cli.run_shell(build_registry(), scripted("/status", "/status"), console.print, STARTUP)
     assert stream.getvalue() == f"{STARTUP}\nNo active task.\n\nNo active task.\n\n"
+
+
+def test_terminal_reader_completes_commands_only_at_the_shell_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[object, object]] = []
+
+    class FakeSession:
+        completer: object = None
+        key_bindings: object = None
+
+        def __init__(self, **options: object) -> None:
+            pass
+
+        def prompt(self, message: str) -> str:
+            seen.append((self.completer, self.key_bindings))
+            return ""
+
+    monkeypatch.setattr("prompt_toolkit.PromptSession", FakeSession)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    read_line = cli.terminal_reader(build_registry())
+    read_line(cli.PROMPT)
+    read_line("Branch prefix [bot/]: ")
+    read_line(cli.PROMPT)
+
+    from agent_cli.commands.completion import CommandCompleter
+
+    (completer, bindings), question, again = seen
+    assert isinstance(completer, CommandCompleter)
+    assert bindings is not None
+    assert question == (None, None)
+    assert again == (completer, bindings)
