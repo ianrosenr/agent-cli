@@ -44,7 +44,6 @@ class SupervisorDecision:
     """Inline answer for a trivial non-repository turn; empty when downstream answering is
     needed."""
 
-
     def describe(self) -> str:
         context = ", repository" if self.repository else ""
         return f"{self.action}/{self.complexity}{context} ({self.source}: {self.reason})"
