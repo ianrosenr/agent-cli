@@ -170,7 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         adapters = session_adapters(config)
         return run_shell(
             registry,
-            terminal_reader(),
+            terminal_reader(registry),
             console.print,
             startup,
             config,
@@ -216,18 +216,27 @@ def prompt_fragments(prompt: str) -> list[tuple[str, str]]:
     return [*fragments, ("", ": ")]
 
 
-def terminal_reader() -> ReadLine:
+def terminal_reader(registry: CommandRegistry) -> ReadLine:
     """Use prompt_toolkit on a terminal; plain ``input`` when stdin is piped. prompt_toolkit
-    honors ``NO_COLOR`` for the prompt styles itself."""
+    honors ``NO_COLOR`` for the prompt styles itself. The shell prompt completes slash commands
+    from ``registry``; follow-up questions get no completion."""
     if not sys.stdin.isatty():
         return input
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.styles import Style
 
+    from agent_cli.commands.completion import CommandCompleter, command_key_bindings
+
     session: PromptSession[str] = PromptSession(style=Style.from_dict(PROMPT_STYLES))
+    completer = CommandCompleter(registry)
+    bindings = command_key_bindings(registry)
 
     def read_line(prompt: str) -> str:
+        # Set on the session: ``prompt(completer=None)`` would keep the previous completer.
+        shell = prompt == PROMPT
+        session.completer = completer if shell else None
+        session.key_bindings = bindings if shell else None
         return session.prompt(FormattedText(prompt_fragments(prompt)))
 
     return read_line

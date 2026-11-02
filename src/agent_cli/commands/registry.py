@@ -6,7 +6,7 @@ orchestration dependencies. Later capabilities reach handlers through ``CommandC
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -25,6 +25,9 @@ type CommandHandler = Callable[[CommandContext, str], RenderableType]
 """Handler signature: receives the context and the raw argument text, returns output: plain
 text, or a renderable built with :mod:`agent_cli.ui`."""
 
+type ArgumentCompleter = Callable[[str], Iterable[str]]
+"""Argument completion: receives the argument text typed so far, returns candidate arguments."""
+
 
 @dataclass(frozen=True, slots=True)
 class Command:
@@ -35,6 +38,8 @@ class Command:
     handler: CommandHandler
     planned_in: str | None = None
     """Roadmap issue that will implement the command, while it is still a placeholder."""
+    complete_args: ArgumentCompleter | None = None
+    """Suggests whole-argument replacements for the argument text typed so far, if any."""
 
     def __post_init__(self) -> None:
         if not self.name or self.name.startswith(SLASH) or any(c.isspace() for c in self.name):
