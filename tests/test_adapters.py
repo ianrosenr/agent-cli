@@ -509,7 +509,8 @@ def test_status_reports_misbehaving_adapters_instead_of_crashing() -> None:
 
 def test_runtime_readiness_is_not_configuration() -> None:
     config_fields = field_names(HarnessConfig) | field_names(ProviderConfig)
-    assert config_fields.isdisjoint({"detected", "version", "ready", "readiness", "health"})
+    assert config_fields.isdisjoint({"detected", "ready", "readiness", "health"})
+    assert "version" in field_names(HarnessConfig)  # user policy; detected version stays runtime-only
     config = Config(harnesses={"beta": HarnessConfig()})
     adapter_status(status_registry(), config)
     assert config == Config(harnesses={"beta": HarnessConfig()})
