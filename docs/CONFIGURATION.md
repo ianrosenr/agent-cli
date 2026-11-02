@@ -144,7 +144,6 @@ harness_profiles:
     env_remove: [EXAMPLE_API_KEY]
     output_protocol: json-result
     worker_base_args: [run, --json]
-    worker_plan_args: [--read-only]
     worker_write_args: [--write]
 
 harnesses:
