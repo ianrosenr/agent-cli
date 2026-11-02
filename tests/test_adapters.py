@@ -103,6 +103,8 @@ def test_model_provider_and_harness_are_separate_selections() -> None:
 def test_capability_set_is_exactly_the_contract() -> None:
     assert {c.value for c in Capability} == {
         "start_worker",
+        "install",
+        "update",
         "login",
         "follow_up",
         "interrupt",
