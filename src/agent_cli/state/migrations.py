@@ -147,6 +147,24 @@ V1 = (
     )
     """,
     """
+    CREATE TABLE task_authorizations (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES tasks (id),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'voided')),
+        mode TEXT NOT NULL CHECK (mode IN ('autopilot', 'checkpoint', 'plan-only')),
+        authority_profile TEXT NOT NULL,
+        spec_version INTEGER,
+        reason TEXT NOT NULL,
+        decided_by TEXT,
+        blocker_id TEXT REFERENCES blockers (id),
+        created_at TEXT NOT NULL,
+        decided_at TEXT
+    )
+    """,
+    "CREATE INDEX authorizations_by_task ON task_authorizations (task_id)",
+    "CREATE UNIQUE INDEX one_pending_authorization_per_task "
+    "ON task_authorizations (task_id) WHERE status = 'pending'",
+    """
     CREATE TABLE reviews (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL REFERENCES tasks (id),
