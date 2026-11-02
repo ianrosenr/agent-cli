@@ -9,6 +9,7 @@ import pytest
 
 from agent_cli.adapters import (
     AdapterRegistry,
+    Changes,
     DIAGNOSTIC_AUTHORITY,
     HarnessIdentity,
     ModelDescriptor,
@@ -259,7 +260,7 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
         outcome=WorkerResult(
             WorkerStatus.COMPLETED,
             "done",
-            changes=__import__("agent_cli.adapters", fromlist=["Changes"]).Changes(
+            changes=Changes(
                 files=("src/example.py",),
                 diff="diff --git a/src/example.py b/src/example.py\n",
             ),
@@ -276,13 +277,4 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     updated = store.task(child.id)
     assert updated is not None and updated.status is TaskStatus.FAILED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
-    assert "exceeded source-modification authority" in (
-        summary.metadata["summary"] + " "
-        + str(
-            [
-                a.metadata.get("summary", "")
-                for a in store.artifacts(child.id)
-                if a.kind == "worker-summary"
-            ]
-        )
-    ) or "modified tracked source" in summary.metadata["summary"]
+    assert "modified tracked source" in summary.metadata["summary"]
