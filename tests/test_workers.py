@@ -9,6 +9,7 @@ import pytest
 
 from agent_cli.adapters import (
     DIAGNOSTIC_AUTHORITY,
+    IMPLEMENTATION_AUTHORITY,
     AdapterRegistry,
     Changes,
     HarnessIdentity,
@@ -24,7 +25,7 @@ from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
 from agent_cli.config.model import WorkersConfig
 from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
-from agent_cli.state import Task, TaskStatus, TaskStore
+from agent_cli.state import Approval, Task, TaskStatus, TaskStore
 from agent_cli.workers import (
     WorkerDispatcher,
     WorkerExecutor,
@@ -278,3 +279,50 @@ def test_scout_source_mutation_is_rejected_even_if_harness_reports_success(tmp_p
     assert updated is not None and updated.status is TaskStatus.FAILED
     [summary] = [a for a in store.artifacts(child.id) if a.kind == "worker-summary"]
     assert "modified tracked source" in summary.metadata["summary"]
+
+
+
+def test_write_worker_requires_current_approved_authorization(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Fix the typo",
+        kind="ship",
+        complexity="trivial",
+    )
+    child = store.create_task(
+        session.id,
+        "Fix the bounded typo",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    adapters, _ = runtime(auto_finish=True)
+    executor = WorkerExecutor(store, adapters, registry(), Config(), root)
+
+    with pytest.raises(WorkerLaunchError, match="no approved implementation authorization"):
+        executor.launch(
+            child,
+            "ship",
+            "trivial",
+            child.goal,
+            IMPLEMENTATION_AUTHORITY,
+        )
+
+    store.add_authorization(
+        child.id,
+        "autopilot",
+        Approval.APPROVED,
+        "bounded trivial ship",
+        decided_by="policy:autopilot",
+    )
+    started = executor.launch(
+        child,
+        "ship",
+        "trivial",
+        child.goal,
+        IMPLEMENTATION_AUTHORITY,
+    )
+
+    assert "completed" in started
