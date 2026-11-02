@@ -1217,9 +1217,7 @@ def test_provider_backed_planning_and_spec_authoring_end_to_end(
 def test_automatic_planning_falls_back_after_runtime_provider_failure(
     store: TaskStore, config: ConfigService
 ) -> None:
-    failing = ScriptedProvider(
-        "subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR
-    )
+    failing = ScriptedProvider("subscription", id="a-failing", failure=ErrorKind.PROVIDER_ERROR)
     working = ScriptedProvider("subscription", id="b-working")
     orchestrator = provider_service(
         store,
