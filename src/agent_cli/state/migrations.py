@@ -179,8 +179,8 @@ V1 = (
         created_at TEXT NOT NULL
     )
     """,
-    "CREATE INDEX events_by_task ON events (task_id)",,
-"""
+    "CREATE INDEX events_by_task ON events (task_id)",
+    """
     CREATE TABLE skill_routings (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL REFERENCES tasks (id),
@@ -203,9 +203,7 @@ V1 = (
     )
     """,
     "CREATE INDEX skill_routings_by_task ON skill_routings (task_id)",
-)
-"""Skill-routing decisions and escalations (V1-06,
-"""
+    """
     CREATE TABLE planning_questions (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL REFERENCES tasks (id),
@@ -235,8 +233,7 @@ V1 = (
     """,
     "CREATE INDEX scoped_pins_by_root ON scoped_pins (root_task_id)",
 )
-"""Planning questions (at most one pending per root task) and scoped user pins (V1-09
-)
+
 MIGRATIONS: tuple[Migration, ...] = (V1,)
 """The one current unreleased task-state schema."""
 
