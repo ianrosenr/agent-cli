@@ -153,15 +153,11 @@ REPOSITORY_ANSWER_POLICY = AnswerPolicy(
     "repository_answer", C.REPOSITORY_ENGINEERING, FLOOR_SCORES["mid"]
 )
 """Read-only questions about the current repository."""
-ROUTER_POLICY = AnswerPolicy(
-    "router",
-    C.REASONING,
-    FLOOR_SCORES["low"],
-    frozenset({Cost.FREE, Cost.LOW}),
-)
-"""Root-prompt routing: auto mode only uses free/low-cost adequate models.
+ROUTER_POLICY = AnswerPolicy("router", C.REASONING, FLOOR_SCORES["low"])
+"""Root-prompt routing: prefer the cheapest adequate reachable model.
 
-A user-selected router model is an explicit pin and may be medium/high cost.
+Routing must not disappear just because no free/low-cost model is configured; otherwise repository
+questions fall through to generic chat. Explicit selection still pins the exact router model.
 """
 
 
