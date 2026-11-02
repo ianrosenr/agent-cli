@@ -472,7 +472,9 @@ def test_trivial_general_answer_finishes_in_the_supervisor_call(isolated_home: P
         }
 
     provider = ModelProvider(route=answer_now)
-    output = plain(gateway(config_for(isolated_home, None), provider).handle("what is a daemon"))
+    output = plain(
+        gateway(config_for(isolated_home, None, "concise"), provider).handle("what is a daemon")
+    )
 
     [routed] = provider.requests
     assert routed.system == ROUTER_SYSTEM != SKILL_CLASSIFIER_SYSTEM
