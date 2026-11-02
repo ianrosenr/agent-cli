@@ -231,12 +231,8 @@ class WorkerRequest:
     """The targeted repository context, such as its root or a short description."""
     skills: tuple[str, ...] = ()
     """Selected skills and policy context, already rendered for the worker."""
-    authority: WorkerAuthority | None = None
-    """Technically enforced execution powers. Skills and role never expand these.
-
-    None exists only for legacy callers that still use implementation mode directly.
-    New orchestration must always set authority explicitly.
-    """
+    authority: WorkerAuthority
+    """Technically enforced execution powers. Skills and role never expand these."""
     model: Selection | None = None
     provider: Selection | None = None
     """The provider/access path."""
