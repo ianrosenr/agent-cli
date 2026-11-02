@@ -14,12 +14,12 @@ import difflib
 import json
 import sqlite3
 import uuid
-from threading import RLock
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any, cast
 
 from agent_cli.adapters import WorkerStatus
