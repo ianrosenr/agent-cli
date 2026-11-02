@@ -1,10 +1,12 @@
-"""One continuous conversation at the root prompt: each turn answered, or delegated as work.
+"""One continuous supervisor conversation: answer directly, scout, or ship.
 
 ::
 
-    user turn + compact conversation -> semantic router -> direct answer
-                                                        -> repository-aware answer (read-only)
-                                                        -> orchestrator (plans; never edits)
+    user turn + compact conversation -> semantic supervisor -> answer
+                                                           -> scout
+                                                           -> ship
+
+Repository context is data for an answer, not a separate user-facing/internal mode.
 
 A pending planning question always takes the next line as its answer, before any routing, so a
 question can never be skipped. Conversation history lives here, in memory, apart from canonical
@@ -96,13 +98,13 @@ class RootPromptGateway:
         in_repository = self.root is not None and self.orchestrate is not None
         router = IntentRouter(lambda: self.build_router(config, calls))
         decision = router.route(text, self.conversation.recent(ROUTER_VIEW), in_repository)
-        if decision.intent in {"repository_task", "orchestration"}:
+        if decision.action in {"scout", "ship"}:
             return self.delegate(text, decision, config)
 
         question = Question(text, decision.request, self.conversation.recent(ANSWER_VIEW))
         pins = explicit_pins(text, calls.registry, self.adapters)
         try:
-            if decision.intent == "repository_question" and self.root is not None:
+            if decision.repository and self.root is not None:
                 if self._repository is None:
                     self._repository = RepositoryAnswerService(calls, self.root)
                 answer = self._repository.answer(question, config, pins)
@@ -114,16 +116,21 @@ class RootPromptGateway:
             return error(
                 f"Cannot answer: {problem}", ANSWER_HINT, *verbose_routing(config, decision)
             )
-        self.conversation.add(text, answer.text, decision.intent)
+        self.conversation.add(text, answer.text, decision.action)
         return render_answer(answer, decision, config)
 
     def delegate(self, text: str, decision: RouteDecision, config: Config) -> RenderableType:
         """Hand the resolved request, and the conversation it came from, to the orchestrator."""
         if self.orchestrate is None:
             return NO_REPOSITORY
-        handoff = Handoff(decision.request or text, self.conversation.transcript(HANDOFF_VIEW))
+        handoff = Handoff(
+            decision.request or text,
+            self.conversation.transcript(HANDOFF_VIEW),
+            decision.action,
+            decision.complexity,
+        )
         output = self.orchestrate(text, handoff)
-        self.conversation.add(text, f"Delegated to planning: {handoff.goal}", decision.intent)
+        self.conversation.add(text, f"Delegated {handoff.kind}: {handoff.goal}", decision.action)
         notes = verbose_routing(config, decision)
         if not notes:
             return output
@@ -155,9 +162,11 @@ class RootPromptGateway:
             return True  # let orchestration report the broken state
 
     def build_router(self, config: Config, calls: AnswerCalls) -> SemanticRouter | None:
-        """Auto prefers the cheapest adequate router model and falls back to the cheapest
-        reachable adequate model so semantic routing never disappears. Selected uses the exact
-        model. Every call is budgeted; disabled turns semantic routing off."""
+        """Build semantic supervisor intake through generic model routing.
+
+        Auto prefers the cheapest adequate reachable model. Selected uses the exact model.
+        Every call is budgeted; disabled falls back to read-only direct answers.
+        """
         if self.router is not None:
             return self.router(config, calls.registry)
         settings = config.routing.classifier
@@ -169,7 +178,7 @@ class RootPromptGateway:
         call = calls.call(config, pins)
 
         def route(system: str, prompt: str, max_output_tokens: int) -> tuple[str, str]:
-            reply = call(ROUTER_POLICY, "intent_routing", system, prompt, max_output_tokens)
+            reply = call(ROUTER_POLICY, "supervisor_intake", system, prompt, max_output_tokens)
             return reply.text, reply.describe()
 
         return ProviderRouter(route)
