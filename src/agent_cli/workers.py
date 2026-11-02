@@ -250,7 +250,7 @@ class WorktreeManager:
             )
             if untracked.returncode:
                 raise WorkerLaunchError("cannot inspect predecessor untracked files")
-            for relative in untracked.stdout.split(b"\\0"):
+            for relative in untracked.stdout.split(b"\0"):
                 if not relative:
                     continue
                 name = relative.decode("utf-8")
