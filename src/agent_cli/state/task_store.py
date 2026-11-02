@@ -4,8 +4,8 @@ Only the orchestrator writes here (see docs/MEMORY.md). Records are append-frien
 requirements, decisions, pins, and spec versions are kept and linked to their replacements, and
 every change appends an event. Nothing here interprets requests, plans work, or routes it.
 
-The database is never deleted or recreated by Agent CLI. If it is corrupt, newer than this code,
-or cannot be migrated, opening it fails with ``TaskStateError`` and the file is left untouched.
+The database is never silently deleted or recreated. Unsupported development schemas, corruption,
+or invalid state fail with ``TaskStateError``.
 """
 
 from __future__ import annotations
@@ -256,30 +256,22 @@ class TaskStore:
         )
         if parent_id is not None and self._session_of(db, parent_id) != session_id:
             raise TaskStateError(f"parent task {parent_id} belongs to another session")
-        if kind is None and complexity is None:
-            # Keep test/upgrade helpers able to seed an older migration intentionally.
-            db.execute(
-                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task.id, session_id, parent_id, goal, task.status, role, now, now),
-            )
-        else:
-            db.execute(
-                "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
-                "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task.id,
-                    session_id,
-                    parent_id,
-                    goal,
-                    task.status,
-                    role,
-                    now,
-                    now,
-                    kind,
-                    complexity,
-                ),
-            )
+        db.execute(
+            "INSERT INTO tasks (id, session_id, parent_id, goal, status, role, created_at, "
+            "updated_at, kind, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                task.id,
+                session_id,
+                parent_id,
+                goal,
+                task.status,
+                role,
+                now,
+                now,
+                kind,
+                complexity,
+            ),
+        )
         self._event(
             db,
             session_id,
