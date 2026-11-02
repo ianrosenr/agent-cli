@@ -635,12 +635,17 @@ def test_runtime_registers_claude_code_without_persisting_auth() -> None:
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
     registry = default_adapters(Config(harnesses={"claude-code": HarnessConfig()}))
+    harness = registry.harness("claude-code")
+    assert isinstance(harness, ClaudeCodeHarnessAdapter)
+    harness.runner = FakeCommands()
 
     provider = registry.provider("claude-subscription")
 
     assert provider is not None
     assert provider.identity().access == "subscription"
     assert provider.identity().id == "claude-subscription"
+    assert provider.readiness().ready
+    assert [model.model_id for model in provider.list_models()] == ["claude-sonnet-5-5"]
 
 
 def test_runtime_does_not_bridge_unconfigured_harness() -> None:
