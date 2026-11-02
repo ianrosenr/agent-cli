@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 import threading
 import time
 from collections.abc import Callable
@@ -200,6 +201,64 @@ class WorktreeManager:
             raise WorkerLaunchError(detail)
         return target
 
+    def inherit(self, target: Path, upstream: list[Path]) -> None:
+        """Apply predecessor changes into a new worktree; fail closed on conflicts.
+
+        Use the primary checkout's HEAD as a shared baseline. Never change the
+        user's checkout or silently discard new files.
+        """
+        if not upstream:
+            return
+        base = subprocess.run(
+            ("git", "rev-parse", "HEAD"), cwd=self.root, text=True, capture_output=True
+        )
+        if base.returncode:
+            raise WorkerLaunchError("cannot determine integration baseline")
+        baseline = base.stdout.strip()
+        for source in upstream:
+            if source.resolve() == self.root.resolve() or not source.is_dir():
+                raise WorkerLaunchError("missing or unsafe predecessor worktree")
+            ancestor = subprocess.run(
+                ("git", "merge-base", "--is-ancestor", baseline, "HEAD"),
+                cwd=source, capture_output=True,
+            )
+            if ancestor.returncode:
+                raise WorkerLaunchError("predecessor does not share the integration baseline")
+            changed = subprocess.run(
+                ("git", "diff", "--binary", baseline), cwd=source, capture_output=True
+            )
+            if changed.returncode:
+                raise WorkerLaunchError("cannot collect predecessor changes")
+            if changed.stdout:
+                verified = subprocess.run(
+                    ("git", "apply", "--check", "-"), cwd=target,
+                    input=changed.stdout, capture_output=True,
+                )
+                if verified.returncode:
+                    raise WorkerLaunchError("predecessor changes conflict; manual integration required")
+                applied = subprocess.run(
+                    ("git", "apply", "-"), cwd=target,
+                    input=changed.stdout, capture_output=True,
+                )
+                if applied.returncode:
+                    raise WorkerLaunchError("predecessor patch could not be applied")
+            untracked = subprocess.run(
+                ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+                cwd=source, capture_output=True,
+            )
+            if untracked.returncode:
+                raise WorkerLaunchError("cannot inspect predecessor untracked files")
+            for relative in untracked.stdout.split(b"\\0"):
+                if not relative:
+                    continue
+                name = relative.decode("utf-8")
+                origin = source / name
+                destination = target / name
+                if not origin.is_file() or origin.is_symlink() or destination.exists():
+                    raise WorkerLaunchError("unsafe or conflicting predecessor file")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(origin, destination)
+
     def remove(self, path: Path) -> None:
         """Remove one linked worktree; never remove the user's primary checkout."""
         if path.resolve() == self.root.resolve() or not path.exists():
@@ -254,6 +313,7 @@ class WorkerExecutor:
     root: Path
     poll_seconds: float = 0.25
     notify: Callable[[str], None] | None = None
+    on_finished: Callable[[str], None] | None = None
 
     def launch(
         self,
@@ -273,7 +333,21 @@ class WorkerExecutor:
         if harness is None:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
-        workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
+        manager = WorktreeManager(self.root, self.config)
+        workspace = manager.create(task.id, kind)
+        if kind == "ship":
+            predecessors = self.store.dependencies(task.id)
+            sources: list[Path] = []
+            for predecessor in predecessors:
+                original = self.store.task(predecessor)
+                if original is None or original.status is not TaskStatus.COMPLETED:
+                    raise WorkerLaunchError("cannot launch until all predecessors finish")
+                records = self.store.workers(predecessor)
+                if records and records[-1].worktree:
+                    sources.append(Path(records[-1].worktree))
+                elif records and original.role == "implementer":
+                    raise WorkerLaunchError("predecessor has no integration workspace")
+            manager.inherit(workspace, sources)
         skills = self._skill_context(task.id)
         request = WorkerRequest(
             task.id,
@@ -466,6 +540,8 @@ class WorkerExecutor:
         if notify and self.notify is not None:
             notice = summary or str(result.status)
             self.notify(f"{kind.title()} {worker_id} {result.status}: {notice}")
+        if self.on_finished is not None:
+            self.on_finished(task_id)
 
     def _finish_parent(self, task_id: str) -> None:
         task = self.store.task(task_id)
