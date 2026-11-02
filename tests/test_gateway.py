@@ -65,15 +65,33 @@ type Judge = Callable[[str, list[dict[str, str]], bool], dict[str, Any]]
 
 
 def judge(**routes: tuple[str, str] | str) -> Judge:
-    """A router model's judgment per message: ``intent`` or ``(intent, restated request)``.
-    Anything unlisted is unclear to it: read-only and not confident."""
+    """Script semantic supervisor outcomes; legacy labels keep individual tests concise."""
+    legacy = {
+        "chat": ("answer", False, "trivial"),
+        "repository_question": ("answer", True, "trivial"),
+        "repository_task": ("scout", True, "trivial"),
+        "orchestration": ("ship", True, "moderate"),
+    }
 
     def decide(message: str, conversation: list[dict[str, str]], in_repo: bool) -> dict[str, Any]:
         route = routes.get(message)
         if route is None:
-            return {"intent": "orchestration", "confident": False, "request": message}
-        intent, request = route if isinstance(route, tuple) else (route, message)
-        return {"intent": intent, "confident": True, "request": request}
+            return {
+                "action": "ship",
+                "confident": False,
+                "request": message,
+                "repository": in_repo,
+                "complexity": "moderate",
+            }
+        label, request = route if isinstance(route, tuple) else (route, message)
+        action, repository, complexity = legacy.get(label, (label, in_repo, "moderate"))
+        return {
+            "action": action,
+            "confident": True,
+            "request": request,
+            "repository": repository,
+            "complexity": complexity,
+        }
 
     return decide
 
@@ -215,7 +233,7 @@ def test_checking_pytest_is_a_read_only_repository_task(project: Path, isolated_
     assert output == f"planned: {question}"
     [(text, handoff)] = plans.seen
     assert text == question
-    assert handoff == Handoff(question, "")
+    assert handoff == Handoff(question, "", "scout", "trivial")
     assert provider.answered() == []
 
 
@@ -314,7 +332,7 @@ def test_unclear_intent_answers_read_only_and_never_plans(
     )
     assert plans.seen == []
     assert provider.answered()[0].system == REPOSITORY_SYSTEM
-    assert "unsure the user wants changes; answering read-only" in output
+    assert "uncertain work intent; staying read-only" in output
 
 
 def test_an_unclear_turn_outside_a_repository_is_chat(isolated_home: Path) -> None:
@@ -324,9 +342,9 @@ def test_an_unclear_turn_outside_a_repository_is_chat(isolated_home: Path) -> No
 
 
 def test_work_without_a_concrete_request_stays_read_only() -> None:
-    router = FakeRouter([Verdict("orchestration", True, "")])
+    router = FakeRouter([Verdict("ship", True, "", True, "moderate")])
     decision = IntentRouter(lambda: router).route("do it", (), True)
-    assert decision.intent == "repository_question"
+    assert decision.action == "answer" and decision.repository
 
 
 @pytest.mark.parametrize(
@@ -336,7 +354,7 @@ def test_work_without_a_concrete_request_stays_read_only() -> None:
 )
 def test_routing_failures_answer_as_chat(failure: Callable[[], Any]) -> None:
     decision = IntentRouter(failure).route("rewrite the cache layer", (), True)
-    assert decision.intent == "chat" and decision.source == "default"
+    assert decision.action == "answer" and decision.source == "default"
 
 
 def test_routing_disabled_answers_every_turn_as_chat(project: Path, isolated_home: Path) -> None:
@@ -390,7 +408,7 @@ def test_follow_up_answers_see_the_recent_conversation(isolated_home: Path) -> N
 def test_the_router_sees_only_a_compact_recent_conversation() -> None:
     conversation = Conversation()
     for index in range(10):
-        conversation.add(f"question {index}", "x" * 5000, "chat")
+        conversation.add(f"question {index}", "x" * 5000, "answer")
     recent = conversation.recent(ROUTER_VIEW)
     assert len(recent) == ROUTER_VIEW.turns
     assert recent[-1]["user"] == "question 9"
@@ -420,7 +438,7 @@ def test_verbose_verbosity_explains_routing_and_the_resolved_request(
     )
     config = config_for(isolated_home, project, "verbose")
     output = plain(gateway(config, provider, orchestrate=Recorder()).handle("fix it"))
-    assert "Routed as orchestration (router: router@1 (tiny via" in output
+    assert "Routed as ship/moderate (supervisor: supervisor@2 (tiny via" in output
     assert "Understood as: Fix the retry bug in route()" in output
 
 
@@ -485,12 +503,14 @@ def test_an_unpriced_paid_router_path_is_filtered_by_budget(isolated_home: Path)
     ("reply", "expected"),
     [
         (
-            '{"intent": "chat", "confident": true, "request": "Explain closures"}',
-            Verdict("chat", True, "Explain closures"),
+            '{"action":"answer","confident":true,"request":"Explain closures",'
+            '"repository":false,"complexity":"trivial"}',
+            Verdict("answer", True, "Explain closures"),
         ),
         (
-            '```json\n{"intent": "orchestration", "confident": false}\n```',
-            Verdict("orchestration", False, ""),
+            '```json\n{"action":"ship","confident":false,"request":"",'
+            '"repository":true,"complexity":"moderate"}\n```',
+            Verdict("ship", False, "", True, "moderate"),
         ),
     ],
 )
