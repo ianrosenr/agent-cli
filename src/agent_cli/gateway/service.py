@@ -44,8 +44,9 @@ from agent_cli.gateway.intent import (
 )
 from agent_cli.models import SUPERVISOR_POLICY, ModelRegistry, RegistryError, load_registry
 from agent_cli.orchestration.calls import PlanningUnavailable
-from agent_cli.orchestration.domain import Handoff, TaskKind
+from agent_cli.orchestration.domain import Handoff
 from agent_cli.state import PinKind, TaskStateError, TaskStore
+from agent_cli.terms import TaskKind
 from agent_cli.ui import blocks, error, muted
 
 type Orchestrate = Callable[[str, Handoff | None], RenderableType]
