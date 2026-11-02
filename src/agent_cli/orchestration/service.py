@@ -410,6 +410,13 @@ class OrchestrationService:
         problems += self.write_specs(call, items, planning, plan, repository)
         if problems:
             self.block([root.id], "planning is incomplete: " + "; ".join(problems))
+        elif len(items) == 1:
+            task_id, item = next(iter(items.items()))
+            if item.changes_code:
+                child = self.store.task(task_id)
+                if child is not None:
+                    complexity = root.complexity or ("trivial" if item.trivial else "moderate")
+                    return self.authorize_ship(child, config, registry, complexity)
         return render_plan(
             self.store,
             root.id,
