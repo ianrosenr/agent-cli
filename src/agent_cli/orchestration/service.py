@@ -63,7 +63,7 @@ from agent_cli.orchestration.spec_author import (
 from agent_cli.repository import RepositoryError, RepositoryFacts, RepositoryIndex, TaskInspector
 from agent_cli.skills import RoutingError, RoutingRequest, SignalClassifier, SkillError, SkillRouter
 from agent_cli.state import (
-    Approval,
+    AuthorizationStatus,
     PinKind,
     Task,
     TaskAuthorization,
@@ -250,7 +250,7 @@ class OrchestrationService:
             authorization = self.store.add_authorization(
                 task.id,
                 config.implementation.mode,
-                Approval.REJECTED,
+                AuthorizationStatus.REJECTED,
                 decision.reason,
                 spec_version=version,
                 decided_by=f"policy:{config.implementation.mode}",
@@ -270,7 +270,7 @@ class OrchestrationService:
         authorization = self.store.add_authorization(
             task.id,
             config.implementation.mode,
-            Approval.APPROVED,
+            AuthorizationStatus.APPROVED,
             decision.reason,
             spec_version=version,
             decided_by="policy:autopilot",
@@ -293,7 +293,7 @@ class OrchestrationService:
         if answer == "reject":
             rejected = self.store.decide_authorization(
                 authorization.id,
-                Approval.REJECTED,
+                AuthorizationStatus.REJECTED,
                 "user",
                 "user rejected implementation authority",
             )
@@ -305,7 +305,7 @@ class OrchestrationService:
 
         approved = self.store.decide_authorization(
             authorization.id,
-            Approval.APPROVED,
+            AuthorizationStatus.APPROVED,
             "user",
             "user approved bounded implementation authority",
         )
