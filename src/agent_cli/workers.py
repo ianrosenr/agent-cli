@@ -487,6 +487,8 @@ class WorkerExecutor:
         task: Task,
         authority: WorkerAuthority,
     ) -> None:
+        if self.config.implementation.mode == "plan-only":
+            raise WorkerLaunchError("plan-only mode forbids source-changing workers")
         authorization = self.store.latest_authorization(task.id)
         if authorization is None or authorization.status is not AuthorizationStatus.APPROVED:
             raise WorkerLaunchError(f"task {task.id} has no approved implementation authorization")
