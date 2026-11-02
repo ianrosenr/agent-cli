@@ -1137,7 +1137,13 @@ class ScriptedProvider(ProviderAdapter):
             raise AdapterError(self.failure, "scripted provider failed")
         payload = json.loads(request.prompt)
         if request.system == ROUTER_SYSTEM:
-            verdict = {"intent": "orchestration", "confident": True, "request": payload["message"]}
+            verdict = {
+                "action": "ship",
+                "confident": True,
+                "request": payload["message"],
+                "repository": True,
+                "complexity": "moderate",
+            }
             return ProviderResponse(request.model_id, json.dumps(verdict))
         if request.system == planner_module.SYSTEM:
             make = self.plan_reply or default_plan_reply
