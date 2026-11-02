@@ -60,7 +60,6 @@ def test_pending_authorization_reply_is_contextual_and_strict() -> None:
     assert authorization_answer("tell me more first") == "unclear"
 
 
-
 def test_risk_signal_forces_checkpoint_even_for_trivial_autopilot() -> None:
     decision = decide_authorization(
         config("autopilot"),
