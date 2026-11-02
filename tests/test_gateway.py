@@ -45,12 +45,12 @@ from agent_cli.models.provider_classifier import SYSTEM as SKILL_CLASSIFIER_SYST
 from agent_cli.orchestration import (
     FakePlanner,
     FakeSpecAuthor,
-    TaskBrief,
     ModelOutputError,
     OrchestrationService,
     PlanningInput,
     PlanProposal,
     ProposedQuestion,
+    TaskBrief,
 )
 from agent_cli.state import TaskStore
 from agent_cli.terms import AccessKind
