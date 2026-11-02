@@ -54,8 +54,6 @@ CLAUDE_CODE = CliHarnessProfile(
         "--output-format",
         "json",
         "--no-session-persistence",
-        "--permission-mode",
-        "plan",
         "--max-turns",
         "1",
     ),
