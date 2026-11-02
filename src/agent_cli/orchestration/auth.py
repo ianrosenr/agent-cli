@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from agent_cli.adapters import AdapterRegistry, Capability, ReadinessState
 from agent_cli.config import Config
-from agent_cli.config.model import HarnessConfig
 
 type LoginHarnesses = Callable[[tuple[str, ...]], bool]
 
@@ -19,7 +18,8 @@ class HarnessAuthCoordinator:
     login: LoginHarnesses | None = None
 
     def enabled(self, harness_id: str) -> bool:
-        return self.config.harnesses.get(harness_id, HarnessConfig()).enabled
+        entry = self.config.harnesses.get(harness_id)
+        return entry is not None and entry.enabled
 
     def ready(self, harness_id: str) -> bool:
         adapter = self.adapters.harness(harness_id)
