@@ -42,7 +42,15 @@ class Approval(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     VOIDED = "voided"
-    """Approval was withdrawn, for example by a material requirement change."""
+    """Spec approval was withdrawn, for example by a material requirement change."""
+
+
+class AuthorizationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    VOIDED = "voided"
+    """Implementation authority was withdrawn or superseded."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +127,7 @@ class TaskAuthorization:
 
     id: str
     task_id: str
-    status: Approval
+    status: AuthorizationStatus
     mode: ImplementationMode
     authority_profile: str
     spec_version: int | None
