@@ -265,7 +265,6 @@ class WorkerExecutor:
             raise WorkerLaunchError(f"harness {dispatch.harness_id!r} disappeared")
 
         workspace = WorktreeManager(self.root, self.config).create(task.id, kind)
-        mode = None if kind == "scout" else self.config.implementation.mode
         skills = self._skill_context(task.id)
         request = WorkerRequest(
             task.id,
@@ -278,7 +277,6 @@ class WorkerExecutor:
             model=Selection(dispatch.model_id, pinned="model" in pins),
             provider=Selection(dispatch.provider_id, pinned="provider" in pins),
             harness=Selection(dispatch.harness_id, pinned="harness" in pins),
-            mode=mode,
         )
         with _LAUNCH_LOCK:
             active = self._active_worker_count(task.session_id)
