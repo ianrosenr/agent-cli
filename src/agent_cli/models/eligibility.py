@@ -157,7 +157,6 @@ SUPERVISOR_POLICY = AnswerPolicy("supervisor", C.REASONING, FLOOR_SCORES["low"])
 """Root supervisor intake: prefer the cheapest adequate reachable model."""
 
 
-
 @dataclass(frozen=True, slots=True)
 class AnswerCandidate:
     model_id: str
