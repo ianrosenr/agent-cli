@@ -166,6 +166,35 @@ def test_offer_is_silent_when_everything_is_already_ready() -> None:
     assert conversation.output == []
 
 
+def test_repair_prompts_only_for_requested_expired_harnesses() -> None:
+    claude = FakeHarness("claude-code", "Claude Code", ReadinessState.AUTH_REQUIRED)
+    codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.READY)
+    login, conversation = service(claude, codex, answers=["y"])
+
+    assert login.repair(("claude-code",)) is True
+    assert claude.login_calls == 1
+    assert codex.login_calls == 0
+    assert conversation.output == ["Note  Opening Claude Code login..."]
+
+
+def test_repair_decline_returns_false_without_launching_login() -> None:
+    claude = FakeHarness("claude-code", "Claude Code", ReadinessState.AUTH_REQUIRED)
+    codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.READY)
+    login, _ = service(claude, codex, answers=["n"])
+
+    assert login.repair(("claude-code",)) is False
+    assert claude.login_calls == 0
+
+
+def test_repair_ready_harness_is_noninteractive() -> None:
+    claude = FakeHarness("claude-code", "Claude Code", ReadinessState.READY)
+    codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.READY)
+    login, conversation = service(claude, codex)
+
+    assert login.repair(("claude-code",)) is True
+    assert conversation.output == []
+
+
 def test_unknown_target_is_actionable() -> None:
     claude = FakeHarness("claude-code", "Claude Code", ReadinessState.READY)
     codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.READY)
