@@ -39,6 +39,8 @@ skills:
   paths: []
   activation: {}
   context_budget_tokens: 8000
+ui:
+  verbosity: concise
 harness_profiles: {}
 harnesses: {}
 providers: {}
@@ -77,6 +79,17 @@ def test_global_config_is_loaded(service: ConfigService, paths: ConfigPaths) -> 
     config = service.resolve()
     assert config.workers.max_concurrency == 5
     assert config.review.max_rounds == 3
+
+
+def test_ui_verbosity_accepts_only_supported_modes(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.global_file, {"ui": {"verbosity": "verbose"}})
+    assert service.resolve().ui.verbosity == "verbose"
+
+    write(paths.global_file, {"ui": {"verbosity": "noisy"}})
+    with pytest.raises(ConfigError, match="one of"):
+        service.resolve()
 
 
 def test_worker_concurrency_accepts_hard_max(service: ConfigService, paths: ConfigPaths) -> None:
