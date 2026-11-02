@@ -1934,9 +1934,7 @@ def test_restart_resumes_queued_work_without_replaying_completed_launches(
     assert status(store, root.id) is TaskStatus.COMPLETED
 
 
-def test_planner_retries_overlong_worker_goal(
-    store: TaskStore, config: ConfigService
-) -> None:
+def test_planner_retries_overlong_worker_goal(store: TaskStore, config: ConfigService) -> None:
     long_goal = "Inspect files and identify risks. " * 10
     orchestration = service(
         store,
