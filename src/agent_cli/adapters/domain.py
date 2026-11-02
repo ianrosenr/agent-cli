@@ -227,12 +227,12 @@ class WorkerRequest:
     """The task or spec text, or a reference to it."""
     working_directory: Path
     """The directory or worktree the worker runs in."""
+    authority: WorkerAuthority
+    """Technically enforced execution powers. Skills and role never expand these."""
     repository: str | None = None
     """The targeted repository context, such as its root or a short description."""
     skills: tuple[str, ...] = ()
     """Selected skills and policy context, already rendered for the worker."""
-    authority: WorkerAuthority
-    """Technically enforced execution powers. Skills and role never expand these."""
     model: Selection | None = None
     provider: Selection | None = None
     """The provider/access path."""
