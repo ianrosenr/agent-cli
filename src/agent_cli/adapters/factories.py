@@ -6,6 +6,7 @@ Runtime depends on these reusable factories, not concrete vendor classes.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import re
 from dataclasses import dataclass, field
 
 from agent_cli.adapters.anthropic import AnthropicProviderAdapter, ClientFactory, sdk_client
@@ -58,6 +59,13 @@ class ProviderFactoryRegistry:
 
 
 def profile_from_config(profile_id: str, config: CliProfileConfig) -> CliHarnessProfile:
+    for expression in config.auth_regexes:
+        try:
+            re.compile(expression)
+        except re.error as error:
+            raise AdapterFactoryError(
+                f"harness profile {profile_id!r}: invalid auth regex: {error}"
+            ) from None
     return CliHarnessProfile(
         id=profile_id,
         display_name=config.display_name,
