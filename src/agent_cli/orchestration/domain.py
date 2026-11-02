@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from agent_cli.state import ALL_CHILDREN, PIN_KINDS, PlannedPin, PlannedTask, PlanWrite
 from agent_cli.terms import CANONICAL_ROLES
