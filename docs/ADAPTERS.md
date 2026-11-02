@@ -33,6 +33,8 @@ The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude C
 
 Harness lifecycle is normalized alongside login: adapters may expose generic `install` and `update` capabilities. `/startup` can offer installation for enabled missing harnesses, while process startup can refresh configured `latest` harnesses through the same interface. Current Claude/Codex command details stay inside their adapters; issue #51 moves common CLI behavior into descriptors/factories.
 
+Harnesses may also expose the generic `direct_model` capability. Runtime wraps every configured, enabled direct-model harness in one `HarnessBackedProviderAdapter`; routing and orchestration then see an ordinary provider. The bridge owns no vendor logic: provider identity, advertised models, invocation, auth state, and usage all come from the harness capability. Claude Code and Codex are the first implementations.
+
 ### Claude Code harness (V1-10.5)
 
 `claude-code` (`src/agent_cli/adapters/claude_code.py`) wraps the installed Claude Code CLI and deliberately uses the user's Claude subscription login rather than the Anthropic API.
