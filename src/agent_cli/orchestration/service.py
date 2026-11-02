@@ -150,7 +150,10 @@ class OrchestrationService:
                         self.block([child.id], str(problem))
                 continue
             authorization = self.store.latest_authorization(child.id)
-            if authorization is not None and authorization.status is not AuthorizationStatus.APPROVED:
+            if (
+                authorization is not None
+                and authorization.status is not AuthorizationStatus.APPROVED
+            ):
                 continue  # never silently reauthorize rejected, voided, or gated work
             if authorization is not None and authorization.status is AuthorizationStatus.APPROVED:
                 response = self.launch_authorized_ship(
