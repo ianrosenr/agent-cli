@@ -46,6 +46,8 @@ DEFAULT_COMMAND = "codex"
 SUBSCRIPTION_PROVIDER_ID = "openai-subscription"
 READINESS_TIMEOUT_S = 5.0
 INTERRUPT_TIMEOUT_S = 2.0
+DIRECT_MODEL_TIMEOUT_S = 120.0
+DIRECT_MODEL_ID = "gpt-6-sol"
 
 # Codex exec can prefer environment credentials over the stored ChatGPT login. This
 # subscription-only harness removes alternate billing/auth routes from its child environment.
