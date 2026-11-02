@@ -18,14 +18,20 @@ from agent_cli.adapters import (
     WorkerRequest,
     WorkerStatus,
 )
-from agent_cli.adapters.cli_harness import CliHarnessAdapter
-from agent_cli.adapters.claude_code import (
-    BILLING_OVERRIDE_ENV,
-    HARNESS_ID,
-    SUBSCRIPTION_PROVIDER_ID,
-    ClaudeCodeHarnessAdapter,
+from agent_cli.adapters.cli_harness import (
+    CliHarnessAdapter,
     Process,
+    launch_process,
+    run_command,
+    run_direct_model,
+    run_git,
+    run_interactive,
 )
+from agent_cli.adapters.cli_profiles import CLAUDE_CODE
+
+HARNESS_ID = CLAUDE_CODE.id
+SUBSCRIPTION_PROVIDER_ID = CLAUDE_CODE.provider_id
+BILLING_OVERRIDE_ENV = CLAUDE_CODE.env_remove
 from agent_cli.config import Config
 from agent_cli.config.model import HarnessConfig
 from agent_cli.runtime import default_adapters
@@ -138,6 +144,28 @@ class FakeGit:
         return subprocess.CompletedProcess(argv, code, stdout, "")
 
 
+def claude_harness(
+    config: HarnessConfig | None = None,
+    runner=run_command,
+    launcher=launch_process,
+    git_runner=run_git,
+    environ: Mapping[str, str] | None = None,
+    interactive_runner=run_interactive,
+    direct_model_runner=run_direct_model,
+) -> CliHarnessAdapter:
+    return CliHarnessAdapter(
+        HARNESS_ID,
+        CLAUDE_CODE,
+        config or HarnessConfig(type="cli", profile=HARNESS_ID),
+        runner,
+        launcher,
+        git_runner,
+        dict(environ) if environ is not None else {"PATH": "/usr/bin"},
+        interactive_runner,
+        direct_model_runner,
+    )
+
+
 def request(tmp_path: Path, **changes: Any) -> WorkerRequest:
     values: dict[str, Any] = {
         "task_id": "task-1",
@@ -160,9 +188,9 @@ def adapter(
     launcher: FakeLauncher | None = None,
     git: FakeGit | None = None,
     config: HarnessConfig | None = None,
-) -> ClaudeCodeHarnessAdapter:
-    return ClaudeCodeHarnessAdapter(
-        config or HarnessConfig(),
+) -> CliHarnessAdapter:
+    return claude_harness(
+        config or HarnessConfig(type="cli", profile=HARNESS_ID),
         commands or FakeCommands(),
         launcher or FakeLauncher(),
         git or FakeGit(),
@@ -171,18 +199,18 @@ def adapter(
 
 
 def test_latest_version_policy_accepts_detected_claude_version() -> None:
-    readiness = adapter(config=HarnessConfig(version="latest")).readiness()
+    readiness = adapter(config=HarnessConfig(type="cli", profile=HARNESS_ID, version="latest")).readiness()
     assert readiness.state is ReadinessState.READY
 
 
 def test_exact_claude_version_policy_accepts_detected_version_token() -> None:
-    readiness = adapter(config=HarnessConfig(version="2.1.307")).readiness()
+    readiness = adapter(config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.1.307")).readiness()
     assert readiness.state is ReadinessState.READY
 
 
 def test_exact_claude_version_mismatch_fails_closed_before_auth() -> None:
     commands = FakeCommands()
-    readiness = adapter(commands=commands, config=HarnessConfig(version="2.0.0")).readiness()
+    readiness = adapter(commands=commands, config=HarnessConfig(type="cli", profile=HARNESS_ID, version="2.0.0")).readiness()
 
     assert readiness.state is ReadinessState.MISCONFIGURED
     assert "configured version '2.0.0'" in readiness.reason
@@ -201,8 +229,8 @@ def test_install_uses_latest_npm_package_and_rechecks_readiness() -> None:
         commands.missing = False
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID),
         commands,
         FakeLauncher(),
         FakeGit(),
@@ -225,8 +253,8 @@ def test_latest_update_uses_claude_native_updater() -> None:
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(version="latest"),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID, version="latest"),
         FakeCommands(),
         FakeLauncher(),
         FakeGit(),
@@ -248,8 +276,8 @@ def test_exact_update_uses_exact_claude_npm_version() -> None:
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(version="2.1.307"),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID, version="2.1.307"),
         FakeCommands(version="2.1.307 (Claude Code)\n"),
         FakeLauncher(),
         FakeGit(),
@@ -300,8 +328,8 @@ def test_direct_model_call_uses_exact_model_isolated_env_and_temp_directory() ->
         return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
 
     environ = {"PATH": "/usr/bin", **{name: "secret" for name in BILLING_OVERRIDE_ENV}}
-    harness = ClaudeCodeHarnessAdapter(
-        config=HarnessConfig(),
+    harness = claude_harness(
+        config=HarnessConfig(type="cli", profile=HARNESS_ID),
         runner=FakeCommands(),
         launcher=FakeLauncher(),
         git_runner=FakeGit(),
@@ -334,7 +362,7 @@ def test_direct_model_rejects_unadvertised_model_without_dispatch() -> None:
         calls.append(1)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    harness = ClaudeCodeHarnessAdapter(direct_model_runner=direct)
+    harness = claude_harness(direct_model_runner=direct)
     with pytest.raises(AdapterError) as raised:
         harness.invoke_model(ProviderRequest("other-model", "hello", None, 20))
 
@@ -362,8 +390,8 @@ def test_subscription_login_is_ready() -> None:
 @pytest.mark.parametrize("name", sorted(BILLING_OVERRIDE_ENV))
 def test_billing_overrides_are_isolated_from_claude_subscription(name: str) -> None:
     commands = FakeCommands()
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID),
         commands,
         FakeLauncher(),
         FakeGit(),
@@ -396,8 +424,8 @@ def test_login_uses_native_cli_and_rechecks_subscription_auth() -> None:
         commands.auth_returncode = 0
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID),
         commands,
         FakeLauncher(),
         FakeGit(),
@@ -600,8 +628,8 @@ def test_git_timeout_is_normalized(tmp_path: Path) -> None:
     def timeout_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(argv, 5)
 
-    harness = ClaudeCodeHarnessAdapter(
-        HarnessConfig(),
+    harness = claude_harness(
+        HarnessConfig(type="cli", profile=HARNESS_ID),
         FakeCommands(),
         FakeLauncher(),
         timeout_git,
@@ -635,7 +663,7 @@ def test_runtime_registers_claude_code_without_persisting_auth() -> None:
 
 
 def test_runtime_bridges_configured_harness_to_subscription_provider() -> None:
-    registry = default_adapters(Config(harnesses={"claude-code": HarnessConfig()}))
+    registry = default_adapters(Config(harnesses={"claude-code": HarnessConfig(type="cli", profile=HARNESS_ID)}))
     harness = registry.harness("claude-code")
     assert isinstance(harness, CliHarnessAdapter)
     harness.runner = FakeCommands()
