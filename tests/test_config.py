@@ -279,9 +279,7 @@ def test_user_cli_profiles_are_valid_global_config(
                     "auth_regexes": ["signed in"],
                 }
             },
-            "harnesses": {
-                "example": {"type": "cli", "profile": "example", "enabled": True}
-            },
+            "harnesses": {"example": {"type": "cli", "profile": "example", "enabled": True}},
         },
     )
 
@@ -309,6 +307,7 @@ def test_executable_harness_profiles_are_global_only(
     with pytest.raises(ConfigError, match="may only be defined in global config"):
         service.resolve()
 
+    assert paths.project_file is not None
     paths.project_file.unlink()
     with pytest.raises(ConfigError, match="may only be defined in global config"):
         service.set_session({"harness_profiles": {"example": profile}})
