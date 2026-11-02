@@ -81,7 +81,12 @@ class Conversation:
 
 
 def configured(*ids: str, version: str = "latest") -> Config:
-    return Config(harnesses={id: HarnessConfig(version=version) for id in ids})
+    return Config(
+        harnesses={
+            id: HarnessConfig(type="cli", profile=id, version=version)
+            for id in ids
+        }
+    )
 
 
 def test_offer_install_only_installs_missing_configured_harness() -> None:
