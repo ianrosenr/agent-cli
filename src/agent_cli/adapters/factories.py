@@ -67,7 +67,7 @@ def cli_factory(
     known = BUILTIN_CLI_PROFILES if profiles is None else profiles
 
     def build(harness_id: str, config: HarnessConfig) -> HarnessAdapter:
-        profile_name = config.profile or harness_id
+        profile_name = config.profile
         profile = known.get(profile_name)
         if profile is None:
             raise AdapterFactoryError(
