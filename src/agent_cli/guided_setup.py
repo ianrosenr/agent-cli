@@ -236,10 +236,10 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         "implementation.mode",
         "Implementation mode",
-        "How workers apply changes once a plan is approved.\n"
-        "  autopilot  = make every approved change without asking each time\n"
-        "  checkpoint = ask before each batch of changes\n"
-        "  plan-only  = change no files; explain the plan instead",
+        "When Agent CLI may grant source-write authority.\n"
+        "  autopilot  = grant it automatically only for sufficiently bounded work\n"
+        "  checkpoint = require explicit approval for the current bounded task/spec\n"
+        "  plan-only  = never grant source-write authority",
         f"Type {', '.join(IMPLEMENTATION_MODES[:-1])}, or {IMPLEMENTATION_MODES[-1]}.",
         "checkpoint",
         parse_mode,
