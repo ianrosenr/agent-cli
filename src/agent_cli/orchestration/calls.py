@@ -17,9 +17,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
-from agent_cli.adapters import AdapterError, AdapterRegistry, ProviderRequest
+from agent_cli.adapters import AdapterError, AdapterRegistry, ErrorKind, ProviderRequest
 from agent_cli.budget import (
     BudgetBlocked,
+    BudgetedPaths,
     BudgetError,
     BudgetGuard,
     BudgetRejected,
@@ -47,6 +48,21 @@ from agent_cli.terms import AccessKind, Role
 
 class PlanningUnavailable(Exception):
     """No model path can make this call now. Nothing was substituted; the user must act."""
+
+
+RECOVERABLE_INVOCATION_ERRORS = frozenset(
+    {
+        ErrorKind.NOT_FOUND,
+        ErrorKind.AUTH_REQUIRED,
+        ErrorKind.AUTH_FAILED,
+        ErrorKind.UNAVAILABLE,
+        ErrorKind.RATE_LIMITED,
+        ErrorKind.TIMEOUT,
+        ErrorKind.PROVIDER_ERROR,
+        ErrorKind.HARNESS_ERROR,
+    }
+)
+"""Failures of one runtime path that may justify trying another path honoring the same pins."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,24 +107,48 @@ class DirectModelCall:
     def __call__(
         self, role: Role, purpose: str, system: str, prompt: str, max_output_tokens: int
     ) -> ModelReply:
-        quote = self.choose(role, purpose, system, prompt, max_output_tokens)
-        adapter = self.adapters.provider(quote.path.provider.id)
-        if adapter is None:
-            raise PlanningUnavailable(f"provider {quote.path.provider.id} is not registered")
-        request = ProviderRequest(quote.path.model_id, prompt, system, max_output_tokens)
+        failures: list[str] = []
+        for quote in self.choices(role, purpose, system, prompt, max_output_tokens):
+            adapter = self.adapters.provider(quote.path.provider.id)
+            if adapter is None:
+                failures.append(f"{quote.describe()}: provider is not registered")
+                continue
+            request = ProviderRequest(quote.path.model_id, prompt, system, max_output_tokens)
+            try:
+                response = self.guard.invoke(adapter, request, purpose, task_id=self.root_task_id)
+            except (BudgetRejected, BudgetError) as error:
+                raise PlanningUnavailable(f"{purpose} via {quote.describe()}: {error}") from error
+            except AdapterError as error:
+                if error.kind not in RECOVERABLE_INVOCATION_ERRORS:
+                    raise PlanningUnavailable(
+                        f"{purpose} via {quote.describe()} failed: {error}"
+                    ) from error
+                failures.append(f"{quote.describe()}: {error}")
+                continue
+            reply = ModelReply(
+                response.text, quote.path.model_id, quote.path.provider.id, quote.call.access
+            )
+            self.replies.append(reply)
+            return reply
+
+        detail = "; ".join(failures) or "no runnable provider path remained"
+        raise PlanningUnavailable(f"{purpose} failed on every eligible path ({detail})")
+
+    def choices(
+        self,
+        role: Role,
+        purpose: str,
+        system: str,
+        prompt: str,
+        max_output_tokens: int,
+    ) -> tuple[PathQuote, ...]:
+        """All budget-compliant paths in routing order, preserving explicit pins."""
+        budgeted = self._budgeted(role, purpose, system, prompt, max_output_tokens)
         try:
-            response = self.guard.invoke(adapter, request, purpose, task_id=self.root_task_id)
-        except (BudgetRejected, BudgetError) as error:
-            raise PlanningUnavailable(f"{purpose} via {quote.describe()}: {error}") from error
-        except AdapterError as error:
-            raise PlanningUnavailable(
-                f"{purpose} via {quote.describe()} failed: {error}"
-            ) from error
-        reply = ModelReply(
-            response.text, quote.path.model_id, quote.path.provider.id, quote.call.access
-        )
-        self.replies.append(reply)
-        return reply
+            budgeted.first(purpose)
+        except BudgetBlocked as error:
+            raise PlanningUnavailable(str(error)) from error
+        return budgeted.paths
 
     def choose(
         self,
@@ -118,12 +158,18 @@ class DirectModelCall:
         prompt: str,
         max_output_tokens: int,
     ) -> PathQuote:
-        """The budget-compliant path for this call. Reserves nothing.
+        """The preferred budget-compliant path. Reserves nothing."""
+        return self._budgeted(role, purpose, system, prompt, max_output_tokens).first(purpose)
 
-        Paid quotes use the same trusted provider/model-specific input bound that BudgetGuard
-        will enforce at dispatch; an untrusted generic byte+overhead estimate never chooses the
-        paid path.
-        """
+    def _budgeted(
+        self,
+        role: Role,
+        purpose: str,
+        system: str,
+        prompt: str,
+        max_output_tokens: int,
+    ) -> BudgetedPaths:
+        """Return every admissible path in routing order without reserving spend."""
         preference = self.config.access.preference
         context = DEFAULT_ESTIMATOR.estimate(system + prompt) + max_output_tokens
         try:
@@ -184,7 +230,7 @@ class DirectModelCall:
                 if not quotes:
                     raise PlanningUnavailable(self.no_candidates(role, provider))
                 budgeted = rank_quotes(quotes, preference)
-            return budgeted.first(purpose)
+            return budgeted
         except (ModelRoutingError, BudgetBlocked) as error:
             raise PlanningUnavailable(str(error)) from error
 
