@@ -31,6 +31,8 @@ Core code depends only on these types. Adding an adapter means implementing an i
 
 The interfaces, fakes, and `/startup` / `/providers` integration exist. Claude Code and Codex CLI are the first two real subscription harnesses; Pi is next as the portability test.
 
+Harness lifecycle is normalized alongside login: adapters may expose generic `install` and `update` capabilities. `/startup` can offer installation for enabled missing harnesses, while process startup can refresh configured `latest` harnesses through the same interface. Current Claude/Codex command details stay inside their adapters; issue #51 moves common CLI behavior into descriptors/factories.
+
 ### Claude Code harness (V1-10.5)
 
 `claude-code` (`src/agent_cli/adapters/claude_code.py`) wraps the installed Claude Code CLI and deliberately uses the user's Claude subscription login rather than the Anthropic API.
