@@ -114,9 +114,9 @@ def orchestrator(
                         return False
                     if "subscription" not in settings.access.preference:
                         return False
-                    return HarnessLoginService(
-                        registry, settings, read_line, write_line
-                    ).repair(harness_ids)
+                    return HarnessLoginService(registry, settings, read_line, write_line).repair(
+                        harness_ids
+                    )
 
             service = OrchestrationService(
                 tasks,
