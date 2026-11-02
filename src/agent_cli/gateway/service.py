@@ -44,7 +44,7 @@ from agent_cli.gateway.intent import (
 )
 from agent_cli.models import ROUTER_POLICY, ModelRegistry, RegistryError, load_registry
 from agent_cli.orchestration.calls import PlanningUnavailable
-from agent_cli.orchestration.domain import Handoff
+from agent_cli.orchestration.domain import Handoff, TaskKind
 from agent_cli.state import PinKind, TaskStateError, TaskStore
 from agent_cli.ui import blocks, error, muted
 
@@ -123,7 +123,7 @@ class RootPromptGateway:
         """Hand the resolved request, and the conversation it came from, to the orchestrator."""
         if self.orchestrate is None:
             return NO_REPOSITORY
-        kind = "scout" if decision.action == "scout" else "ship"
+        kind: TaskKind = "scout" if decision.action == "scout" else "ship"
         handoff = Handoff(
             decision.request or text,
             self.conversation.transcript(HANDOFF_VIEW),
