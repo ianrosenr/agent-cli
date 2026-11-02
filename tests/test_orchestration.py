@@ -416,9 +416,7 @@ def test_complex_single_ship_requires_checkpoint_even_in_autopilot(
     assert authorization is not None and authorization.status is AuthorizationStatus.PENDING
 
 
-def test_trivial_ship_plan_only_never_launches(
-    store: TaskStore, config: ConfigService
-) -> None:
+def test_trivial_ship_plan_only_never_launches(store: TaskStore, config: ConfigService) -> None:
     config.set_session(
         {
             "ui": {"verbosity": "normal"},
