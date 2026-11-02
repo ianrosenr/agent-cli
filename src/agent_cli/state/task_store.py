@@ -14,6 +14,7 @@ import difflib
 import json
 import sqlite3
 import uuid
+from threading import RLock
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, fields, replace
@@ -87,6 +88,8 @@ class TaskStore:
         self._migrations = migrations
         self._clock = clock
         self._connection: sqlite3.Connection | None = None
+        self._lock = RLock()
+        """Serialize one connection across foreground and background worker threads."""
 
     @classmethod
     def for_repository(cls, root: Path) -> TaskStore:
@@ -97,20 +100,27 @@ class TaskStore:
         return self.path.is_file()
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     @property
     def _db(self) -> sqlite3.Connection:
-        if self._connection is None:
-            self._connection = self._open()
-        return self._connection
+        with self._lock:
+            if self._connection is None:
+                self._connection = self._open()
+            return self._connection
 
     def _open(self) -> sqlite3.Connection:
         try:
             ensure_private_dir(self.path.parent)
-            connection = sqlite3.connect(self.path, timeout=BUSY_TIMEOUT, isolation_level=None)
+            connection = sqlite3.connect(
+                self.path,
+                timeout=BUSY_TIMEOUT,
+                isolation_level=None,
+                check_same_thread=False,
+            )
         except (OSError, sqlite3.Error) as error:
             raise TaskStateError(f"cannot open task state at {self.path}: {error}") from error
         connection.row_factory = sqlite3.Row
@@ -124,26 +134,28 @@ class TaskStore:
 
     @contextmanager
     def _write(self) -> Iterator[sqlite3.Connection]:
-        db = self._db
-        try:
-            db.execute("BEGIN IMMEDIATE")
-        except sqlite3.Error as error:
-            raise TaskStateError(f"cannot update task state: {error}") from error
-        try:
-            yield db
-            db.execute("COMMIT")
-        except sqlite3.Error as error:
-            rollback(db)
-            raise TaskStateError(f"cannot update task state: {error}") from error
-        except BaseException:
-            rollback(db)
-            raise
+        with self._lock:
+            db = self._db
+            try:
+                db.execute("BEGIN IMMEDIATE")
+            except sqlite3.Error as error:
+                raise TaskStateError(f"cannot update task state: {error}") from error
+            try:
+                yield db
+                db.execute("COMMIT")
+            except sqlite3.Error as error:
+                rollback(db)
+                raise TaskStateError(f"cannot update task state: {error}") from error
+            except BaseException:
+                rollback(db)
+                raise
 
     def _read(self, sql: str, *params: Any) -> list[sqlite3.Row]:
-        try:
-            return self._db.execute(sql, params).fetchall()
-        except sqlite3.Error as error:
-            raise TaskStateError(f"cannot read task state: {error}") from error
+        with self._lock:
+            try:
+                return self._db.execute(sql, params).fetchall()
+            except sqlite3.Error as error:
+                raise TaskStateError(f"cannot read task state: {error}") from error
 
     def _event(
         self,
