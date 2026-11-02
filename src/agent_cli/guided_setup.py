@@ -289,6 +289,13 @@ HARNESS_DEFAULTS: dict[str, bool] = {
     "harnesses.codex-cli.enabled": True,
 }
 
+HARNESS_METADATA: RawConfig = {
+    "harnesses": {
+        "claude-code": {"type": "cli", "profile": "claude-code"},
+        "codex-cli": {"type": "cli", "profile": "codex-cli"},
+    }
+}
+
 
 def lookup(data: Mapping[str, Any], key: str) -> Any:
     value: Any = data
@@ -317,7 +324,8 @@ def nested(key: str, value: Any) -> RawConfig:
 
 
 def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
-    """``layer_data`` with every answer so far applied."""
+    """Layer data with answers and explicit built-in harness descriptors applied."""
+    layer_data = merge(layer_data, HARNESS_METADATA)
     for key, value in answers.items():
         layer_data = merge(layer_data, nested(key, value))
     return layer_data
@@ -625,7 +633,7 @@ class GuidedSetup:
         what the project would inherit from global config, and removes project overrides that
         were set back to the inherited value, so the project keeps following global changes.
         """
-        changes: RawConfig = {}
+        changes: RawConfig = merge({}, HARNESS_METADATA)
         removals: list[str] = []
         for key, value in answers.items():
             if target is Layer.GLOBAL or value != lookup(inherited, key):
