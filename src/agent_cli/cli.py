@@ -144,14 +144,14 @@ def orchestrator(
 
     # Resume already persisted queues at startup, without creating a new task.
     if tasks.exists():
-        session = tasks.latest_session()
-        if session is not None and session.open:
-            queued = any(
-                task.parent_id is not None and task.status.value == "pending"
-                for task in tasks.tasks(session.id)
-            )
-            if queued:
-                ensure_service().resume_queued()
+        queued = any(
+            task.parent_id is not None and task.status.value == "pending"
+            for session in tasks.sessions()
+            if session.open
+            for task in tasks.tasks(session.id)
+        )
+        if queued:
+            ensure_service().resume_queued()
     return orchestrate
 
 
