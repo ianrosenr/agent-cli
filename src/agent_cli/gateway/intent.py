@@ -28,6 +28,7 @@ type DecisionSource = Literal["fast-path", "supervisor", "default"]
 ROOT_ACTIONS: tuple[str, ...] = get_args(RootAction.__value__)
 COMPLEXITIES: tuple[str, ...] = get_args(Complexity.__value__)
 
+
 @dataclass(frozen=True, slots=True)
 class SupervisorDecision:
     action: RootAction
@@ -46,6 +47,7 @@ class SupervisorDecision:
     def describe(self) -> str:
         context = ", repository" if self.repository else ""
         return f"{self.action}/{self.complexity}{context} ({self.source}: {self.reason})"
+
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
@@ -121,6 +123,7 @@ SUPERVISOR_KEYS = ("action", "confident", "request", "repository", "complexity",
 
 type SupervisorCall = Callable[[str, str, int], tuple[str, str]]
 
+
 @dataclass(slots=True)
 class ProviderSupervisor:
     """One bounded semantic-intake call through generic provider routing."""
@@ -179,6 +182,7 @@ def parse_verdict(reply: str) -> Verdict:
         answer,
     )
 
+
 @dataclass(slots=True)
 class FakeSupervisor:
     script: list[Verdict | Exception]
@@ -193,6 +197,7 @@ class FakeSupervisor:
         if isinstance(step, Exception):
             raise step
         return step
+
 
 @dataclass(slots=True)
 class SupervisorRouter:
