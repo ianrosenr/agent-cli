@@ -7,11 +7,11 @@ Pending planning questions and checkpoint authorization gates both survive resta
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-import threading
 
 from rich.console import RenderableType
 
