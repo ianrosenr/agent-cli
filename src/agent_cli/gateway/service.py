@@ -123,10 +123,11 @@ class RootPromptGateway:
         """Hand the resolved request, and the conversation it came from, to the orchestrator."""
         if self.orchestrate is None:
             return NO_REPOSITORY
+        kind = "scout" if decision.action == "scout" else "ship"
         handoff = Handoff(
             decision.request or text,
             self.conversation.transcript(HANDOFF_VIEW),
-            decision.action,
+            kind,
             decision.complexity,
         )
         output = self.orchestrate(text, handoff)
