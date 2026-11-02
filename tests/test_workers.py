@@ -326,3 +326,43 @@ def test_write_worker_requires_current_approved_authorization(tmp_path: Path) ->
     )
 
     assert "completed" in started
+
+
+
+def test_changed_spec_voids_write_authorization_before_launch(tmp_path: Path) -> None:
+    root = repository(tmp_path)
+    store = TaskStore.for_repository(root)
+    session = store.start_session()
+    parent, _ = store.start_root_task(
+        session.id,
+        "Change cache behavior",
+        kind="ship",
+        complexity="moderate",
+    )
+    child = store.create_task(
+        session.id,
+        "Change cache behavior",
+        parent_id=parent.id,
+        role="implementer",
+    )
+    first = store.add_spec_version(child.id, "Bounded spec v1")
+    store.add_authorization(
+        child.id,
+        "autopilot",
+        AuthorizationStatus.APPROVED,
+        "bounded",
+        spec_version=first.version,
+        decided_by="policy:autopilot",
+    )
+    store.add_spec_version(child.id, "Bounded spec v2")
+    adapters, _ = runtime(auto_finish=True)
+    executor = WorkerExecutor(store, adapters, registry(), Config(), root)
+
+    with pytest.raises(WorkerLaunchError, match="no approved implementation authorization"):
+        executor.launch(
+            child,
+            "ship",
+            "moderate",
+            "Bounded spec v2",
+            IMPLEMENTATION_AUTHORITY,
+        )
