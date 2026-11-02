@@ -416,8 +416,6 @@ class WorkerExecutor:
         *,
         notify: bool,
     ) -> None:
-        worker = self.store.workers(task_id)
-        recorded = next((item for item in worker if item.id == worker_id), None)
         authority = DIAGNOSTIC_AUTHORITY if kind == "scout" else IMPLEMENTATION_AUTHORITY
         if (
             not authority.modify_source
