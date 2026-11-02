@@ -144,8 +144,10 @@ class DirectModelCall:
     ) -> tuple[PathQuote, ...]:
         """All budget-compliant paths in routing order, preserving explicit pins."""
         budgeted = self._budgeted(role, purpose, system, prompt, max_output_tokens)
-        if not budgeted.paths:
+        try:
             budgeted.first(purpose)
+        except BudgetBlocked as error:
+            raise PlanningUnavailable(str(error)) from error
         return budgeted.paths
 
     def choose(
