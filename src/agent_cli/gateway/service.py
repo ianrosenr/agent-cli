@@ -155,9 +155,9 @@ class RootPromptGateway:
             return True  # let orchestration report the broken state
 
     def build_router(self, config: Config, calls: AnswerCalls) -> SemanticRouter | None:
-        """The cheapest adequate model path, or the user's selected low-cost model; budgeted
-        like every other call. ``routing.classifier.mode: disabled`` turns routing off, and every
-        turn is then answered read-only."""
+        """Auto uses only a free/low-cost adequate router model; selected uses the exact model.
+        Every call is still budgeted. ``routing.classifier.mode: disabled`` turns routing off,
+        and every turn is then answered read-only."""
         if self.router is not None:
             return self.router(config, calls.registry)
         settings = config.routing.classifier
