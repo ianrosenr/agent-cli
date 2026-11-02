@@ -214,7 +214,29 @@ def test_unknown_target_is_actionable() -> None:
     output = plain(login.run("other"))
 
     assert "Unknown login target" in output
-    assert "/login claude" in output and "/login codex" in output
+    assert "/login <configured-harness-id>" in output
+
+
+def test_targeted_login_accepts_any_configured_harness_id() -> None:
+    custom = FakeHarness("example", "Example CLI", ReadinessState.AUTH_REQUIRED)
+    registry = AdapterRegistry([custom])
+    config = Config(
+        harnesses={
+            "example": HarnessConfig(type="cli", profile="example"),
+        }
+    )
+    conversation = Conversation([])
+    login = HarnessLoginService(
+        registry,
+        config,
+        conversation.read_line,
+        conversation.write_line,
+    )
+
+    output = plain(login.run("example"))
+
+    assert custom.login_calls == 1
+    assert "signed in" in output
 
 
 def test_unconfigured_harnesses_are_not_logged_in() -> None:
