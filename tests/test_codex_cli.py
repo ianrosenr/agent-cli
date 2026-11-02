@@ -192,6 +192,78 @@ def test_exact_codex_version_mismatch_fails_closed_before_auth() -> None:
     assert len(commands.calls) == 1
 
 
+def test_install_uses_latest_codex_npm_package_and_rechecks_readiness() -> None:
+    commands = FakeCommands(missing=True)
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        commands.missing = False
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = CodexCliHarnessAdapter(
+        HarnessConfig(),
+        commands,
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    after = harness.install()
+
+    assert calls == [("npm", "install", "-g", "@openai/codex@latest")]
+    assert after.state is ReadinessState.READY
+
+
+def test_latest_update_uses_latest_codex_npm_package() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = CodexCliHarnessAdapter(
+        HarnessConfig(version="latest"),
+        FakeCommands(),
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    harness.update()
+
+    assert calls == [("npm", "install", "-g", "@openai/codex@latest")]
+
+
+def test_exact_update_uses_exact_codex_npm_version() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def lifecycle(
+        argv: tuple[str, ...], env: Mapping[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    harness = CodexCliHarnessAdapter(
+        HarnessConfig(version="0.120.0"),
+        FakeCommands(version="codex-cli 0.120.0\n"),
+        FakeLauncher(),
+        FakeGit(),
+        {"PATH": "/usr/bin"},
+        lifecycle,
+    )
+
+    harness.update()
+
+    assert calls == [("npm", "install", "-g", "@openai/codex@0.120.0")]
+
+
 def test_missing_executable_is_not_detected() -> None:
     readiness = adapter(commands=FakeCommands(missing=True)).readiness()
     assert readiness.state is ReadinessState.NOT_DETECTED
