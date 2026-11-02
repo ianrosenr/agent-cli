@@ -44,6 +44,11 @@ def test_complex_ship_requires_checkpoint_even_in_autopilot() -> None:
     assert decision.action == "checkpoint"
 
 
+def test_complex_ship_without_spec_is_blocked_even_in_checkpoint() -> None:
+    for mode in ("autopilot", "checkpoint"):
+        assert decide_authorization(config(mode), "complex", None).action == "block"
+
+
 def test_checkpoint_always_requires_explicit_user_approval() -> None:
     decision = decide_authorization(config("checkpoint"), "trivial", None)
     assert decision.action == "checkpoint"
