@@ -16,8 +16,8 @@ from agent_cli.adapters import (
 )
 from agent_cli.adapters.fake import FakeHarnessAdapter, FakeProviderAdapter
 from agent_cli.config import Config
-from agent_cli.models import ModelCapability, parse_registry
-from agent_cli.state import TaskStore
+from agent_cli.models import ModelCapability, ModelRegistry, parse_registry
+from agent_cli.state import Task, TaskStore
 from agent_cli.workers import WorkerDispatcher, WorkerExecutor
 
 
@@ -58,7 +58,7 @@ def model(id: str, *, cost: str, score: int) -> dict[str, Any]:
     }
 
 
-def registry():
+def registry() -> ModelRegistry:
     return parse_registry(
         {
             "version": 1,
@@ -84,7 +84,7 @@ def runtime(auto_finish: bool = True) -> tuple[AdapterRegistry, FakeHarnessAdapt
     return AdapterRegistry([harness], [provider]), harness
 
 
-def task(store: TaskStore):
+def task(store: TaskStore) -> Task:
     session = store.start_session()
     root, _ = store.start_root_task(
         session.id,
