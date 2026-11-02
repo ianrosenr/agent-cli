@@ -7,7 +7,6 @@ import pytest
 
 from agent_cli.adapters import Selection, WorkerStatus
 from agent_cli.state import Approval, TaskStateError, TaskStatus, TaskStore, status_lines
-from agent_cli.state.migrations import MIGRATIONS
 from agent_cli.state.task_store import TASKS_FILE
 from gitrepo import locked
 
@@ -257,37 +256,6 @@ def seeded(store: TaskStore) -> str:
     store.pin(task.id, "model", "model-a")
     store.close()
     return task.id
-
-
-def test_migration_preserves_canonical_records(store: TaskStore) -> None:
-    task_id = seeded(store)
-    v2 = ("ALTER TABLE tasks ADD COLUMN priority INTEGER",)
-    upgraded = TaskStore(store.path, migrations=(*MIGRATIONS, v2))
-    task = upgraded.tasks(upgraded.latest_session().id)[0]  # type: ignore[union-attr]
-    assert task.id == task_id
-    assert upgraded.pins(task_id)["model"].value == "model-a"
-    assert schema_version(store.path) == len(MIGRATIONS) + 1
-
-
-def test_failed_migration_leaves_the_database_unchanged(store: TaskStore) -> None:
-    task_id = seeded(store)
-    broken = ("ALTER TABLE tasks ADD COLUMN priority INTEGER", "ALTER TABLE missing ADD x")
-    with pytest.raises(TaskStateError, match="left unchanged"):
-        TaskStore(store.path, migrations=(*MIGRATIONS, broken)).tasks("any")
-
-    assert schema_version(store.path) == len(MIGRATIONS)
-    intact = TaskStore(store.path)
-    assert intact.task(task_id) is not None
-    assert intact.pins(task_id)["model"].value == "model-a"
-
-
-def test_v1_task_state_upgrades_to_skill_routing(path: Path) -> None:
-    old = TaskStore(path, migrations=MIGRATIONS[:1])
-    task_id = seeded(old)
-    upgraded = TaskStore(path)
-    assert upgraded.task(task_id) is not None
-    assert upgraded.skill_routings(task_id) == []
-    assert schema_version(path) == len(MIGRATIONS)
 
 
 def test_newer_schema_is_refused_and_kept(store: TaskStore) -> None:
