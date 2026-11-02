@@ -343,9 +343,11 @@ class WorkerExecutor:
                 if original is None or original.status is not TaskStatus.COMPLETED:
                     raise WorkerLaunchError("cannot launch until all predecessors finish")
                 records = self.store.workers(predecessor)
+                if original.role != "implementer":
+                    continue
                 if records and records[-1].worktree:
                     sources.append(Path(records[-1].worktree))
-                elif records and original.role == "implementer":
+                elif records:
                     raise WorkerLaunchError("predecessor has no integration workspace")
             manager.inherit(workspace, sources)
         skills = self._skill_context(task.id)
