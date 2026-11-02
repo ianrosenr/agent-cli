@@ -107,6 +107,29 @@ After floor filtering, V1-07 ranks candidates deterministically by primary capab
 
 **Risk escalation** may raise an affected reviewer's floor to `high` for authentication, authorization, cryptography, destructive operations, important migrations, public API changes, repeated failures, unresolved reviewer/implementer disagreement, or significant deviation from spec.
 
+## Supervisor-intake model selection
+
+Root conversational intake is separate from worker dispatch and skill classification.
+
+```yaml
+routing:
+  supervisor:
+    mode: auto                 # auto | selected | disabled
+    selected_model: null
+```
+
+The supervisor-intake floor is intentionally low: reasoning >= 2. In `auto`, choose the cheapest
+adequate reachable model, then latency/capability/confidence. Unlike the optional skill classifier,
+semantic supervisor intake should not disappear merely because no free/low-cost model is currently
+configured; use the cheapest adequate reachable path so repository work is not mistaken for generic
+chat.
+
+`selected` is an explicit hard model choice for supervisor intake. `disabled` skips semantic
+intake and keeps root turns read-only. This setting does not affect `routing.classifier`.
+
+The supervisor estimates task complexity, but worker model/provider/harness allocation happens
+later. A strong supervisor model must not automatically become the worker model.
+
 ## Skill-classifier model selection
 
 The V1-06 semantic skill classifier is optional. Agent CLI does not require a special "System-1 provider."
