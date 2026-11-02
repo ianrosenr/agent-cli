@@ -99,7 +99,7 @@ class WorkerDispatcher:
                 for path in candidate.paths
             ]
 
-        for model_id, path in paths:
+        for _, path in paths:
             if provider_pin and path.provider.id != provider_pin:
                 continue
             # Worker execution over paid API is held until harness-level hard spend bounds exist.
