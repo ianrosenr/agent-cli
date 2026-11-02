@@ -146,7 +146,6 @@ class TaskBrief:
     complexity: TaskComplexity = "moderate"
 
 
-
 # -- Planner output ----------------------------------------------------------------------------
 
 
