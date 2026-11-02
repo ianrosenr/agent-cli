@@ -378,7 +378,7 @@ def test_direct_model_failure_surfaces_sanitized_diagnostic() -> None:
             f"Authentication expired. echoed input: {prompt}",
         )
 
-    harness = claude_harness(direct_model_runner=direct)
+    harness = claude_harness(runner=FakeCommands(), direct_model_runner=direct)
 
     with pytest.raises(AdapterError) as raised:
         harness.invoke_model(
