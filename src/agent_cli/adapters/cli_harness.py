@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import uuid
@@ -67,6 +68,7 @@ class Process(Protocol):
 class AuthPattern:
     source: Literal["stdout", "stderr"] = "stdout"
     contains: str | None = None
+    regexes: tuple[str, ...] = ()
     json_any: tuple[Mapping[str, object], ...] = ()
 
 
@@ -563,6 +565,8 @@ def auth_matches(result: subprocess.CompletedProcess[str], pattern: AuthPattern)
     text = result.stdout if pattern.source == "stdout" else result.stderr
     if pattern.contains is not None:
         return pattern.contains in text
+    if pattern.regexes:
+        return any(re.search(expression, text) is not None for expression in pattern.regexes)
     payload = json_object(text)
     if payload is None:
         return False
