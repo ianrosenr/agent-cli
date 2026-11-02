@@ -22,6 +22,11 @@ def test_pending_dependency_blocks_dispatch(tmp_path) -> None:
     root, _ = store.start_root_task(session.id, "Ship feature", kind="ship")
     upstream = store.create_task(session.id, "Upstream", parent_id=root.id, role="implementer")
     downstream = store.create_task(session.id, "Downstream", parent_id=root.id, role="implementer")
-    # The scheduler is intentionally pure; dependency wiring comes from persist_plan.
+    store.add_dependency(downstream.id, upstream.id)
+    assert evaluate_task(store, downstream).readiness is Readiness.WAITING
+    assert ready_tasks(store, root.id) == [upstream]
+    store.set_status(upstream.id, TaskStatus.COMPLETED)
     assert evaluate_task(store, downstream).readiness is Readiness.READY
-    assert upstream in ready_tasks(store, root.id)
+    assert ready_tasks(store, root.id) == [downstream]
+    store.set_status(upstream.id, TaskStatus.FAILED)
+    assert evaluate_task(store, downstream).readiness is Readiness.FAILED
