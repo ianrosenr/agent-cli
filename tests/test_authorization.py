@@ -58,3 +58,15 @@ def test_pending_authorization_reply_is_contextual_and_strict() -> None:
     assert authorization_answer("go ahead") == "approve"
     assert authorization_answer("No.") == "reject"
     assert authorization_answer("tell me more first") == "unclear"
+
+
+
+def test_risk_signal_forces_checkpoint_even_for_trivial_autopilot() -> None:
+    decision = decide_authorization(
+        config("autopilot"),
+        "trivial",
+        None,
+        ("authentication",),
+    )
+    assert decision.action == "checkpoint"
+    assert "authentication" in decision.reason
