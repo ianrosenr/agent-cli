@@ -42,9 +42,7 @@ class DirectHarness(HarnessAdapter):
         )
 
     def direct_models(self) -> tuple[ModelDescriptor, ...]:
-        return (
-            ModelDescriptor("example-subscription", "example-model", "Example Model", 1000),
-        )
+        return (ModelDescriptor("example-subscription", "example-model", "Example Model", 1000),)
 
     def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
         if self.calls is not None:
