@@ -291,8 +291,8 @@ HARNESS_DEFAULTS: dict[str, bool] = {
 
 HARNESS_METADATA: RawConfig = {
     "harnesses": {
-        "claude-code": {"type": "cli", "profile": "claude-code"},
-        "codex-cli": {"type": "cli", "profile": "codex-cli"},
+        "claude-code": {"type": "cli", "profile": "claude-code", "version": "latest"},
+        "codex-cli": {"type": "cli", "profile": "codex-cli", "version": "latest"},
     }
 }
 
