@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -190,6 +191,21 @@ class WorktreeManager:
             raise WorkerLaunchError(detail)
         return target
 
+    def remove(self, path: Path) -> None:
+        """Remove one linked worktree; never remove the user's primary checkout."""
+        if path.resolve() == self.root.resolve() or not path.exists():
+            return
+        result = subprocess.run(
+            ("git", "worktree", "remove", "--force", str(path)),
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            # Cleanup failure is non-fatal; Git can prune it later.
+            return
+
 
 def reconcile_orphaned_workers(store: TaskStore) -> int:
     """Fail active worker records from a previous process; never replay uncertain launches."""
@@ -228,6 +244,7 @@ class WorkerExecutor:
     config: Config
     root: Path
     poll_seconds: float = 0.25
+    notify: Callable[[str], None] | None = None
 
     def launch(
         self,
@@ -275,30 +292,60 @@ class WorkerExecutor:
                 harness=dispatch.harness_id,
                 worktree=str(workspace),
             )
+            self.store.add_artifact(
+                task.id,
+                "dispatch",
+                f"worker:{recorded.id}",
+                {
+                    "complexity": complexity,
+                    "model": dispatch.model_id,
+                    "provider": dispatch.provider_id,
+                    "harness": dispatch.harness_id,
+                    "reason": dispatch.reason,
+                },
+            )
             try:
                 handle = harness.start(request)
             except AdapterError as error:
                 self.store.update_worker(recorded.id, WorkerStatus.FAILED)
                 raise WorkerLaunchError(str(error)) from error
 
+        self.store.add_artifact(
+            task.id,
+            "worker-handle",
+            handle.token,
+            {"harness": handle.harness_id, "worker": recorded.id},
+        )
         status = harness.status(handle)
         self.store.update_worker(recorded.id, status)
         if status.finished:
-            self._finish(recorded.id, task.id, harness.result(handle))
-        else:
-            threading.Thread(
-                target=self._monitor,
-                args=(recorded.id, task.id, dispatch.harness_id, handle),
-                daemon=True,
-                name=f"agent-cli-{recorded.id}",
-            ).start()
+            result = harness.result(handle)
+            self._finish(recorded.id, task.id, kind, workspace, result, notify=False)
+            detail = f" {result.summary}" if result.summary else ""
+            return (
+                f"{kind.title()} completed as {recorded.id} via "
+                f"{dispatch.model_id} / {dispatch.harness_id}.{detail}"
+            )
+
+        threading.Thread(
+            target=self._monitor,
+            args=(recorded.id, task.id, kind, workspace, dispatch.harness_id, handle),
+            daemon=True,
+            name=f"agent-cli-{recorded.id}",
+        ).start()
         return (
             f"{kind.title()} started in background as {recorded.id} via "
             f"{dispatch.model_id} / {dispatch.harness_id}. You can keep prompting."
         )
 
     def _monitor(
-        self, worker_id: str, task_id: str, harness_id: str, handle: WorkerHandle
+        self,
+        worker_id: str,
+        task_id: str,
+        kind: TaskKind,
+        workspace: Path,
+        harness_id: str,
+        handle: WorkerHandle,
     ) -> None:
         harness = self.adapters.harness(harness_id)
         if harness is None:
@@ -309,7 +356,14 @@ class WorkerExecutor:
                 status = harness.status(handle)
                 self.store.update_worker(worker_id, status)
                 if status.finished:
-                    self._finish(worker_id, task_id, harness.result(handle))
+                    self._finish(
+                        worker_id,
+                        task_id,
+                        kind,
+                        workspace,
+                        harness.result(handle),
+                        notify=True,
+                    )
                     return
             except (AdapterError, TaskStateError):
                 try:
@@ -319,7 +373,16 @@ class WorkerExecutor:
                 return
             time.sleep(self.poll_seconds)
 
-    def _finish(self, worker_id: str, task_id: str, result: WorkerResult) -> None:
+    def _finish(
+        self,
+        worker_id: str,
+        task_id: str,
+        kind: TaskKind,
+        workspace: Path,
+        result: WorkerResult,
+        *,
+        notify: bool,
+    ) -> None:
         self.store.update_worker(worker_id, result.status)
         if result.summary:
             self.store.add_artifact(
@@ -334,6 +397,29 @@ class WorkerExecutor:
             self.store.set_status(task_id, TaskStatus.CANCELED)
         elif result.status is WorkerStatus.FAILED:
             self.store.set_status(task_id, TaskStatus.FAILED)
+        self._finish_parent(task_id)
+        if kind == "scout" and result.status.finished:
+            WorktreeManager(self.root, self.config).remove(workspace)
+        if notify and self.notify is not None:
+            summary = result.summary or (
+                str(result.error) if result.error is not None else str(result.status)
+            )
+            self.notify(f"{kind.title()} {worker_id} {result.status}: {summary}")
+
+    def _finish_parent(self, task_id: str) -> None:
+        task = self.store.task(task_id)
+        if task is None or task.parent_id is None:
+            return
+        children = self.store.subtasks(task.parent_id)
+        if not children or not all(child.status.finished for child in children):
+            return
+        if any(child.status is TaskStatus.FAILED for child in children):
+            status = TaskStatus.FAILED
+        elif any(child.status is TaskStatus.CANCELED for child in children):
+            status = TaskStatus.CANCELED
+        else:
+            status = TaskStatus.COMPLETED
+        self.store.set_status(task.parent_id, status)
 
     def _active_worker_count(self, session_id: str) -> int:
         return sum(
