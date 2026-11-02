@@ -660,3 +660,4 @@ Agent CLI should be able to:
 The user should not need to manually choose a model for every subtask.
 
 That is the core promise of Agent CLI V1.
+\n\nV1-10.8 factory milestone: reusable CLI harness profiles/factories and atomic `/reload` remove vendor-specific runtime construction.\n
