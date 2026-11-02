@@ -123,12 +123,18 @@ def orchestrator(
                         harness_ids
                     )
 
+            worker_notify = (
+                (lambda message: write_line(info("Background work finished.", message)))
+                if write_line is not None
+                else None
+            )
             service = OrchestrationService(
                 tasks,
                 config,
                 registry,
                 estimator=provider_estimators(registry),
                 login_harnesses=login_harnesses,
+                worker_notify=worker_notify,
             )
         return service.handle(text, handoff)
 
@@ -316,6 +322,7 @@ def terminal_reader(registry: CommandRegistry) -> ReadLine:
         return input
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.styles import Style
 
     from agent_cli.commands.completion import CommandCompleter, command_key_bindings
@@ -329,6 +336,7 @@ def terminal_reader(registry: CommandRegistry) -> ReadLine:
         shell = prompt == PROMPT
         session.completer = completer if shell else None
         session.key_bindings = bindings if shell else None
-        return session.prompt(FormattedText(prompt_fragments(prompt)))
+        with patch_stdout():
+            return session.prompt(FormattedText(prompt_fragments(prompt)))
 
     return read_line
