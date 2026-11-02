@@ -31,6 +31,7 @@ from agent_cli.state.models import (
     SkillRouting,
     SpecVersion,
     Task,
+    TaskAuthorization,
     TaskStatus,
     Worker,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "SkillRouting",
     "SpecVersion",
     "Task",
+    "TaskAuthorization",
     "TaskStateError",
     "TaskStatus",
     "TaskStore",
