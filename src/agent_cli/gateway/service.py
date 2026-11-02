@@ -1,8 +1,14 @@
-"""Routing one line of root-prompt text to an answer or to orchestration.
+"""One continuous conversation at the root prompt: each turn answered, or delegated as work.
+
+::
+
+    user turn + compact conversation -> semantic router -> direct answer
+                                                        -> repository-aware answer (read-only)
+                                                        -> orchestrator (plans; never edits)
 
 A pending planning question always takes the next line as its answer, before any routing, so a
-question can never be skipped. Otherwise the intent router decides the workflow. Answers never
-touch task state; only orchestration creates tasks.
+question can never be skipped. Conversation history lives here, in memory, apart from canonical
+task state: answers never touch the task store, and only delegated work creates tasks.
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.text import Text
 
-from agent_cli.adapters import AdapterRegistry, ProviderAdapter, ProviderRequest, ProviderResponse
+from agent_cli.adapters import AdapterRegistry
 from agent_cli.budget import NO_PRICING, CostEstimator, SpendLedger
 from agent_cli.config import Config, ConfigError, ConfigService
 from agent_cli.gateway import NO_REPOSITORY
@@ -24,28 +30,27 @@ from agent_cli.gateway.answers import (
     Answer,
     AnswerCalls,
     DirectAnswerService,
+    Question,
     RepositoryAnswerService,
 )
+from agent_cli.gateway.conversation import ANSWER_VIEW, HANDOFF_VIEW, ROUTER_VIEW, Conversation
 from agent_cli.gateway.intent import (
-    IntentClassifier,
-    IntentDecision,
     IntentRouter,
-    ProviderIntentClassifier,
+    ProviderRouter,
+    RouteDecision,
+    SemanticRouter,
 )
-from agent_cli.models import ModelRegistry, RegistryError, load_registry, runtime_paths
-from agent_cli.models.classifier_selection import select_classifier
+from agent_cli.models import ROUTER_POLICY, ModelRegistry, RegistryError, load_registry
 from agent_cli.orchestration.calls import PlanningUnavailable
+from agent_cli.orchestration.domain import Handoff
 from agent_cli.state import PinKind, TaskStateError, TaskStore
-from agent_cli.ui import blocks, error, info, muted
+from agent_cli.ui import blocks, error, muted
 
-type Orchestrate = Callable[[str], RenderableType]
-type ClassifierFactory = Callable[[Config, ModelRegistry], IntentClassifier | None]
+type Orchestrate = Callable[[str, Handoff | None], RenderableType]
+type RouterFactory = Callable[[Config, ModelRegistry], SemanticRouter | None]
 
 ANSWER_HINT = "See /models for reachable models, or /startup to configure a provider."
-RESTATE = (
-    "Answers keep no history, so there is no earlier change to plan from.",
-    "Restate the change itself, for example: add retries to the HTTP client.",
-)
+ANSWERED_QUESTION = "(The user answered the planner's question.)"
 NAME = r"([\w.:/-]+?)[.,;:!?]?"
 PIN_PHRASE = re.compile(
     rf"^\s*(?:please\s+)?(?:use|using|via|ask)\s+(?:the\s+)?{NAME}"
@@ -67,8 +72,9 @@ class RootPromptGateway:
     ledger: SpendLedger | None = None
     """The paid-spend ledger; the global one, opened once, when ``None``."""
     estimator: CostEstimator = NO_PRICING
-    classifier: ClassifierFactory | None = None
-    """Builds the intent classifier; the configured low-cost model when ``None``."""
+    router: RouterFactory | None = None
+    """Builds the semantic router; the low-cost router model path when ``None``."""
+    conversation: Conversation = field(default_factory=Conversation)
     _calls: AnswerCalls | None = None
     _chat: DirectAnswerService | None = None
     _repository: RepositoryAnswerService | None = None
@@ -79,7 +85,8 @@ class RootPromptGateway:
 
     def handle(self, text: str) -> RenderableType:
         if self.orchestrate is not None and self.pending_question():
-            return self.orchestrate(text)
+            self.conversation.add(text, ANSWERED_QUESTION, "orchestration")
+            return self.orchestrate(text, None)
         try:
             config = self.config.resolve()
             calls = self.calls()
@@ -87,30 +94,40 @@ class RootPromptGateway:
             return error("Cannot answer.", str(problem))
 
         in_repository = self.root is not None and self.orchestrate is not None
-        router = IntentRouter(lambda: self.build_classifier(config, calls))
-        decision = router.route(text, in_repository)
+        router = IntentRouter(lambda: self.build_router(config, calls))
+        decision = router.route(text, self.conversation.recent(ROUTER_VIEW), in_repository)
         if decision.intent == "orchestration":
-            if self.orchestrate is None:
-                return NO_REPOSITORY
-            if decision.refers_back:
-                return info(*RESTATE)
-            return self.orchestrate(text)
+            return self.delegate(text, decision, config)
 
+        question = Question(text, decision.request, self.conversation.recent(ANSWER_VIEW))
         pins = explicit_pins(text, calls.registry, self.adapters)
         try:
             if decision.intent == "repository_question" and self.root is not None:
                 if self._repository is None:
                     self._repository = RepositoryAnswerService(calls, self.root)
-                answer = self._repository.answer(text, config, pins)
+                answer = self._repository.answer(question, config, pins)
             else:
                 if self._chat is None:
                     self._chat = DirectAnswerService(calls)
-                answer = self._chat.answer(text, config, pins)
+                answer = self._chat.answer(question, config, pins)
         except PlanningUnavailable as problem:
             return error(
                 f"Cannot answer: {problem}", ANSWER_HINT, *verbose_routing(config, decision)
             )
+        self.conversation.add(text, answer.text, decision.intent)
         return render_answer(answer, decision, config)
+
+    def delegate(self, text: str, decision: RouteDecision, config: Config) -> RenderableType:
+        """Hand the resolved request, and the conversation it came from, to the orchestrator."""
+        if self.orchestrate is None:
+            return NO_REPOSITORY
+        handoff = Handoff(decision.request or text, self.conversation.transcript(HANDOFF_VIEW))
+        output = self.orchestrate(text, handoff)
+        self.conversation.add(text, f"Delegated to planning: {handoff.goal}", "orchestration")
+        notes = verbose_routing(config, decision)
+        if not notes:
+            return output
+        return blocks(output, Group(*(muted(note) for note in notes)))
 
     def calls(self) -> AnswerCalls:
         """Built once: the adapters are reset in place on reload, and the registry and ledger
@@ -137,24 +154,25 @@ class RootPromptGateway:
         except TaskStateError:
             return True  # let orchestration report the broken state
 
-    def build_classifier(self, config: Config, calls: AnswerCalls) -> IntentClassifier | None:
-        if self.classifier is not None:
-            return self.classifier(config, calls.registry)
-        runtime = runtime_paths(self.adapters, config)
-        choice = select_classifier(
-            config.routing.classifier, calls.registry, runtime, config.access.preference
-        )
-        if choice.path is None:
+    def build_router(self, config: Config, calls: AnswerCalls) -> SemanticRouter | None:
+        """The cheapest adequate model path, or the user's selected low-cost model; budgeted
+        like every other call. ``routing.classifier.mode: disabled`` turns routing off, and every
+        turn is then answered read-only."""
+        if self.router is not None:
+            return self.router(config, calls.registry)
+        settings = config.routing.classifier
+        if settings.mode == "disabled":
             return None
-        adapter = self.adapters.provider(choice.path.provider.id)
-        if adapter is None:
-            return None
-        guard = calls.guard(config)
+        pins: dict[PinKind, str] = {}
+        if settings.mode == "selected" and settings.selected_model:
+            pins["model"] = settings.selected_model
+        call = calls.call(config, pins)
 
-        def invoke(adapter: ProviderAdapter, request: ProviderRequest) -> ProviderResponse:
-            return guard.invoke(adapter, request, "intent_classification")
+        def route(system: str, prompt: str, max_output_tokens: int) -> tuple[str, str]:
+            reply = call(ROUTER_POLICY, "intent_routing", system, prompt, max_output_tokens)
+            return reply.text, reply.describe()
 
-        return ProviderIntentClassifier(adapter, choice.path, invoke)
+        return ProviderRouter(route)
 
 
 def explicit_pins(
@@ -180,11 +198,14 @@ def explicit_pins(
     return pins
 
 
-def verbose_routing(config: Config, decision: IntentDecision) -> tuple[str, ...]:
-    return (f"Routed as {decision.describe()}.",) if config.ui.verbosity == "verbose" else ()
+def verbose_routing(config: Config, decision: RouteDecision) -> tuple[str, ...]:
+    if config.ui.verbosity != "verbose":
+        return ()
+    resolved = (f"Understood as: {decision.request}",) if decision.request else ()
+    return (f"Routed as {decision.describe()}.", *resolved)
 
 
-def render_answer(answer: Answer, decision: IntentDecision, config: Config) -> RenderableType:
+def render_answer(answer: Answer, decision: RouteDecision, config: Config) -> RenderableType:
     """The answer alone when concise; the model used when normal; routing too when verbose."""
     verbosity = config.ui.verbosity
     body: RenderableType = Markdown(answer.text) if answer.text else Text("(empty answer)")

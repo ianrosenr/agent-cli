@@ -28,6 +28,7 @@ from agent_cli.ui import blocks, error, home, info, is_unicode, make_console
 if TYPE_CHECKING:
     from agent_cli.gateway.service import RootPromptGateway
     from agent_cli.orchestration import OrchestrationService
+    from agent_cli.orchestration.domain import Handoff
 
 PROMPT = "> "
 NO_ORCHESTRATION = NO_REPOSITORY
@@ -95,13 +96,13 @@ def orchestrator(
     tasks: TaskStore | None,
     read_line: ReadLine | None = None,
     write_line: WriteLine | None = None,
-) -> Callable[[str], RenderableType] | None:
+) -> Callable[[str, Handoff | None], RenderableType] | None:
     """The orchestration entry point, built on first use so planning stays out of startup."""
     if config is None or tasks is None:
         return None
     service: OrchestrationService | None = None
 
-    def orchestrate(text: str) -> RenderableType:
+    def orchestrate(text: str, handoff: Handoff | None = None) -> RenderableType:
         nonlocal service
         if service is None:
             from agent_cli.orchestration import OrchestrationService
@@ -129,7 +130,7 @@ def orchestrator(
                 estimator=provider_estimators(registry),
                 login_harnesses=login_harnesses,
             )
-        return service.handle(text)
+        return service.handle(text, handoff)
 
     return orchestrate
 

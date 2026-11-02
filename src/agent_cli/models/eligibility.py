@@ -149,6 +149,8 @@ REPOSITORY_ANSWER_POLICY = AnswerPolicy(
     "repository_answer", C.REPOSITORY_ENGINEERING, FLOOR_SCORES["mid"]
 )
 """Read-only questions about the current repository."""
+ROUTER_POLICY = AnswerPolicy("router", C.REASONING, FLOOR_SCORES["low"])
+"""Root-prompt turn routing: the cheapest adequate model, since it runs on every turn."""
 
 
 @dataclass(frozen=True, slots=True)

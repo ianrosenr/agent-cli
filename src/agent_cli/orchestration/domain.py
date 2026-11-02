@@ -121,11 +121,24 @@ class PlanningInput:
     constraints: tuple[str, ...] = ()
     """Execution pins already in force for planning, such as ``model=x``."""
     roles: tuple[str, ...] = DELEGATED_ROLES
+    context: tuple[str, ...] = ()
+    """Earlier conversation the request referred to ("do that"). Evidence of what the user
+    meant, never the user's words: it cannot authorize a pin or stand in for a requirement."""
 
     @property
     def user_texts(self) -> tuple[str, ...]:
         """Everything that can authorize a pin: only what the user actually said."""
         return tuple(item.text for item in (*self.requirements, *self.answers))
+
+
+@dataclass(frozen=True, slots=True)
+class Handoff:
+    """A request the root-prompt router resolved against conversation, for planning."""
+
+    goal: str
+    """The request restated in full, references resolved."""
+    context: str = ""
+    """The recent conversation it was resolved from."""
 
 
 # -- Planner output ----------------------------------------------------------------------------

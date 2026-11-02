@@ -32,6 +32,7 @@ from agent_cli.models import (
 from agent_cli.orchestration.auth import HarnessAuthCoordinator, LoginHarnesses
 from agent_cli.orchestration.calls import DirectModelCall, ModelReply, PlanningUnavailable
 from agent_cli.orchestration.domain import (
+    Handoff,
     PlanningInput,
     PlanRejected,
     PriorDecision,
@@ -88,14 +89,24 @@ class OrchestrationService:
     """Interactive native-login callback supplied by the shell; absent in noninteractive uses."""
     _index: RepositoryIndex | None = None
 
-    def handle(self, text: str) -> RenderableType:
-        """Plan ``text`` as a new request, or take it as the answer to a pending question."""
+    def handle(self, text: str, handoff: Handoff | None = None) -> RenderableType:
+        """Plan ``text`` as a new request, or take it as the answer to a pending question.
+
+        A ``handoff`` carries the request as the root-prompt router resolved it: its goal
+        becomes the root goal, ``text`` stays the user requirement, and the conversation it was
+        resolved from is kept as derived context.
+        """
         try:
             session = self.store.latest_session() if self.store.exists() else None
             if session is None or not session.open:
                 session = self.store.start_session()
             pending = self.store.pending_planning_question(session.id)
-            if pending is None:
+            if pending is None and handoff is not None and handoff.goal.strip():
+                context = (handoff.context,) if handoff.context.strip() else ()
+                root, _ = self.store.start_root_task(
+                    session.id, handoff.goal.strip(), request=text, context=context
+                )
+            elif pending is None:
                 root, _ = self.store.start_root_task(session.id, text)
             else:
                 self.store.answer_planning_question(pending.id, text)
@@ -192,7 +203,8 @@ class OrchestrationService:
     def planning_input(
         self, root: Task, repository: RepositoryContext, pins: Mapping[PinKind, str]
     ) -> PlanningInput:
-        requirements = [r for r in self.store.task_requirements(root.id) if r.source == "user"]
+        current = self.store.task_requirements(root.id)
+        requirements = [r for r in current if r.source == "user"]
         decisions = self.store.task_decisions(root.id)
         return PlanningInput(
             goal=root.goal,
@@ -201,6 +213,7 @@ class OrchestrationService:
             answers=tuple(UserText(d.id, d.decision) for d in decisions if d.decided_by == "user"),
             repository=repository,
             constraints=tuple(f"{kind}={value}" for kind, value in pins.items()),
+            context=tuple(r.text for r in current if r.source == "derived"),
         )
 
     def route_skills(

@@ -973,13 +973,26 @@ class TaskStore:
     # -- Planning ------------------------------------------------------------------------------
 
     def start_root_task(
-        self, session_id: str, goal: str, role: str = "orchestrator"
+        self,
+        session_id: str,
+        goal: str,
+        role: str = "orchestrator",
+        request: str | None = None,
+        context: Sequence[str] = (),
     ) -> tuple[Task, Requirement]:
         """Create a root task for a user request, ``in_progress``, with the literal request
-        recorded as its user requirement."""
+        recorded as its user requirement.
+
+        ``goal`` defaults to the request. When a request was resolved against conversation
+        (``request`` is what the user typed, ``goal`` what it meant), ``context`` is recorded as
+        derived requirements: evidence of what the user referred to, never the user's words.
+        """
         with self._write() as db:
             task = self._insert_task(db, session_id, goal, None, role, TaskStatus.IN_PROGRESS)
-            requirement = self._insert_requirement(db, session_id, goal, "user", task.id)
+            literal = goal if request is None else request
+            requirement = self._insert_requirement(db, session_id, literal, "user", task.id)
+            for text in context:
+                self._insert_requirement(db, session_id, text, "derived", task.id)
         return task, requirement
 
     def task_requirements(self, task_id: str) -> list[Requirement]:

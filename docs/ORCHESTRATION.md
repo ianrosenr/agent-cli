@@ -16,38 +16,38 @@ user goal
  → orchestrator: final diff to user → MR gate
 ```
 
-Ordinary text at the root prompt is the primary input. Slash commands bypass it and remain control/status/configuration commands. There is no separate orchestration REPL, route selector, `/orchestrate`, `/agent`, or `/chat` mode: natural-language intent decides the workflow (see [Root-prompt intent routing](#root-prompt-intent-routing)).
+Ordinary text at the root prompt is the primary input. Slash commands bypass it and remain control/status/configuration commands. There is no separate orchestration REPL, route selector, `/orchestrate`, `/agent`, or `/chat` mode: natural-language intent decides the workflow (see [Root-prompt conversation](#root-prompt-conversation)).
 
 V1-09 ends with canonical planning state: a root orchestration task, a validated child-task graph, role assignments, skill-routing decisions, explicit execution pins, and pending short specs for non-trivial implementer work. It does not edit code, launch coding harnesses, create worktrees, approve specs, or run implementation/review loops.
 
 Planning/spec-author reasoning may use direct provider calls through the existing model, access, and budget seams. Paid planning calls must pass V1-08 budget admission and reservation immediately before invocation. Planning model calls are control-plane reasoning, not coding workers.
 
-## Root-prompt intent routing
+## Root-prompt conversation
 
-V1-09.9 puts a typed intent decision in front of planning, so Agent CLI is also a general AI gateway:
+V1-09.9 makes the root prompt one continuous conversation. Each turn is understood semantically, in context, and delegation happens behind the scenes; there are no trigger phrases or modes to learn:
 
 ```text
-root prompt
-   |
-   v
-IntentRouter
-   +--> chat -----------------> DirectAnswerService
-   +--> repository_question --> RepositoryAnswerService (read-only)
-   +--> orchestration --------> OrchestrationService
+user turn + compact recent conversation
+   -> low-cost semantic router
+       -> chat ------------------> DirectAnswerService
+       -> repository_question ---> RepositoryAnswerService (read-only)
+       -> orchestration ---------> OrchestrationService -> planner/spec/workers/review
 ```
 
 Order of decision (`agent_cli.gateway`):
 
-1. A pending planning question takes the next line as its answer, before any routing.
-2. Deterministic rules settle clear cases: a change imperative (`implement`, `fix`, `refactor`, `add`, …) naming a repository target, or a build verb (`write`, `create`, `update`, …) naming code → `orchestration`; a question naming this repository (`our …`, `this module`, a path or identifier, `where is X handled`) → `repository_question`; a general question or greeting → `chat`.
-3. Only ambiguous text reaches the low-cost intent classifier. It shares the configured low-cost model selection (`routing.classifier`) but is not the V1-06 skill classifier: its own prompt, strict `{"intent", "confident"}` contract, and parser. Paid classifier calls go through the budget guard.
-4. No classifier, a failure, or an unconfident answer → `chat`. Uncertainty never creates implementation authority.
+1. A pending planning question takes the next line as its answer, before any routing (guardrail).
+2. Greetings take a fast path to `chat` with no routing call. This is the only phrase rule, and it never leads to work.
+3. Every other turn goes to the semantic router: one small call on the cheapest adequate model (`reasoning` 2+, cheapest and fastest first), or the model selected in `routing.classifier`. It sees the message and a compact view of recent turns, and returns `{"intent", "confident", "request"}`, where `request` restates the turn self-contained, with references such as "do that" or "the other option" resolved. It is not the V1-06 skill classifier.
+4. Policy: orchestration needs a confident verdict with a concrete request. An unsure or vague work verdict is answered read-only (`repository_question` in a repository, else `chat`). A router failure, no reachable model, or `routing.classifier.mode: disabled` → `chat`. Classification alone never grants write authority; orchestration still only plans, and V1-10 spec review gates implementation.
 
-Intent determines workflow, not authority. `chat` makes one provider-backed call, needs no Git repository, and writes no task state. `repository_question` adds bounded read-only context (V1-05 inspection facts and short excerpts of the best few files; credential-like lines, private-key blocks, and sensitive files such as `.env`, `*.pem`, and `*secret*` are never sent) and also writes no task state; it can recommend changes but never makes them. Answers keep no history, so a bare go-ahead ("do it", "go ahead and make that change") has no goal to plan: Agent CLI asks the user to restate the change, which then routes to orchestration. A go-ahead that answers a pending planning question still goes to the planner.
+Conversation history is kept in memory for the shell session, apart from canonical task state. Answers never write the task store. When a turn is delegated, the router's restated request becomes the root goal, the literal turn stays the user requirement, and a compact transcript of the turns it refers to is recorded as a `derived` requirement. The planner sees that transcript as `context`: evidence of which change the user approved, never the user's words, so it can authorize no pin and stands in for no requirement.
 
-Answers route through the same `DirectModelCall` seam as planning, under a direct-answer policy instead of a role floor: active models with `reasoning` (chat) or `repository_engineering` (repository answers) 3+, cheaper and faster first. Explicit pins the user opens the message with (`use <model>: …`, `ask <model> …`, `via <provider>, …`, `use <model> via <provider> …`; exact registry names and provider IDs only, so a passing mention is never a pin), access preference, and V1-08 budget limits all apply; answers have no task scope, so global limits govern them. Concise verbosity shows only the answer; normal adds the model used; verbose adds the routing decision and repository context.
+`chat` makes one provider-backed call with the recent conversation, needs no Git repository, and writes no task state. `repository_question` adds bounded read-only context (V1-05 inspection facts for the turn and its resolved request, plus short excerpts of the best few files; credential-like lines, private-key blocks, and sensitive files such as `.env`, `*.pem`, and `*secret*` are never sent). It can recommend changes but never makes them; a later "go ahead and do that" is resolved against that answer and delegated.
 
-Text asking for changes outside a Git repository explains where to run Agent CLI instead.
+Answers route through the same `DirectModelCall` seam as planning, under a direct-answer policy instead of a role floor: active models with `reasoning` (chat) or `repository_engineering` (repository answers) 3+, cheaper and faster first. Explicit pins the user opens the message with (`use <model>: …`, `ask <model> …`, `via <provider>, …`, `use <model> via <provider> …`; exact registry names and provider IDs only, so a passing mention is never a pin), access preference, and V1-08 budget limits all apply, to routing calls too; answers have no task scope, so global limits govern them. Concise verbosity shows only the answer; normal adds the model used; verbose adds the routing decision, the resolved request, and repository context.
+
+Work requested outside a Git repository explains where to run Agent CLI instead.
 
 ## Planning lifecycle
 
