@@ -23,7 +23,7 @@ from agent_cli.config import Config, ConfigError, ConfigService, Layer
 from agent_cli.config.model import Verbosity
 from agent_cli.guided_setup import GuidedSetup
 from agent_cli.login import HarnessLoginService
-from agent_cli.state import AuthorizationStatus, TaskStateError, status_view
+from agent_cli.state import AuthorizationStatus, TaskStateError, TaskStatus, status_view
 from agent_cli.state.status import NO_ACTIVE_TASK
 from agent_cli.terms import ImplementationMode
 from agent_cli.ui import (
@@ -219,6 +219,11 @@ def cancel_command(context: CommandContext, args: str) -> RenderableType:
                 "user",
                 "canceled by user",
             )
+            task = tasks.task(authorization.task_id)
+            if task is not None and task.parent_id is not None:
+                children = tasks.subtasks(task.parent_id)
+                if children and all(child.status.finished for child in children):
+                    tasks.set_status(task.parent_id, TaskStatus.CANCELED)
             return success(
                 f"Canceled implementation authorization ({authorization.task_id}).",
                 "No source-changing worker was launched.",
@@ -241,9 +246,9 @@ AUTOPILOT_SETTINGS: dict[str, ImplementationMode] = {
 }
 AUTOPILOT_LAYERS = {"global": Layer.GLOBAL, "project": Layer.PROJECT}
 MODE_DESCRIPTIONS: dict[ImplementationMode, str] = {
-    "autopilot": "make every change an approved spec authorizes without asking each time",
-    "checkpoint": "ask before each batch of changes",
-    "plan-only": "change no files; explain the plan instead",
+    "autopilot": "grant write authority automatically only for sufficiently bounded work",
+    "checkpoint": "require approval for the current bounded task or spec",
+    "plan-only": "never grant source-write authority",
 }
 AUTOPILOT_USAGE = "Usage: /autopilot [status | on | off | plan-only] [global | project]"
 
