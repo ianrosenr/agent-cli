@@ -72,13 +72,48 @@ class SkillsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CliProfileConfig:
+    """Declarative behavior for one reusable CLI harness profile."""
+
+    display_name: str = constrained("", kind="required")
+    default_command: str = constrained("", kind="required")
+    provider_id: str = constrained("", kind="required")
+    provider_name: str = constrained("", kind="required")
+    auth_label: str = constrained("", kind="required")
+    auth_status_args: tuple[str, ...] = constrained((), kind="required")
+    login_args: tuple[str, ...] = constrained((), kind="required")
+    auth_source: Literal["stdout", "stderr"] = "stdout"
+    auth_regexes: tuple[str, ...] = constrained((), kind="required")
+    env_remove: tuple[str, ...] = ()
+    output_protocol: Literal["json-result", "jsonl-agent"] = "json-result"
+    worker_base_args: tuple[str, ...] = ()
+    worker_plan_args: tuple[str, ...] = ()
+    worker_write_args: tuple[str, ...] = ()
+    worker_model_flag: str = constrained("--model", kind="nonempty")
+    worker_stdin_marker: str | None = constrained(None, kind="nonempty")
+    install_latest: tuple[str, ...] = ()
+    install_exact: tuple[str, ...] = ()
+    update_latest: tuple[str, ...] = ()
+    update_exact: tuple[str, ...] = ()
+    direct_model_id: str | None = constrained(None, kind="nonempty")
+    direct_model_name: str | None = constrained(None, kind="nonempty")
+    direct_context_limit: int | None = constrained(None, minimum=1)
+    direct_base_args: tuple[str, ...] = ()
+    direct_model_flag: str = constrained("--model", kind="nonempty")
+    direct_stdin_marker: str | None = constrained(None, kind="nonempty")
+
+
+@dataclass(frozen=True, slots=True)
 class HarnessConfig:
     """A configured external harness.
 
-    Only what the user set. Runtime facts (detected, version, signed in) come from adapters and
-    are never stored here; see ``agent_cli.adapters``.
+    `type` chooses a reusable adapter protocol. `profile` chooses declarative behavior for
+    that protocol. Both are required in persisted harness entries. Runtime facts are never
+    stored here.
     """
 
+    type: str = constrained("", kind="required")
+    profile: str = constrained("", kind="required")
     enabled: bool = True
     command: str | None = None
     version: str = constrained("latest", kind="nonempty")
@@ -145,6 +180,7 @@ class Config:
     workers: WorkersConfig = field(default_factory=WorkersConfig)
     git: GitConfig = field(default_factory=GitConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    harness_profiles: dict[str, CliProfileConfig] = field(default_factory=dict)
     harnesses: dict[str, HarnessConfig] = field(default_factory=dict)
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
     routing: RoutingConfig = field(default_factory=RoutingConfig)

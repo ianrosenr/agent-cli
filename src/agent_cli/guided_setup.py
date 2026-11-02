@@ -289,6 +289,13 @@ HARNESS_DEFAULTS: dict[str, bool] = {
     "harnesses.codex-cli.enabled": True,
 }
 
+HARNESS_METADATA: RawConfig = {
+    "harnesses": {
+        "claude-code": {"type": "cli", "profile": "claude-code", "version": "latest"},
+        "codex-cli": {"type": "cli", "profile": "codex-cli", "version": "latest"},
+    }
+}
+
 
 def lookup(data: Mapping[str, Any], key: str) -> Any:
     value: Any = data
@@ -317,7 +324,8 @@ def nested(key: str, value: Any) -> RawConfig:
 
 
 def propose(layer_data: RawConfig, answers: Mapping[str, Any]) -> RawConfig:
-    """``layer_data`` with every answer so far applied."""
+    """Layer data with answers and explicit built-in harness descriptors applied."""
+    layer_data = merge(layer_data, HARNESS_METADATA)
     for key, value in answers.items():
         layer_data = merge(layer_data, nested(key, value))
     return layer_data
@@ -629,6 +637,10 @@ class GuidedSetup:
         removals: list[str] = []
         for key, value in answers.items():
             if target is Layer.GLOBAL or value != lookup(inherited, key):
+                if key.startswith("harnesses."):
+                    harness_id = key.split(".", 2)[1]
+                    metadata = HARNESS_METADATA["harnesses"][harness_id]
+                    changes = merge(changes, {"harnesses": {harness_id: metadata}})
                 changes = merge(changes, nested(key, value))
             elif contains(layer_data, key):
                 removals.append(key)

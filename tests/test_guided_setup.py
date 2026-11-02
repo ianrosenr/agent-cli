@@ -18,8 +18,8 @@ from agent_cli.ui import plain
 ENTER_THROUGH = [""] * (len(SETTINGS) + 2)  # target layer, every setting, confirmation
 STARTUP_DEFAULT = Config(
     harnesses={
-        "claude-code": HarnessConfig(),
-        "codex-cli": HarnessConfig(),
+        "claude-code": HarnessConfig(type="cli", profile="claude-code"),
+        "codex-cli": HarnessConfig(type="cli", profile="codex-cli"),
     }
 )
 ADVANCED = ("role_floors", "orchestrator", "routing", "capability", "fallback", "classifier")

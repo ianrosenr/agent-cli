@@ -39,6 +39,7 @@ skills:
   paths: []
   activation: {}
   context_budget_tokens: 8000
+harness_profiles: {}
 harnesses: {}
 providers: {}
 routing:
@@ -239,6 +240,80 @@ def test_invalid_config_names_the_file_and_key(
     assert str(paths.project_file) in str(caught.value)
 
 
+def test_harness_entries_require_explicit_type_and_profile(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(paths.global_file, {"harnesses": {"claude-code": {"enabled": True}}})
+
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+
+    assert caught.value.key == "harnesses.claude-code.type"
+    assert caught.value.problem == "is required"
+
+    write(
+        paths.global_file,
+        {"harnesses": {"claude-code": {"type": "cli", "enabled": True}}},
+    )
+    with pytest.raises(ConfigError) as caught:
+        service.resolve()
+
+    assert caught.value.key == "harnesses.claude-code.profile"
+    assert caught.value.problem == "is required"
+
+
+def test_user_cli_profiles_are_valid_global_config(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    write(
+        paths.global_file,
+        {
+            "harness_profiles": {
+                "example": {
+                    "display_name": "Example CLI",
+                    "default_command": "example",
+                    "provider_id": "example-subscription",
+                    "provider_name": "Example subscription",
+                    "auth_label": "Example auth",
+                    "auth_status_args": ["auth", "status"],
+                    "login_args": ["auth", "login"],
+                    "auth_regexes": ["signed in"],
+                }
+            },
+            "harnesses": {"example": {"type": "cli", "profile": "example", "enabled": True}},
+        },
+    )
+
+    config = service.resolve()
+
+    assert config.harness_profiles["example"].default_command == "example"
+    assert config.harnesses["example"].profile == "example"
+
+
+def test_executable_harness_profiles_are_global_only(
+    service: ConfigService, paths: ConfigPaths
+) -> None:
+    profile = {
+        "display_name": "Example CLI",
+        "default_command": "example",
+        "provider_id": "example-subscription",
+        "provider_name": "Example subscription",
+        "auth_label": "Example auth",
+        "auth_status_args": ["auth", "status"],
+        "login_args": ["auth", "login"],
+        "auth_regexes": ["signed in"],
+    }
+    write(paths.project_file, {"harness_profiles": {"example": profile}})
+
+    with pytest.raises(ConfigError, match="may only be defined in global config"):
+        service.resolve()
+
+    assert paths.project_file is not None
+    paths.project_file.unlink()
+    with pytest.raises(ConfigError, match="may only be defined in global config"):
+        service.set_session({"harness_profiles": {"example": profile}})
+
+
 def test_unknown_key_in_session_overrides_is_rejected(service: ConfigService) -> None:
     with pytest.raises(ConfigError, match="session overrides: bogus: unknown key"):
         service.set_session({"bogus": 1})
@@ -285,7 +360,7 @@ def test_credential_references_are_accepted(service: ConfigService, paths: Confi
                 },
                 "other": {"type": "openai-compatible", "api_key_keyring": "agent-cli/other"},
             },
-            "harnesses": {"pi": {"command": "pi"}},
+            "harnesses": {"pi": {"type": "cli", "profile": "pi", "command": "pi"}},
         },
     )
     config = service.resolve()

@@ -14,18 +14,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agent_cli.adapters import (
-    AdapterRegistry,
-    Capability,
-    HarnessBackedProviderAdapter,
-)
-from agent_cli.adapters.anthropic import PROVIDER_ID as ANTHROPIC
-from agent_cli.adapters.anthropic import AnthropicProviderAdapter, ClientFactory, sdk_client
-from agent_cli.adapters.claude_code import HARNESS_ID as CLAUDE_CODE
-from agent_cli.adapters.claude_code import ClaudeCodeHarnessAdapter
-from agent_cli.adapters.codex_cli import HARNESS_ID as CODEX_CLI
-from agent_cli.adapters.codex_cli import CodexCliHarnessAdapter
+from agent_cli.adapters import AdapterRegistry, Capability, HarnessBackedProviderAdapter
+from agent_cli.adapters.anthropic import ClientFactory, sdk_client
+from agent_cli.adapters.cli_profiles import BUILTIN_CLI_PROFILES
 from agent_cli.adapters.credentials import CredentialResolver
+from agent_cli.adapters.factories import (
+    HarnessFactoryRegistry,
+    ProviderFactoryRegistry,
+    default_harness_factories,
+    default_provider_factories,
+)
 from agent_cli.config import Config, ConfigError, ConfigService
 from agent_cli.config.model import HarnessConfig
 
@@ -37,36 +35,38 @@ def default_adapters(
     config: Config,
     credentials: CredentialResolver | None = None,
     anthropic_client: ClientFactory = sdk_client,
+    harness_factories: HarnessFactoryRegistry | None = None,
+    provider_factories: ProviderFactoryRegistry | None = None,
 ) -> AdapterRegistry:
-    """Build the real adapters available to this session.
-
-    Claude Code and Codex CLI are always registered so setup/status can detect installations
-    without first persisting runtime facts. Their config entries only control enablement or a
-    command override. ``providers.anthropic`` remains opt-in because it is a paid API path.
-    """
-    credentials = CredentialResolver() if credentials is None else credentials
-    claude_config = config.harnesses.get(CLAUDE_CODE, HarnessConfig())
-    codex_config = config.harnesses.get(CODEX_CLI, HarnessConfig())
-    registry = AdapterRegistry(
-        [
-            ClaudeCodeHarnessAdapter(claude_config),
-            CodexCliHarnessAdapter(codex_config),
-        ]
+    """Build adapters from config through reusable type/profile factories."""
+    harness_factories = (
+        default_harness_factories(config.harness_profiles)
+        if harness_factories is None
+        else harness_factories
     )
-    for harness_id, harness in registry.harnesses().items():
-        harness_entry = config.harnesses.get(harness_id)
+    provider_factories = (
+        default_provider_factories(credentials, anthropic_client)
+        if provider_factories is None
+        else provider_factories
+    )
+    registry = AdapterRegistry()
+
+    harness_ids = set(BUILTIN_CLI_PROFILES) | set(config.harnesses)
+    for harness_id in sorted(harness_ids):
+        entry = config.harnesses.get(harness_id)
+        effective = HarnessConfig(type="cli", profile=harness_id) if entry is None else entry
+        harness = harness_factories.build(harness_id, effective)
+        registry.register_harness(harness)
+
         if (
-            harness_entry is not None
-            and harness_entry.enabled
+            entry is not None
+            and entry.enabled
             and harness.capabilities().supports(Capability.DIRECT_MODEL)
         ):
             registry.register_provider(HarnessBackedProviderAdapter(harness))
 
-    provider_entry = config.providers.get(ANTHROPIC)
-    if provider_entry is not None:
-        registry.register_provider(
-            AnthropicProviderAdapter(provider_entry, credentials, anthropic_client)
-        )
+    for provider_id, provider_config in sorted(config.providers.items()):
+        registry.register_provider(provider_factories.build(provider_id, provider_config))
     return registry
 
 
@@ -75,15 +75,14 @@ def session_adapters(
     credentials: CredentialResolver | None = None,
     anthropic_client: ClientFactory = sdk_client,
 ) -> AdapterRegistry:
-    """``default_adapters`` for the effective configuration; none when it is invalid, so a
-    partially configured runtime is never built (the configuration error is shown instead)."""
+    """Build the effective adapter registry; invalid config yields no partial runtime."""
     if config is None:
         return AdapterRegistry()
     try:
         resolved = config.resolve()
-    except ConfigError:
+        return default_adapters(resolved, credentials, anthropic_client)
+    except (ConfigError, ValueError):
         return AdapterRegistry()
-    return default_adapters(resolved, credentials, anthropic_client)
 
 
 def provider_estimators(adapters: AdapterRegistry) -> ProviderEstimators:
@@ -99,12 +98,15 @@ def provider_estimators(adapters: AdapterRegistry) -> ProviderEstimators:
 
     def lookup(provider_id: str) -> CostEstimator | None:
         adapter = adapters.provider(provider_id)
-        if not isinstance(adapter, AnthropicProviderAdapter):
+        if adapter is None or adapter.identity().type != "anthropic":
+            return None
+        count_tokens = getattr(adapter, "count_input_tokens", None)
+        if not callable(count_tokens):
             return None
         for owner, estimator in built:
             if owner is adapter:
                 return estimator
-        estimator = AnthropicCostEstimator(adapter.count_input_tokens)
+        estimator = AnthropicCostEstimator(count_tokens)
         built[:] = [(adapter, estimator)]
         return estimator
 

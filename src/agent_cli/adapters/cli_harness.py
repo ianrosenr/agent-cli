@@ -1,21 +1,17 @@
-"""Claude Code harness adapter using the user's existing Claude subscription login.
-
-The adapter launches the installed Claude Code CLI in bounded headless mode. It never copies
-Claude credentials and isolates API/cloud billing overrides from its child processes, so this
-subscription route cannot silently become pay-as-you-go usage.
-"""
+"""Reusable CLI harness adapter driven by declarative profiles."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any, Protocol
+from typing import IO, Any, Literal, Protocol
 
 from agent_cli.adapters.domain import (
     AdapterError,
@@ -40,46 +36,16 @@ from agent_cli.adapters.domain import (
 from agent_cli.adapters.harness import HarnessAdapter, version_matches
 from agent_cli.config.model import HarnessConfig
 
-HARNESS_ID = "claude-code"
-DISPLAY_NAME = "Claude Code"
-DEFAULT_COMMAND = "claude"
-SUBSCRIPTION_PROVIDER_ID = "claude-subscription"
 READINESS_TIMEOUT_S = 5.0
 INTERRUPT_TIMEOUT_S = 2.0
-MAX_TURNS = 25
 DIRECT_MODEL_TIMEOUT_S = 120.0
-DIRECT_MODEL_ID = "claude-sonnet-5-5"
 
-# Claude Code gives environment-based provider credentials precedence over a saved claude.ai
-# login. This subscription-only harness removes them from its child environment.
-BILLING_OVERRIDE_ENV = frozenset(
-    {
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
-    }
-)
-SUBSCRIPTION_AUTH_METHODS = frozenset({"claude.ai", "oauth_token"})
-
-
-class Process(Protocol):
-    def poll(self) -> int | None: ...
-
-    def terminate(self) -> None: ...
-
-    def kill(self) -> None: ...
-
-    def wait(self, timeout: float | None = None) -> int: ...
-
-
+type OutputProtocol = Literal["json-result", "jsonl-agent"]
 type CommandRunner = Callable[
     [tuple[str, ...], Mapping[str, str], float], subprocess.CompletedProcess[str]
 ]
 type ProcessLauncher = Callable[
-    [tuple[str, ...], Path, Mapping[str, str], IO[str], IO[str], IO[str]], Process
+    [tuple[str, ...], Path, Mapping[str, str], IO[str], IO[str], IO[str]], "Process"
 ]
 type GitRunner = Callable[[tuple[str, ...], Path], subprocess.CompletedProcess[str]]
 type InteractiveRunner = Callable[
@@ -91,16 +57,66 @@ type DirectModelRunner = Callable[
 ]
 
 
+class Process(Protocol):
+    def poll(self) -> int | None: ...
+    def terminate(self) -> None: ...
+    def kill(self) -> None: ...
+    def wait(self, timeout: float | None = None) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AuthPattern:
+    source: Literal["stdout", "stderr"] = "stdout"
+    contains: str | None = None
+    regexes: tuple[str, ...] = ()
+    json_any: tuple[Mapping[str, object], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CliHarnessProfile:
+    id: str
+    display_name: str
+    default_command: str
+    provider_id: str
+    provider_name: str
+    auth_label: str
+    auth_status_args: tuple[str, ...]
+    login_args: tuple[str, ...]
+    auth_pattern: AuthPattern
+    env_remove: frozenset[str]
+    output_protocol: OutputProtocol
+    worker_base_args: tuple[str, ...]
+    worker_plan_args: tuple[str, ...]
+    worker_write_args: tuple[str, ...]
+    worker_model_flag: str = "--model"
+    worker_stdin_marker: str | None = None
+    install_latest: tuple[str, ...] = ()
+    install_exact: tuple[str, ...] = ()
+    update_latest: tuple[str, ...] = ()
+    update_exact: tuple[str, ...] = ()
+    direct_model_id: str | None = None
+    direct_model_name: str | None = None
+    direct_context_limit: int | None = None
+    direct_base_args: tuple[str, ...] = ()
+    direct_model_flag: str = "--model"
+    direct_stdin_marker: str | None = None
+
+
+@dataclass(slots=True)
+class _Worker:
+    request: WorkerRequest
+    process: Process
+    stdout: IO[str]
+    stderr: IO[str]
+    canceled: bool = False
+    final: WorkerResult | None = None
+
+
 def run_command(
     argv: tuple[str, ...], env: Mapping[str, str], timeout: float
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        argv,
-        env=dict(env),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
+        argv, env=dict(env), capture_output=True, text=True, timeout=timeout, check=False
     )
 
 
@@ -112,7 +128,7 @@ def launch_process(
     stdout: IO[str],
     stderr: IO[str],
 ) -> Process:
-    process: subprocess.Popen[str] = subprocess.Popen(
+    return subprocess.Popen(
         argv,
         cwd=cwd,
         env=dict(env),
@@ -122,7 +138,6 @@ def launch_process(
         text=True,
         shell=False,
     )
-    return process
 
 
 def run_interactive(
@@ -162,19 +177,11 @@ def run_git(argv: tuple[str, ...], cwd: Path) -> subprocess.CompletedProcess[str
 
 
 @dataclass(slots=True)
-class _Worker:
-    request: WorkerRequest
-    process: Process
-    stdout: IO[str]
-    stderr: IO[str]
-    canceled: bool = False
-    final: WorkerResult | None = None
+class CliHarnessAdapter(HarnessAdapter):
+    """One implementation for CLI harnesses; vendor differences live in the profile."""
 
-
-@dataclass(slots=True)
-class ClaudeCodeHarnessAdapter(HarnessAdapter):
-    """Runs bounded workers through the installed Claude Code CLI subscription session."""
-
+    harness_id: str
+    profile: CliHarnessProfile
     config: HarnessConfig = field(default_factory=HarnessConfig)
     runner: CommandRunner = field(default=run_command, repr=False)
     launcher: ProcessLauncher = field(default=launch_process, repr=False)
@@ -186,7 +193,21 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
     _workers: dict[str, _Worker] = field(default_factory=dict, repr=False)
 
     def identity(self) -> HarnessIdentity:
-        return HarnessIdentity(HARNESS_ID, DISPLAY_NAME, self._version)
+        return HarnessIdentity(self.harness_id, self.profile.display_name, self._version)
+
+    def command(self) -> str:
+        return self.config.command or self.profile.default_command
+
+    def provider_id(self) -> str:
+        if self.harness_id == self.profile.id:
+            return self.profile.provider_id
+        return f"{self.harness_id}-subscription"
+
+    def subscription_env(self) -> dict[str, str]:
+        env = dict(self.environ)
+        for name in self.profile.env_remove:
+            env.pop(name, None)
+        return env
 
     def readiness(self) -> HarnessReadiness:
         if not self.config.enabled:
@@ -202,10 +223,10 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         except OSError as error:
             return HarnessReadiness(
                 ReadinessState.UNAVAILABLE,
-                f"cannot run Claude Code ({type(error).__name__})",
+                f"cannot run {self.profile.display_name} ({type(error).__name__})",
             )
         if version.returncode != 0:
-            return HarnessReadiness(ReadinessState.UNAVAILABLE, "Claude Code version check failed")
+            return HarnessReadiness(ReadinessState.UNAVAILABLE, "version check failed")
         self._version = (
             first_line(version.stdout) or first_line(version.stderr) or "unknown version"
         )
@@ -217,139 +238,124 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
 
         try:
-            auth = self.runner((command, "auth", "status", "--json"), env, READINESS_TIMEOUT_S)
+            auth = self.runner(
+                (command, *self.profile.auth_status_args),
+                env,
+                READINESS_TIMEOUT_S,
+            )
         except subprocess.TimeoutExpired:
             return HarnessReadiness(ReadinessState.UNAVAILABLE, "authentication check timed out")
         except OSError as error:
             return HarnessReadiness(
                 ReadinessState.UNAVAILABLE,
-                f"cannot check Claude Code authentication ({type(error).__name__})",
+                f"cannot check authentication ({type(error).__name__})",
             )
-        payload = json_object(auth.stdout)
-        if payload is None:
-            if auth.returncode == 1:
-                return HarnessReadiness(
-                    ReadinessState.AUTH_REQUIRED,
-                    "run claude auth login and choose your Claude subscription",
-                )
-            return HarnessReadiness(
-                ReadinessState.UNAVAILABLE,
-                "Claude Code returned unreadable auth status",
-            )
-        if payload.get("loggedIn") is not True:
+        if auth.returncode != 0 or not auth_matches(auth, self.profile.auth_pattern):
             return HarnessReadiness(
                 ReadinessState.AUTH_REQUIRED,
-                "run claude auth login and choose your Claude subscription",
-            )
-        method = payload.get("authMethod")
-        subscription = payload.get("subscriptionType")
-        plan = subscription if isinstance(subscription, str) and subscription else None
-        subscription_auth = method == "claude.ai" or (method == "oauth_token" and plan is not None)
-        if method not in SUBSCRIPTION_AUTH_METHODS or not subscription_auth:
-            shown = method if isinstance(method, str) and method else "non-subscription credentials"
-            return HarnessReadiness(
-                ReadinessState.AUTH_REQUIRED,
-                f"authenticated with {shown}; sign in with a Claude subscription instead",
+                f"{self.profile.auth_label} required; "
+                f"run {command} {' '.join(self.profile.login_args)}",
             )
         return HarnessReadiness(
             ReadinessState.READY,
-            f"{self._version}; subscription auth ({plan or 'Claude account'})",
+            f"{self._version}; {self.profile.auth_label}",
         )
 
     def capabilities(self) -> HarnessCapabilities:
+        supported = {
+            Capability.START_WORKER,
+            Capability.LOGIN,
+            Capability.INTERRUPT,
+            Capability.MODEL_SELECTION,
+            Capability.WORKING_DIRECTORY,
+            Capability.ISOLATED_WORKTREE,
+            Capability.DIFF,
+            Capability.USAGE,
+        }
+        if self.profile.install_latest or self.profile.install_exact:
+            supported.add(Capability.INSTALL)
+        if self.profile.update_latest or self.profile.update_exact:
+            supported.add(Capability.UPDATE)
+        if self.profile.direct_model_id is not None:
+            supported.add(Capability.DIRECT_MODEL)
         return HarnessCapabilities(
-            frozenset(
-                {
-                    Capability.START_WORKER,
-                    Capability.INSTALL,
-                    Capability.UPDATE,
-                    Capability.DIRECT_MODEL,
-                    Capability.LOGIN,
-                    Capability.INTERRUPT,
-                    Capability.MODEL_SELECTION,
-                    Capability.WORKING_DIRECTORY,
-                    Capability.ISOLATED_WORKTREE,
-                    Capability.DIFF,
-                    Capability.USAGE,
-                }
-            ),
-            providers=frozenset({SUBSCRIPTION_PROVIDER_ID}),
+            frozenset(supported),
+            providers=frozenset({self.provider_id()}),
         )
 
     def direct_provider(self) -> ProviderIdentity:
+        if self.profile.direct_model_id is None:
+            return super().direct_provider()
         return ProviderIdentity(
-            SUBSCRIPTION_PROVIDER_ID,
-            "Claude subscription",
+            self.provider_id(),
+            self.profile.provider_name,
             "harness-subscription",
             "subscription",
         )
 
     def direct_models(self) -> tuple[ModelDescriptor, ...]:
+        model_id = self.profile.direct_model_id
+        if model_id is None:
+            return tuple(super().direct_models())
         return (
             ModelDescriptor(
-                SUBSCRIPTION_PROVIDER_ID,
-                DIRECT_MODEL_ID,
-                "Claude Sonnet 5.5",
-                1_000_000,
+                self.provider_id(),
+                model_id,
+                self.profile.direct_model_name,
+                self.profile.direct_context_limit,
             ),
         )
 
     def invoke_model(self, request: ProviderRequest) -> ProviderResponse:
-        if request.model_id != DIRECT_MODEL_ID:
+        model_id = self.profile.direct_model_id
+        if model_id is None:
+            return super().invoke_model(request)
+        if request.model_id != model_id:
             raise AdapterError(
                 ErrorKind.INCOMPATIBLE,
-                f"Claude Code subscription does not advertise model {request.model_id!r}",
+                f"{self.profile.display_name} does not advertise model {request.model_id!r}",
             )
         blocking = self.readiness().blocking_error()
         if blocking is not None:
             raise blocking
-        argv = (
+        argv = [
             self.command(),
-            "--print",
-            "--output-format",
-            "json",
-            "--no-session-persistence",
-            "--permission-mode",
-            "plan",
-            "--max-turns",
-            "1",
-            "--model",
+            *self.profile.direct_base_args,
+            self.profile.direct_model_flag,
             request.model_id,
-        )
-        prompt = direct_model_prompt(request)
+        ]
+        if self.profile.direct_stdin_marker is not None:
+            argv.append(self.profile.direct_stdin_marker)
         try:
             with tempfile.TemporaryDirectory(prefix="agent-cli-model-") as directory:
                 result = self.direct_model_runner(
-                    argv,
+                    tuple(argv),
                     self.subscription_env(),
-                    prompt,
+                    direct_model_prompt(request),
                     Path(directory),
                     DIRECT_MODEL_TIMEOUT_S,
                 )
         except FileNotFoundError:
-            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code executable disappeared") from None
+            raise AdapterError(ErrorKind.NOT_FOUND, "harness executable disappeared") from None
         except subprocess.TimeoutExpired:
-            raise AdapterError(ErrorKind.TIMEOUT, "Claude Code model call timed out") from None
+            raise AdapterError(ErrorKind.TIMEOUT, "model call timed out") from None
         except OSError as error:
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
-                f"cannot run Claude Code model call ({type(error).__name__})",
+                f"cannot run model call ({type(error).__name__})",
             ) from None
         if result.returncode != 0:
             raise AdapterError(
                 ErrorKind.PROVIDER_ERROR,
-                f"Claude Code model call exited with status {result.returncode}",
+                f"model call exited with status {result.returncode}",
             )
-        payload = json_object(result.stdout)
-        if payload is None or payload.get("is_error") is True:
-            raise AdapterError(
-                ErrorKind.PROVIDER_ERROR,
-                "Claude Code returned invalid model output",
-            )
-        text = payload.get("result")
-        if not isinstance(text, str):
-            raise AdapterError(ErrorKind.PROVIDER_ERROR, "Claude Code returned no model text")
-        return ProviderResponse(request.model_id, text, usage_from_payload(payload))
+        parsed = parse_output(result.stdout, self.profile.output_protocol)
+        if isinstance(parsed, Failure):
+            raise AdapterError(ErrorKind.PROVIDER_ERROR, parsed.message)
+        text, usage = parsed
+        if not text:
+            raise AdapterError(ErrorKind.PROVIDER_ERROR, "harness returned no model text")
+        return ProviderResponse(request.model_id, text, usage)
 
     def start(self, request: WorkerRequest) -> WorkerHandle:
         self.check(request)
@@ -359,12 +365,9 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         if not request.working_directory.is_dir():
             raise AdapterError(
                 ErrorKind.INVALID_REQUEST,
-                f"Claude Code working directory does not exist: {request.working_directory}",
+                f"working directory does not exist: {request.working_directory}",
             )
-
-        argv = self.worker_argv(request)
-        # These files intentionally outlive this method: stdout/stderr belong to the running
-        # worker and are closed when its final result is collected.
+        argv = list(self.worker_argv(request))
         prompt = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
         stdout = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
         stderr = tempfile.TemporaryFile(mode="w+", encoding="utf-8")  # noqa: SIM115
@@ -372,7 +375,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         prompt.seek(0)
         try:
             process = self.launcher(
-                argv,
+                tuple(argv),
                 request.working_directory,
                 self.subscription_env(),
                 prompt,
@@ -381,17 +384,38 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             )
         except FileNotFoundError:
             close_files(prompt, stdout, stderr)
-            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code executable disappeared") from None
+            raise AdapterError(ErrorKind.NOT_FOUND, "harness executable disappeared") from None
         except OSError as error:
             close_files(prompt, stdout, stderr)
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
-                f"cannot start Claude Code ({type(error).__name__})",
+                f"cannot start harness ({type(error).__name__})",
             ) from None
         prompt.close()
         token = str(uuid.uuid4())
         self._workers[token] = _Worker(request, process, stdout, stderr)
-        return WorkerHandle(HARNESS_ID, token)
+        return WorkerHandle(self.harness_id, token)
+
+    def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
+        mode_args = (
+            self.profile.worker_plan_args
+            if request.mode == "plan-only"
+            else self.profile.worker_write_args
+        )
+        argv = [self.command(), *self.profile.worker_base_args, *mode_args]
+        if request.model is not None:
+            argv += [self.profile.worker_model_flag, request.model.id]
+        if self.profile.worker_stdin_marker is not None:
+            argv.append(self.profile.worker_stdin_marker)
+        return tuple(argv)
+
+    def worker(self, handle: WorkerHandle) -> _Worker:
+        if handle.harness_id != self.harness_id:
+            raise AdapterError(ErrorKind.NOT_FOUND, "worker belongs to another harness")
+        worker = self._workers.get(handle.token)
+        if worker is None:
+            raise AdapterError(ErrorKind.NOT_FOUND, "worker not found")
+        return worker
 
     def status(self, handle: WorkerHandle) -> WorkerStatus:
         worker = self.worker(handle)
@@ -418,7 +442,6 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
 
         code = worker.process.poll()
         stdout = read_file(worker.stdout)
-        # Consume but never expose stderr: vendor output may contain task context.
         _ = read_file(worker.stderr)
         close_files(worker.stdout, worker.stderr)
         if code != 0:
@@ -426,38 +449,20 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
                 WorkerStatus.FAILED,
                 error=Failure(
                     ErrorKind.HARNESS_ERROR,
-                    f"Claude Code exited with status {code}",
+                    f"{self.profile.display_name} exited with status {code}",
                 ),
             )
             return worker.final
-
-        payload = json_object(stdout)
-        if payload is None:
-            worker.final = WorkerResult(
-                WorkerStatus.FAILED,
-                error=Failure(
-                    ErrorKind.HARNESS_ERROR,
-                    "Claude Code returned invalid JSON",
-                ),
-            )
+        parsed = parse_output(stdout, self.profile.output_protocol)
+        if isinstance(parsed, Failure):
+            worker.final = WorkerResult(WorkerStatus.FAILED, error=parsed)
             return worker.final
-        if payload.get("is_error") is True:
-            worker.final = WorkerResult(
-                WorkerStatus.FAILED,
-                error=Failure(
-                    ErrorKind.HARNESS_ERROR,
-                    "Claude Code reported an error",
-                ),
-            )
-            return worker.final
-
-        summary = payload.get("result")
-        changes = self.safe_changes(worker.request.working_directory)
+        summary, usage = parsed
         worker.final = WorkerResult(
             WorkerStatus.COMPLETED,
-            summary=summary if isinstance(summary, str) else "",
-            changes=changes,
-            usage=usage_from_payload(payload),
+            summary=summary,
+            changes=self.safe_changes(worker.request.working_directory),
+            usage=usage,
         )
         return worker.final
 
@@ -475,7 +480,7 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         except (OSError, subprocess.TimeoutExpired) as error:
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
-                f"cannot interrupt Claude Code ({type(error).__name__})",
+                f"cannot interrupt harness ({type(error).__name__})",
             ) from None
         worker.canceled = True
 
@@ -483,42 +488,39 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         return self.git_changes(self.worker(handle).request.working_directory)
 
     def usage(self, handle: WorkerHandle) -> Usage:
-        result = self.result(handle)
-        return result.usage or Usage()
-
-    def command(self) -> str:
-        return self.config.command or DEFAULT_COMMAND
-
-    def subscription_env(self) -> dict[str, str]:
-        env = dict(self.environ)
-        for name in BILLING_OVERRIDE_ENV:
-            env.pop(name, None)
-        return env
+        return self.result(handle).usage or Usage()
 
     def install(self) -> HarnessReadiness:
-        if not self.config.enabled:
-            raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
-        target = (
-            "@anthropic-ai/claude-code@latest"
+        template = (
+            self.profile.install_latest
             if self.config.version == "latest"
-            else f"@anthropic-ai/claude-code@{self.config.version}"
+            else self.profile.install_exact
         )
-        self.run_lifecycle(("npm", "install", "-g", target), "install Claude Code")
+        if not template:
+            return super().install()
+        self.run_lifecycle(render_argv(template, self), "install")
         return self.readiness()
 
     def update(self) -> HarnessReadiness:
+        template = (
+            self.profile.update_latest
+            if self.config.version == "latest"
+            else self.profile.update_exact
+        )
+        if not template:
+            return super().update()
+        self.run_lifecycle(render_argv(template, self), "update")
+        return self.readiness()
+
+    def login(self) -> HarnessReadiness:
         if not self.config.enabled:
             raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
-        if self.config.version == "latest":
-            self.run_lifecycle((self.command(), "update"), "update Claude Code")
-        else:
-            target = f"@anthropic-ai/claude-code@{self.config.version}"
-            self.run_lifecycle(("npm", "install", "-g", target), "pin Claude Code")
+        self.run_lifecycle((self.command(), *self.profile.login_args), "login")
         return self.readiness()
 
     def run_lifecycle(self, argv: tuple[str, ...], action: str) -> None:
         try:
-            result = self.interactive_runner(argv, dict(self.environ))
+            result = self.interactive_runner(argv, self.subscription_env())
         except FileNotFoundError:
             raise AdapterError(
                 ErrorKind.NOT_FOUND,
@@ -530,50 +532,8 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
                 f"cannot {action} ({type(error).__name__})",
             ) from None
         if result.returncode != 0:
-            raise AdapterError(ErrorKind.HARNESS_ERROR, f"{action} did not complete")
-
-    def login(self) -> HarnessReadiness:
-        if not self.config.enabled:
-            raise AdapterError(ErrorKind.INVALID_REQUEST, "harness is disabled in config")
-        try:
-            result = self.interactive_runner(
-                (self.command(), "auth", "login"), self.subscription_env()
-            )
-        except FileNotFoundError:
-            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code is not installed") from None
-        except OSError as error:
-            raise AdapterError(
-                ErrorKind.HARNESS_ERROR,
-                f"cannot launch Claude Code login ({type(error).__name__})",
-            ) from None
-        if result.returncode != 0:
-            raise AdapterError(ErrorKind.AUTH_FAILED, "Claude Code login did not complete")
-        return self.readiness()
-
-    def worker_argv(self, request: WorkerRequest) -> tuple[str, ...]:
-        mode = "plan" if request.mode == "plan-only" else "auto"
-        argv = [
-            self.command(),
-            "--print",
-            "--output-format",
-            "json",
-            "--no-session-persistence",
-            "--permission-mode",
-            mode,
-            "--max-turns",
-            str(MAX_TURNS),
-        ]
-        if request.model is not None:
-            argv += ["--model", request.model.id]
-        return tuple(argv)
-
-    def worker(self, handle: WorkerHandle) -> _Worker:
-        if handle.harness_id != HARNESS_ID:
-            raise AdapterError(ErrorKind.NOT_FOUND, "worker belongs to another harness")
-        worker = self._workers.get(handle.token)
-        if worker is None:
-            raise AdapterError(ErrorKind.NOT_FOUND, "Claude Code worker not found")
-        return worker
+            kind = ErrorKind.AUTH_FAILED if action == "login" else ErrorKind.HARNESS_ERROR
+            raise AdapterError(kind, f"{action} did not complete")
 
     def git_changes(self, cwd: Path) -> Changes:
         try:
@@ -583,23 +543,15 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
         except (OSError, subprocess.TimeoutExpired) as error:
             raise AdapterError(
                 ErrorKind.HARNESS_ERROR,
-                f"cannot inspect Claude Code git changes ({type(error).__name__})",
+                f"cannot inspect git changes ({type(error).__name__})",
             ) from None
-        if any(result.returncode != 0 for result in (tracked, untracked, diff)):
-            raise AdapterError(
-                ErrorKind.HARNESS_ERROR,
-                "cannot inspect Claude Code git changes",
-            )
+        if any(item.returncode != 0 for item in (tracked, untracked, diff)):
+            raise AdapterError(ErrorKind.HARNESS_ERROR, "cannot inspect git changes")
         files = tuple(
             sorted(
-                {
-                    line
-                    for line in (
-                        *tracked.stdout.splitlines(),
-                        *untracked.stdout.splitlines(),
-                    )
-                    if line
-                }
+                line
+                for line in {*tracked.stdout.splitlines(), *untracked.stdout.splitlines()}
+                if line
             )
         )
         return Changes(files, diff.stdout or None)
@@ -609,6 +561,115 @@ class ClaudeCodeHarnessAdapter(HarnessAdapter):
             return self.git_changes(cwd)
         except AdapterError:
             return None
+
+
+def auth_matches(result: subprocess.CompletedProcess[str], pattern: AuthPattern) -> bool:
+    text = result.stdout if pattern.source == "stdout" else result.stderr
+    if pattern.contains is not None:
+        return pattern.contains in text
+    if pattern.regexes:
+        return any(re.search(expression, text) is not None for expression in pattern.regexes)
+    payload = json_object(text)
+    if payload is None:
+        return False
+    return any(mapping_matches(payload, candidate) for candidate in pattern.json_any)
+
+
+def mapping_matches(payload: Mapping[str, Any], expected: Mapping[str, object]) -> bool:
+    for key, value in expected.items():
+        actual = payload.get(key)
+        if value == "*":
+            if actual in (None, "", False):
+                return False
+        elif actual != value:
+            return False
+    return True
+
+
+def render_argv(template: tuple[str, ...], adapter: CliHarnessAdapter) -> tuple[str, ...]:
+    return tuple(
+        part.replace("{command}", adapter.command()).replace("{version}", adapter.config.version)
+        for part in template
+    )
+
+
+def parse_output(text: str, protocol: OutputProtocol) -> tuple[str, Usage] | Failure:
+    if protocol == "json-result":
+        payload = json_object(text)
+        if payload is None or payload.get("is_error") is True:
+            return Failure(ErrorKind.HARNESS_ERROR, "harness returned invalid JSON")
+        summary = payload.get("result")
+        if not isinstance(summary, str):
+            return Failure(ErrorKind.HARNESS_ERROR, "harness returned no result text")
+        return summary, usage_from_mapping(payload)
+    return parse_jsonl_agent(text)
+
+
+def parse_jsonl_agent(text: str) -> tuple[str, Usage] | Failure:
+    summary = ""
+    reference: str | None = None
+    input_tokens = 0
+    output_tokens = 0
+    input_known = True
+    output_known = True
+    completed = False
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        event = json_object(line)
+        if event is None:
+            return Failure(ErrorKind.HARNESS_ERROR, "harness returned invalid JSONL")
+        kind = event.get("type")
+        if kind in {"error", "turn.failed"}:
+            return Failure(ErrorKind.HARNESS_ERROR, "harness reported an error")
+        if kind == "thread.started":
+            value = event.get("thread_id")
+            if isinstance(value, str) and value:
+                reference = value
+        elif kind == "item.completed":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                value = item.get("text")
+                if isinstance(value, str):
+                    summary = value
+        elif kind == "turn.completed":
+            completed = True
+            raw = event.get("usage")
+            if not isinstance(raw, dict):
+                input_known = False
+                output_known = False
+                continue
+            incoming = count(raw.get("input_tokens"))
+            outgoing = count(raw.get("output_tokens"))
+            if incoming is None:
+                input_known = False
+            else:
+                input_tokens += incoming
+            if outgoing is None:
+                output_known = False
+            else:
+                output_tokens += outgoing
+    if not completed:
+        return Failure(ErrorKind.HARNESS_ERROR, "harness ended without a completed turn")
+    return (
+        summary,
+        Usage(
+            input_tokens=input_tokens if input_known else None,
+            output_tokens=output_tokens if output_known else None,
+            reference=reference,
+        ),
+    )
+
+
+def usage_from_mapping(payload: Mapping[str, Any]) -> Usage:
+    raw = payload.get("usage")
+    usage = raw if isinstance(raw, dict) else {}
+    reference = payload.get("session_id")
+    return Usage(
+        input_tokens=count(usage.get("input_tokens")),
+        output_tokens=count(usage.get("output_tokens")),
+        reference=reference if isinstance(reference, str) and reference else None,
+    )
 
 
 def direct_model_prompt(request: ProviderRequest) -> str:
@@ -624,7 +685,6 @@ def direct_model_prompt(request: ProviderRequest) -> str:
 
 
 def render_worker_prompt(request: WorkerRequest) -> str:
-    """Only bounded task/spec/policy context; never conversation history."""
     sections = [
         "You are a bounded implementation worker controlled by Agent CLI.",
         f"Role: {request.role}",
@@ -654,26 +714,12 @@ def json_object(text: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def usage_from_payload(payload: Mapping[str, Any]) -> Usage:
-    raw = payload.get("usage")
-    usage = raw if isinstance(raw, dict) else {}
-    reference = payload.get("session_id")
-    return Usage(
-        input_tokens=count(usage.get("input_tokens")),
-        output_tokens=count(usage.get("output_tokens")),
-        reference=(reference if isinstance(reference, str) and reference else None),
-    )
-
-
 def count(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def first_line(text: str) -> str:
-    return next(
-        (line.strip() for line in text.splitlines() if line.strip()),
-        "",
-    )
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
 
 
 def read_file(file: IO[str]) -> str:

@@ -142,6 +142,19 @@ def login_command(context: CommandContext, args: str) -> RenderableType:
     ).run(args)
 
 
+def reload_command(context: CommandContext, args: str) -> RenderableType:
+    if context.config is None or context.reload_adapters is None:
+        return error(UNAVAILABLE)
+    try:
+        context.config.resolve()
+    except ConfigError as problem:
+        return error("Configuration reload rejected.", str(problem))
+    reload_problem = context.reload_adapters()
+    if reload_problem is not None:
+        return error("Configuration reload rejected.", reload_problem)
+    return success("Configuration reloaded.", "/providers and /models now use the new runtime.")
+
+
 def providers_command(context: CommandContext, args: str) -> RenderableType:
     config = Config()
     if context.config is not None:
@@ -306,6 +319,7 @@ BUILTIN_COMMANDS: tuple[Command, ...] = (
         startup_command,
     ),
     Command("login", "Sign into enabled subscription harnesses.", login_command),
+    Command("reload", "Reload adapter configuration from disk.", reload_command),
     Command(
         "providers", "Show configured and detected harnesses and providers.", providers_command
     ),

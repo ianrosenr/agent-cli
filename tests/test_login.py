@@ -77,7 +77,13 @@ def service(
     return (
         HarnessLoginService(
             registry,
-            config or Config(),
+            config
+            or Config(
+                harnesses={
+                    "claude-code": HarnessConfig(type="cli", profile="claude-code"),
+                    "codex-cli": HarnessConfig(type="cli", profile="codex-cli"),
+                }
+            ),
             conversation.read_line,
             conversation.write_line,
         ),
@@ -120,7 +126,12 @@ def test_login_respects_saved_disabled_harness() -> None:
 def test_targeted_login_uses_alias_and_respects_disabled_config() -> None:
     claude = FakeHarness("claude-code", "Claude Code", ReadinessState.AUTH_REQUIRED)
     codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.AUTH_REQUIRED)
-    config = Config(harnesses={"claude-code": HarnessConfig(enabled=False)})
+    config = Config(
+        harnesses={
+            "claude-code": HarnessConfig(type="cli", profile="claude-code", enabled=False),
+            "codex-cli": HarnessConfig(type="cli", profile="codex-cli"),
+        }
+    )
     login, _ = service(claude, codex, config)
 
     disabled = plain(login.run("claude"))
@@ -203,15 +214,38 @@ def test_unknown_target_is_actionable() -> None:
     output = plain(login.run("other"))
 
     assert "Unknown login target" in output
-    assert "/login claude" in output and "/login codex" in output
+    assert "/login <configured-harness-id>" in output
 
 
-def test_config_without_explicit_harness_entries_remains_backward_compatible() -> None:
+def test_targeted_login_accepts_any_configured_harness_id() -> None:
+    custom = FakeHarness("example", "Example CLI", ReadinessState.AUTH_REQUIRED)
+    registry = AdapterRegistry([custom])
+    config = Config(
+        harnesses={
+            "example": HarnessConfig(type="cli", profile="example"),
+        }
+    )
+    conversation = Conversation([])
+    login = HarnessLoginService(
+        registry,
+        config,
+        conversation.read_line,
+        conversation.write_line,
+    )
+
+    output = plain(login.run("example"))
+
+    assert custom.login_calls == 1
+    assert "signed in" in output
+
+
+def test_unconfigured_harnesses_are_not_logged_in() -> None:
     claude = FakeHarness("claude-code", "Claude Code", ReadinessState.AUTH_REQUIRED)
     codex = FakeHarness("codex-cli", "Codex CLI", ReadinessState.AUTH_REQUIRED)
     login, _ = service(claude, codex, Config(access=AccessConfig()))
 
-    login.run()
+    output = plain(login.run())
 
-    assert claude.login_calls == 1
-    assert codex.login_calls == 1
+    assert "No enabled subscription harnesses are configured." in output
+    assert claude.login_calls == 0
+    assert codex.login_calls == 0

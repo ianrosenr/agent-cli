@@ -83,4 +83,6 @@ uv run agent-cli
 > /models                           # Runtime paths: claude-sonnet-5-5  anthropic (api)
 > add expiration support to the cache
 > /budget                           # two settled reservations (planning, spec authoring)
-```
+```\n\nClaude Code and Codex have no separate execution adapter implementations. Both are `CliHarnessProfile` data consumed by one `CliHarnessAdapter`. `HarnessFactoryRegistry` maps `type: cli` to that reusable adapter; `ProviderFactoryRegistry` does the equivalent for provider protocols. Runtime iterates factories/config rather than branching on vendors. Harness YAML must explicitly name both `type` and `profile`.
+
+User-defined `harness_profiles` compile into the same `CliHarnessProfile` runtime object. They are permitted only in global config because profile fields control executable argv. No new Python adapter class is needed for another CLI that fits the generic CLI protocol.

@@ -88,7 +88,7 @@ def test_arguments_complete_through_the_command() -> None:
 def test_enter_completes_a_partial_command_with_one_match() -> None:
     registry = build_registry()
     assert unique_completion(registry, "/rev") == "/review"
-    assert unique_completion(registry, "/re") == "/review"
+    assert unique_completion(registry, "/re") is None  # reload/review are ambiguous
 
 
 def test_enter_leaves_other_input_alone() -> None:

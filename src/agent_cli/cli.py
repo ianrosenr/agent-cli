@@ -20,7 +20,7 @@ from agent_cli.adapters import AdapterRegistry
 from agent_cli.commands import CommandContext, CommandRegistry, ExitShell, build_registry
 from agent_cli.commands.registry import is_command
 from agent_cli.config import ConfigError, ConfigPaths, ConfigService
-from agent_cli.runtime import provider_estimators, session_adapters
+from agent_cli.runtime import default_adapters, provider_estimators, session_adapters
 from agent_cli.state import TaskStore
 from agent_cli.ui import blocks, error, home, is_unicode, make_console
 
@@ -56,7 +56,7 @@ def run_shell(
     config: ConfigService | None = None,
     adapters: AdapterRegistry | None = None,
     tasks: TaskStore | None = None,
-    reload_adapters: Callable[[], None] | None = None,
+    reload_adapters: Callable[[], str | None] | None = None,
     auto_startup: bool = False,
 ) -> int:
     """Show startup, optionally onboard once, then read input until EOF. Ctrl-C clears a line."""
@@ -134,20 +134,19 @@ def orchestrator(
     return orchestrate
 
 
-def reloader(config: ConfigService, adapters: AdapterRegistry) -> Callable[[], None]:
-    """Rebuild ``adapters`` in place from the current configuration, after setup saves it.
+def reloader(config: ConfigService, adapters: AdapterRegistry) -> Callable[[], str | None]:
+    """Atomically rebuild adapters from current files; invalid edits keep the old runtime."""
 
-    Only for the registry ``session_adapters`` built, since the rebuild replaces every adapter.
-    Invalid configuration leaves the current adapters in place. Hand edits to config files take
-    effect on the next start.
-    """
+    def reload() -> str | None:
+        from agent_cli.adapters.factories import AdapterFactoryError
 
-    def reload() -> None:
         try:
-            config.resolve()
-        except ConfigError:
-            return
-        adapters.reset(session_adapters(config))
+            resolved = config.resolve()
+            candidate = default_adapters(resolved)
+        except (ConfigError, AdapterFactoryError) as problem:
+            return str(problem)
+        adapters.reset(candidate)
+        return None
 
     return reload
 
@@ -168,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = make_console()
     try:
         registry = build_registry()
-        problem = config_problem(config)
+        problem = blocks(config_problem(config), adapter_problem(config))
         root = config.paths.project_root
         tasks = None if root is None else TaskStore.for_repository(root)
         adapters = session_adapters(config)
@@ -205,6 +204,19 @@ def needs_onboarding(config: ConfigService, interactive: bool) -> bool:
         return False
     paths = (config.paths.global_file, config.paths.project_file)
     return not any(path is not None and path.exists() for path in paths)
+
+
+def adapter_problem(config: ConfigService) -> RenderableType | None:
+    """Report unknown adapter types/profiles without partially constructing runtime."""
+    from agent_cli.adapters.factories import AdapterFactoryError
+
+    try:
+        default_adapters(config.resolve())
+    except ConfigError:
+        return None
+    except AdapterFactoryError as problem:
+        return error("Adapter configuration error.", str(problem))
+    return None
 
 
 def config_problem(config: ConfigService) -> RenderableType | None:

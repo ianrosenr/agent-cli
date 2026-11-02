@@ -245,8 +245,8 @@ def test_shell_passes_its_io_and_config_to_commands(tmp_path: Path) -> None:
     assert output[-1] == f"Done  Settings saved to {tmp_path / 'config.yaml'}."
     assert service.resolve() == Config(
         harnesses={
-            "claude-code": HarnessConfig(),
-            "codex-cli": HarnessConfig(),
+            "claude-code": HarnessConfig(type="cli", profile="claude-code"),
+            "codex-cli": HarnessConfig(type="cli", profile="codex-cli"),
         }
     )
 
@@ -286,6 +286,9 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.adapters",
         "agent_cli.adapters.domain",
         "agent_cli.adapters.harness",
+        "agent_cli.adapters.cli_harness",
+        "agent_cli.adapters.cli_profiles",
+        "agent_cli.adapters.factories",
         "agent_cli.adapters.harness_provider",
         "agent_cli.adapters.provider",
         "agent_cli.adapters.registry",
@@ -315,8 +318,6 @@ def test_startup_imports_only_the_shell_and_command_layer() -> None:
         "agent_cli.terms",
         # Real adapters are built at startup from config; none imports a vendor SDK.
         "agent_cli.adapters.anthropic",
-        "agent_cli.adapters.claude_code",
-        "agent_cli.adapters.codex_cli",
         "agent_cli.adapters.credentials",
         "agent_cli.runtime",
     }
