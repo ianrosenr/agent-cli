@@ -158,6 +158,7 @@ def render_authorization_result(
     authorization: TaskAuthorization,
     message: str,
 ) -> RenderableType:
-    state = "Authorized" if authorization.status is AuthorizationStatus.APPROVED else "Not authorized"
-    style = "success" if authorization.status is AuthorizationStatus.APPROVED else "warning"
+    approved = authorization.status is AuthorizationStatus.APPROVED
+    state = "Authorized" if approved else "Not authorized"
+    style = "success" if approved else "warning"
     return blocks(styled(state, style), Text(message))
