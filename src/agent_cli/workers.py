@@ -19,13 +19,13 @@ from agent_cli.adapters import (
 )
 from agent_cli.config import Config
 from agent_cli.models import (
+    ModelPath,
     ModelRegistry,
-    ModelRoutingError,
     pinned_paths,
     ranked_model_candidates,
     runtime_paths,
 )
-from agent_cli.state import PinKind, Task, TaskStatus, TaskStore
+from agent_cli.state import PinKind, Task, TaskStateError, TaskStatus, TaskStore
 from agent_cli.terms import TaskComplexity, TaskKind
 
 
@@ -66,7 +66,7 @@ class WorkerDispatcher:
         provider_pin = pins.get("provider")
         harness_pin = pins.get("harness")
 
-        paths: list[tuple[str, object]] = []
+        paths: list[tuple[str, ModelPath]] = []
         if model_pin:
             resolved = pinned_paths(
                 self.registry,
@@ -99,8 +99,7 @@ class WorkerDispatcher:
                 for path in candidate.paths
             ]
 
-        for model_id, raw_path in paths:
-            path = raw_path
+        for model_id, path in paths:
             if provider_pin and path.provider.id != provider_pin:
                 continue
             # Worker execution over paid API is held until harness-level hard spend bounds exist.
@@ -257,10 +256,17 @@ class WorkerExecutor:
                 if status.finished:
                     self._finish(worker_id, task_id, harness.result(handle))
                     return
-            except (AdapterError, Exception):
-                self.store.update_worker(worker_id, WorkerStatus.FAILED)
+            except (AdapterError, TaskStateError):
+                with self._ignore_state_errors():
+                    self.store.update_worker(worker_id, WorkerStatus.FAILED)
                 return
             time.sleep(self.poll_seconds)
+
+    @staticmethod
+    def _ignore_state_errors():
+        from contextlib import suppress
+
+        return suppress(TaskStateError)
 
     def _finish(self, worker_id: str, task_id: str, result: WorkerResult) -> None:
         self.store.update_worker(worker_id, result.status)
