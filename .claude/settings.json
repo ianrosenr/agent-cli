@@ -1,4 +1,6 @@
 {
+  "model": "opus",
+  "advisorModel": "opus",
   "hooks": {
     "Stop": [
       {
@@ -11,5 +13,8 @@
         ]
       }
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
   }
 }
